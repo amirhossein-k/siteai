@@ -1,0 +1,669 @@
+# NEXT SESSION
+
+## Current State
+
+**Session 52 status:** ✅ **Mobile Dashboard Navigation Fix + Regression Runner Hermeticity VERIFIED** — the `Menu` button on the admin/supplier mobile headers toggled `isSidebarOpen` on the zustand store but **no component consumed it** (both sidebars are `hidden lg:flex` and no drawer existed anywhere) → zero visual effect on mobile. Fixed with one reusable `src/components/layout/mobile-drawer.tsx` (overlay + slide-in panel, `lg:hidden`, closes on overlay / close button / Escape, body-scroll lock; **plain `ReactNode` children** — a render-prop broke the RSC→client boundary, caught by browser QA and fixed) wired into both dashboards; both sidebars gained additive `variant` (`desktop`|`mobile`) so the SAME nav renders in the drawer, and nav links close the drawer via the store (`setSidebarOpen(false)`) — desktop byte-identical. **Zero API/schema/model/index changes.** Regression verification also made the runner **hermetic**: the shared login rate-limiter keys (`login:<phone>` 10/15min, `login_ip:<ip>` 30/15min) accumulate across the 29 sequential suites (all log in against the same localhost IP) and started 401ing mid-run — `scripts/run-regression.js` now clears those keys before EACH suite (same env/dbName convention as the verify suites; fail-safe warn when DB is down; production limiter untouched). Verified: `tsc` zero errors, `node --check` clean, code review approved, **full regression 29/29 PASS**, browser QA mobile drawer green. **No dev-server restart needed.** See CHANGELOG.
+
+**Session 51 status:** ✅ **Bulk Product CSV Import/Export VERIFIED** — admin + supplier can **import products from CSV** (create-only v1, simple products; per-row validation report) and **download their catalog as CSV**. New `csv-parse`/`csv-stringify` deps + 4 additive endpoints (`POST/GET /api/admin/products/import|export` and `/api/supplier/products/import|export`); shared libs `product-csv.ts` (parse/serialize, Persian-digit normalization, formula-injection escaping, UTF-8 BOM), `product-csv-constants.ts`, `product-import.ts` (name-based ref resolution, existing-slug pre-scan, sequential per-row `Product.create` on the hardened sanitize+validator path, **create-only — duplicate slug skipped, never overwritten**, per-row atomicity, supplier ownership auto-set). Import UI (`ProductCsvImport` — file pick, template download, column guide, per-row report table) on `/admin/products/import` + `/supplier/products/import`; «ورود انبوه»/«خروجی CSV» buttons on both products pages. **Zero existing-API/schema/model/index/migration changes** — the import path never calls the existing POST/PUT; RBAC + rate limit (`product-import:<userId>` 20/15min, payload validated BEFORE the limiter). Verified: `tsc` zero errors, `verify-product-import-export.js` **22/22**, full regression **29/29 PASS**, code review approved (2 rounds). **No dev-server restart needed.** See CHANGELOG.
+
+**Session 50 status:** ✅ **Homepage UX Redesign VERIFIED** — `src/app/page.tsx` kept as the homepage entry (no route-group move) but rebuilt as a thin **server component** composing self-contained sections: Hero Carousel (fade, RTL-safe, auto-advance) → Quick Categories (grid desktop / scroll-snap mobile) → Campaign Banner → Special Picks (countdown + value rail, **real prices, no fake discounts**) → Newest Products → Premium Collection → Popular Brands (initial tiles) → Gift Collections → Trust Badges → shared Footer. **One shared product-pool query** (`sort=newest, limit 36`) feeds all three product rails (React Query dedup — no duplicate requests); `LazySection` defers below-fold mounting + fetching. Header/footer extracted to shared `StorefrontHeader` (+ **additive header search reusing Session 49 suggestions** — desktop inline, mobile expanding row) and `StorefrontFooter`; storefront layout is now a server component. Additive one-time URL seed in `useCatalogFilters` makes homepage category/brand tiles + header search pre-filter `/products`. **Zero API/schema/model changes, zero new dependencies.** Verified: `tsc` zero errors, full regression **28/28 PASS**, browser QA desktop + mobile clean, code review approved. **No dev-server restart needed.** See CHANGELOG.
+
+**Session 49 status:** ✅ **Search Suggestions / Autocomplete VERIFIED LIVE** — `scripts/verify-search-suggest.js` **10/10** against the real API: public endpoint (no auth, IP rate-limited), prefix matching on product names + brand names (active only), product names before brand names, deduped, max 10, proper response shape, special-char resilience. Client: `useSearchSuggestions` React Query hook (5min staleTime, enabled at 2+ chars) + `SearchSuggestions` dropdown component (click-away-to-close, loading/error/empty states, `onMouseDown` for reliable selection). Modified products page to wire the dropdown into the search input. Regression runner now **28 suites** (`verify-search-suggest` after `verify-search`). **No model changes → no dev-server restart needed.** See CHANGELOG.
+
+---
+
+## Last Completed Task (Session 52) — Mobile Dashboard Navigation Fix + Regression Runner Hermeticity
+
+### Mobile navigation fix (both dashboards)
+- **Root cause (confirmed by static analysis + live repro):** `src/components/layout/admin/admin-header.tsx` + `supplier-header.tsx` render a lucide `Menu` button (`lg:hidden`) that calls `toggleSidebar()` on the zustand `useAppStore`. `src/stores/app-store.ts` defines `isSidebarOpen` + `toggleSidebar`/`setSidebarOpen`. But **nothing consumes `isSidebarOpen`** — `admin-sidebar.tsx`/`supplier-sidebar.tsx` are `<aside className="hidden ... lg:flex ...">` (desktop-only) and a full-repo search for `fixed inset`/`Sheet`/`Drawer`/`backdrop`/`isSidebarOpen` consumers found **zero drawer/sheet components**. So on mobile the toggle had no visual effect and admins/suppliers could not reach dashboard sections.
+- **`src/components/layout/mobile-drawer.tsx`** (new, shared) — store-driven drawer: `fixed inset-0 z-50` overlay (click to close) + slide-in panel (right, RTL layout) rendering **plain `ReactNode` children**; `lg:hidden` so the desktop `lg:flex` sidebar is untouched; closes on overlay click / close button / `Escape`; body-scroll lock; `aria-modal` + `role="dialog"` + labelled. **Design constraint (fixed after browser QA caught a crash):** the drawer must NOT take a render-prop `children: (close) => …` — the layouts are Server Components, and passing a function into the client component throws «Functions are not valid as a child of Client Components».
+- **`admin-sidebar.tsx` + `supplier-sidebar.tsx`** — additive `variant?: "desktop" | "mobile"` (default `"desktop"`); in `mobile` variant nav-link clicks call `setSidebarOpen(false)` on the store directly (the sidebars are client components — no callback crosses the RSC→client boundary); desktop output byte-identical.
+- **`src/app/admin/layout.tsx` + `src/app/supplier/layout.tsx`** — render `<MobileDrawer><Sidebar variant="mobile" /></MobileDrawer>` beside the desktop sidebar.
+- **Zero API/schema/model/index changes** — pure client UI; no dev-server restart needed.
+
+### Regression runner hermeticity
+- **Root cause:** the shared login rate-limiter keys accumulate across the 29 sequential suites — every suite performs real NextAuth logins against the same localhost IP; after ~30 cumulative logins in a 15-min window (`login_ip:<ip>` max 30/15min, and `login:<phone>` max 10/15min also trips for heavily-used seeded accounts) later suites' logins are rejected (401) even though each passes standalone. Expected security behavior + shared test-state accumulation — not an app bug, not a runner logic bug.
+- **`scripts/run-regression.js`** — loads `.env.local` (same convention as the verify suites), and before EACH suite runs `deleteMany({ _id: { $regex: "^rl:(login|login_ip):" } })` on the `ratelimits` collection (dbName `marlooai` — same as `dbConnect.js`). Fail-safe try/catch: DB down → warn and continue (hermetic `verify-db-reconnect` still runs). Disconnects mongoose on every path. **Production limiter logic untouched** — only test-state reset between isolated runs.
+
+### Verification
+- `npx tsc --noEmit` — **zero errors**; `node --check scripts/run-regression.js` clean.
+- **Full sequential regression → 29/29 PASS** (previously intermittent 401-cascade failures: 24/29 → all suites pass once login keys are reset per-suite).
+- Standalone confirmation for the previously-affected suites: verify-upload-repro 15/15, verify-upload-formats 9/9, verify-variants-e2e 32/32, verify-variant-polish 13/13, verify-payment-retry 13/13.
+- Code review approved (runner change): env-loading convention matches, regex targets the exact `_id: "rl:<key>"` format, disconnect on all paths, no production change. Note: child suites now inherit `.env.local` vars via `process.env` — their own parse becomes a no-op with identical values (harmless).
+- **Browser QA (mobile 390px):** dashboard renders clean, hamburger opens the drawer, nav link closes + navigates, no console errors (only pre-existing favicon 404s). **Browser QA caught a real bug:** the first MobileDrawer used a render-prop `children` — the admin/supplier layouts are Server Components, so a function crossed the RSC→client boundary and the page crashed («Functions are not valid as a child of Client Components»). Fixed to plain `ReactNode` children + store-driven close; re-verified (tsc + browser QA green).
+- **No model/schema/index changes → no dev-server restart needed.**
+
+---
+
+## Last Completed Task (Session 51) — Bulk Product CSV Import / Export
+
+### Server (additive, RBAC, rate-limited)
+- **`src/lib/product-csv.ts`** — `parseProductCsv` (server-authoritative: `csv-parse/sync`, columns:true, BOM, trim, relax_column_count; row validation — slug regex, price/supplierPrice > 0 finite, stock non-negative integer, name ≤200 / description ≤2000, category required, `isActive` 1/0 empty→true, **Persian+Arabic digit normalization**; global malformed CSV → 400; empty → 400) + `serializeProductsCsv` (`csv-stringify/sync`, header from `PRODUCT_CSV_HEADERS`, **formula-injection escaping** for `= + - @ \t \r`, **UTF-8 BOM** for Excel).
+- **`src/lib/product-csv-constants.ts`** — 12-column header order, `MAX_IMPORT_ROWS = 1000`, `MAX_CSV_BYTES = 500_000` (dependency-free so the client imports it without bundling the parser).
+- **`src/lib/product-import.ts`** — `executeProductImport(csv, supplierId?)`: byte-length cap (`Buffer.byteLength` — Persian can't smuggle bytes), row cap, **name-based ref resolution** (category/brand/tag/supplier by lowercased name, active-only, single queries — no N+1), **existing-slug pre-scan** (one `distinct`), then **sequential per-row `Product.create`** (sanitize + Mongoose validators — the hardened path; `prepareVariantsForSave` is a no-op for simple products, noted in a comment). **Create-only v1:** duplicate in-file (`seenInFile`, marked only on SUCCESS) or in-DB (`existingSlugs` + E11000) → skipped + Persian reason; never overwritten. Per-row atomicity — a failing row never creates a partial product. Supplier mode ignores the `supplier` column and auto-sets ownership.
+- **`src/app/api/admin/products/import/route.ts`** + **`src/app/api/supplier/products/import/route.ts`** — `POST`; admin-only / supplier-only via `requireRoleOrError`. **Payload validated (empty 400, byte cap 413, row cap 400) BEFORE the rate limiter** (`product-import:<userId>` 20/15min → 429) — invalid payloads don't burn quota (project convention).
+- **`src/app/api/admin/products/export/route.ts`** + **`src/app/api/supplier/products/export/route.ts`** — `GET` CSV download (attachment, `text/csv; charset=utf-8`); supplier route **ownership-scoped** via `Supplier.findOne({ user: token.id })` (404 without a profile). Simple products only (`hasVariants: false`).
+
+### Client
+- **`src/hooks/use-product-import-export.ts`** — `useAdminProductImport` / `useSupplierProductImport` mutations, invalidating the **key factories** `adminProductKeys.lists()` / `supplierProductKeys.lists()`.
+- **`src/components/admin/product-csv-import.tsx`** — shared UI: file pick (client reads text; server is the parser), **«دانلود قالب»** template download (BOM + header), column-guide chips (required `*`; supplier hidden in supplier mode with explainer), per-row **report table** + created/skipped/failed badges + Persian toasts.
+- **`src/app/admin/products/import/page.tsx`** + **`src/app/supplier/products/import/page.tsx`** — thin pages (supplier passes `supplierMode`).
+- **Sidebars** (`admin` + `supplier`) — «ورود انبوه» nav entries (FileUp); **products pages** — «ورود انبوه» + «خروجی CSV» action buttons.
+- **`src/types/index.ts`** — `ProductImportRowStatus`, `ProductImportRowResult`, `ProductImportReport`.
+
+### Invariants
+- Zero existing-API/schema/model/index/migration changes; the import path never touches the existing product POST/PUT. `inventory.ts`, checkout, `notifyOrderEvent()`, `coupons.ts`, payment, RBAC untouched. New deps: `csv-parse` + `csv-stringify` only.
+
+### Verification
+- `scripts/verify-product-import-export.js` — **22/22 PASS** (see Session 51 status above).
+- `scripts/run-regression.js` — +1 suite → **29 suites** (`verify-product-import-export` after the variant group, before `verify-coupons-marketing`).
+- `npx tsc --noEmit` zero errors; full regression **29/29 PASS**; code review approved (2 rounds) — fixes: rate-limit ordering, `seenInFile` only-on-success, dead `prepareVariantsForSave` call removed, key-factory invalidation, `Buffer.byteLength` cap.
+- **No model/schema/index changes → no dev-server restart needed.**
+
+---
+
+## Last Completed Task (Session 50) — Homepage UX Redesign
+
+### Homepage (entry kept, rebuilt as sections)
+- **`src/app/page.tsx`** — rewritten as a **server component** (≈50 lines) composing self-contained sections in order: Hero Carousel, Quick Categories, Campaign Banner, Special Picks, Newest Products, Premium Collection, Popular Brands, Gift Collections, Trust Badges, Footer. No route-group move (approved routing rules).
+- **`src/lib/homepage-config.ts`** — static typed config: 3 hero slides, campaign banner, 3 gift collections (Persian copy, gradient art — no external images, no backend).
+- **`src/components/storefront/home/*`** — 12 new components: `hero-carousel` (opacity cross-fade — RTL-safe, no transform math; auto-advance 6s + pause-on-hover; dots + arrows; aspect `4/3 → 16/9 → 21/9` so copy never clips), `quick-categories` (reuses `usePublicCategories`, incl. `category.image`; grid on desktop / horizontal scroll-snap on mobile), `campaign-banner`, `special-picks` (countdown to end-of-day via `useCountdown` + cheapest-in-stock 12 from the pool — **real prices only**), `newest-products`, `premium-collection` (priciest 12, same pool), `popular-brands` (styled initial tiles — public brands API exposes no logo), `gift-collections`, `trust-badges` (original «چرا فروشگاه من؟» cards reused), `section-header` (title/subtitle/icon/link/aside), `product-rail` (native scroll-snap + **mobile-only** arrows — desktop is a static grid; loading/error/empty states; reuses `ProductCard` unchanged), `lazy-section` (IntersectionObserver rootMargin 250px → children mount + fetch only near the viewport).
+- **`src/hooks/use-countdown.ts`** — `useCountdown` (hydration-safe `ready` flag — no «اتمام امروز» first-paint flicker), `msUntilEndOfToday`, `formatCountdown`.
+- **`src/hooks/use-home-product-pool.ts`** — ONE query `{ sort: "newest", limit: 36 }` shared by Special Picks / Newest / Premium (React Query key dedup — no duplicate requests).
+
+### Header + footer (extracted, behavior preserved)
+- **`src/components/storefront/storefront-header.tsx`** — storefront header extracted verbatim from the layout + **additive header search** (reuses Session 49 `useSearchSuggestions` + `SearchSuggestions`; desktop inline input, mobile search icon → expanding row; selection/Enter → `/products?search=<term>`; `aria-label`).
+- **`src/components/storefront/storefront-footer.tsx`** — extracted verbatim (no behavior change).
+- **`src/app/(storefront)/layout.tsx`** — now a thin **server component** composing the shared header/footer.
+- **`src/hooks/use-catalog-filters.ts`** — additive one-time URL seed (`category`/`brand`/`tag`/`search`/`sort` from `window.location.search`, sort whitelisted) — homepage tiles + header search pre-filter the catalog; no params → behavior unchanged. `useState` stays the source of truth.
+- **`src/app/globals.css`** — `scrollbar-none` Tailwind v4 utility for horizontal rails.
+
+### Invariants
+- Zero API/model/schema/index/migration changes; zero new npm dependencies. `inventory.ts`, checkout reservation, `notifyOrderEvent()`, `coupons.ts`, payment, RBAC, `ProductCard` untouched. Homepage only.
+
+### Verification
+- `npx tsc --noEmit` **zero errors**; full sequential regression **28/28 PASS** (no suites added).
+- Browser QA (desktop + mobile): sections render in order, no console errors, header search suggestions live, category tile → filtered `/products?category=…`, mobile search icon + horizontal scroll, countdown chip live, campaign banner single-padded, hero not clipping.
+- Code review approved — fixes applied: double-container removed, rail arrows mobile-only, unused import removed, countdown `ready` flag, hero aspect raised, uniform `pt-10` section rhythm, search `aria-label`.
+- **No dev-server restart needed.**
+
+---
+
+## Last Completed Task (Session 49) — Search Suggestions / Autocomplete
+
+### Server — additive, read-only, no auth, rate-limited
+- **`src/app/api/search/suggest/route.ts`** — new `GET /api/search/suggest?q=<prefix>` endpoint: returns up to 10 matching product names + brand names (active only, prefix match, case-insensitive, sorted alphabetically). Product names first, then brand names. Duplicates deduped. Min 2 character prefix required. **IP-keyed rate limit** `search-suggest:<ip>` (30/15min, x-forwarded-for fallback). No auth (public catalog precedent). Pure read — never writes, never mutates.
+- **No schema changes, no model changes, no indexes, no migration** — queries existing `Product` and `Brand` collections with `find({isActive:true, name:{$regex:...}}).select("name").sort({name:1}).limit(8|4)`.
+
+### Client
+- **`src/hooks/use-search-suggestions.ts`** — `useSearchSuggestions(q)` React Query hook: enabled when `q.length >= 2`, staleTime 5min, gcTime 10min, query key `["search", "suggest", q]`.
+- **`src/components/storefront/search-suggestions.tsx`** — `<SearchSuggestions>` dropdown: renders below the search input (positioned `absolute` inside the `relative` wrapper), shows matching names with a `Search` icon, click-away-to-close via `mousedown` listener, loading skeleton / error 상태 / not-found states. Uses `onMouseDown` with `e.preventDefault()` so the selection fires before the input blur handler.
+- **`src/app/(storefront)/products/page.tsx`** — search input gains `suggestionsOpen` state: `onChange` opens dropdown, `onFocus` opens, `Escape` closes, clear button closes, `clearFilters` and mobile chip close it too. `<SearchSuggestions>` rendered inside the same `relative` wrapper as the input.
+
+### Verification
+- `scripts/verify-search-suggest.js` — **10/10 PASS** (see Session 49 status above).
+- `scripts/run-regression.js` — `verify-search-suggest` added (**28 suites**, inserted after `verify-search`, before `verify-pagination`).
+- `npx tsc --noEmit` zero errors; full regression **28/28 PASS**; code review approved (cleanup: unused import removed, dead keyboard-nav code removed, unused `SearchSuggestResponse` type removed).
+- **No model/schema/index changes → no dev-server restart needed.**
+
+A Persian RTL e-commerce platform built with Next.js 16, MongoDB, and TypeScript. Features auth (phone+password), RBAC (customer/supplier/admin), products, categories, brands, tags, **attributes & product variants (embedded)**, orders, checkout, Zarinpal payment, Telegram notifications, S3 file uploads, atomic inventory concurrency protection, server-side pagination, rate limiting, proper 401/403 auth distinction, input sanitization, and **real-time notifications (SSE)**.
+
+**Build status:** ✅ `npx tsc --noEmit` passes with zero errors.
+
+**Session 48 status:** ✅ **Storefront Search Quality Upgrade VERIFIED LIVE** — `scripts/verify-search.js` **17/17** against the real API: expanded search coverage (name, description, variant attribute values, brand/tag/category names resolved via reference collections), weighted relevance ranking (exact 100 > prefix 60 > substring 40 > brand/tag/category 25 > attribute value 20 > description 10, additive) via a ranked aggregation path that only activates for `search` + default `newest` sort (explicit sorts override relevance via the existing `find()` path; no-search byte-for-byte unchanged), pagination inside the aggregation (never fetch-all), response shape unchanged with NO `score` leak, populate preserved; regex kept as the primitive (Persian substring `پیراه` → `پیراهن` works, no `$text`, no indexes, no schema changes); attribute-value term flattens the array-of-arrays `variants.attributes` (expression-context) with `$reduce`/`$concatArrays` + `$type` guard (fixed a real 500); all filter ids ObjectId-cast at build time (aggregation `$match` does not auto-cast). Client: 300ms search debounce in `useCatalogFilters` (`searchQuery` stays the immediate input value; `debouncedSearch` commits to `queryParams`; useState kept — no `useSearchParams`). Regression runner now **27 suites** (`verify-search` after `verify-attribute-facets`). **No model changes → no dev-server restart needed.** See CHANGELOG.
+
+**Session 47 status:** ✅ **Storefront Faceted Filtering (Brand + Tag + Attribute Facets) VERIFIED LIVE** — `scripts/verify-facets.js` **22/22** + `scripts/verify-attribute-facets.js` **24/24** against the real API: public `GET /api/brands` + `GET /api/tags` (active-only, exact whitelist key-set `_id/name/slug`, **projection leak scan** clean); `/api/products` additive `brand=` + `tag=` filters (ObjectId-validated like `supplier=` — malformed 404, valid-but-nonexistent 200 empty) **and** nested attribute filters `attributes[<slug>]=<value>` (slug→attributeId, `$all`/`$elemMatch` AND semantics, unknown slug → 200 empty, simple products never match); new aggregation endpoint `GET /api/attributes/facets` (public, same filter params, **sticky-facet self-exclusion** via JS set intersections — picking red keeps blue visible with accurate counts — distinct-product counting via `$addToSet`, active-only, whitelist key-set, explicit ObjectId casting for the aggregation `$match`); combination coverage (attribute single / two-attribute AND / +brand / +category / +search / +supplier / +price / +tag), facet counts narrow with brand/category filters, sort/page params don't change counts, pagination + sorting preserved, `?id=`/`?slug=` detail unaffected. Client: `usePublicBrands`/`usePublicTags` (5min staleTime), shared `useCatalogFilters` hook (+ `selectedAttributes` state mapped to nested params via the index signature — **the Session 47 extensibility seam: zero data-flow changes**), one reusable `FilterChipGroup` (+ optional `counts` badge), generalized `buildQueryString()` (exported and reused by the facets hook). Regression runner now **26 suites**. **No dev-server restart needed** (no model changes). See CHANGELOG.
+
+**Session 46 status:** ✅ **Customer Self-Service Order Cancellation VERIFIED LIVE** — `scripts/verify-order-cancel.js` **17/17** against the real API: seed logins, unauth 401, supplier 403, admin 403, cross-user 404, cancel own `pending_payment` → 200 + `status=cancelled` + `payment.status=canceled`, **stock restored EXACTLY ONCE** (simple + variant), statusHistory audit `{status:"cancelled", actor:"customer", note:"customer_cancelled"}`, `order_cancelled` notification (key `order_<id>_order_cancelled`), re-cancel 409 + no double restore + count stays 1, variant restore, coupon released, paid/processing 409 + no restore, and the **strict cancel-vs-payment-verify race** (verify-wins / cancel-wins / concurrent-success / concurrent-NOK — exactly ONE wins, never paid+restored, no double restoration). Server: `POST /api/orders/[id]/cancel` — customer-only `requireRoleOrError(["customer"])` (401/403), ownership-scoped atomic claim `{_id, customer, status:"pending_payment", "payment.status":"pending"}` → `status=cancelled` + `payment.status=canceled`; **race-safe by construction** (both claims gate on `payment.status:"pending"` → per-document write serialization; verify NOK `$nin` branch + `stockRestored` idempotency backstop); post-commit `restoreOrderStock` + `releaseCouponUsage(orderId)` (exact coupons.ts export) + `notifyOrderEvent` (`order_cancelled` REUSED — no enum change) in local try/catch. Additive `actor:String` on `statusHistory` (no migration). **Model change ⇒ dev-server restart was required** (Mongoose model cache). Regression runner now **24 suites**. See CHANGELOG.
+
+**Session 45 status:** ✅ **Supplier Telegram Alerts (Payouts + New Reviews) VERIFIED LIVE** — `scripts/verify-telegram-alerts.js` **16/16** against the real API: unauth approve 401, supplier 403, request → reserve, admin approve → supplier in-app `payout_approved` (category `payout`, link `/supplier/wallet`, dedupe key `payout_<txn>_approved`), re-approve 400 + count stays 1, reject-without-reason 400, reject-with-reason → `payout_rejected` (message includes the sanitized reason), **Telegram fail-silent** (`sentToTelegram` stays false + balance debited + reserve released despite a failed callback — in-app record is the assertable source of truth), cross-user isolation (customer inbox has no payout notification), customer review on supplier's product → supplier in-app `new_review` (category `system`, link `/supplier/reviews`), duplicate review 409 + `new_review` count stays 1, cross-supplier isolation. Server: `notifyOrderEvent()` stays the ONLY facade; `POST /api/admin/payouts` notifies **AFTER** money-state commit in both flows (approve after `balanceAfter`, reject after reserve release — Session 33 ordering untouched), `POST /api/reviews` notifies the review's supplier after `Review.create`; +3 additive `Notification` type enums (`payout_approved`/`payout_rejected`/`new_review`, no index/migration); additive `telegram.ts` helpers `sendPayoutStatusNotification` + `sendNewReviewNotification`; post-commit notify blocks wrapped in local try/catch so a notification-side throw can never turn a committed payout/review into a 500. Client: `sentToTelegram` badge in the notifications inbox. **Model change ⇒ dev-server restart was required** (Mongoose model cache). New `scripts/verify-telegram-alerts.js`; regression runner now **23 suites**. See CHANGELOG.
+
+**Session 44 status:** ✅ **Coupon Marketing Surface VERIFIED LIVE** — `scripts/verify-coupons-marketing.js` **12/12** against the real API: public endpoint works WITHOUT auth (200, paginated), admin create with `isPublic:true` → 201 + persisted, **private coupons NEVER appear in the public list**, **raw-JSON LEAK SCAN** (deep recursive key-set scan of the full paginated response — none of usageLimit/perUserLimit/usedCount/startsAt/isActive/isPublic/updatedAt appear), inactive + not-started + expired public coupons hidden, pagination shape, admin toggles `isPublic` off/on → reflected live, **checkout with a public coupon → 201 + exact discount (10% of 100,000 = 10,000; validate/claim flow untouched)**, private coupon still valid in checkout but never listed. Server: `GET /api/coupons/public` (no auth) — filter `isPublic:true` + `isActive:true` + in-window (same semantics as `isCouponUsable()`), **strict projection** `.select("code type value minSubtotal maxDiscount endsAt")`, `createdAt` desc, Session 27 pagination, **IP-keyed rate limit** `coupons:public:<ip>` (60/15min, x-forwarded-for fallback — register precedent). `src/lib/coupons.ts` (validate/claim/release) **byte-for-byte untouched**. Model: additive `isPublic` (default false) on Coupon — no migration, no index changes. Client: public «کدهای تخفیف» page (copy-to-clipboard cards), «کدهای تخفیف» nav entry, checkout `PublicCouponPicker` (pre-fills the input; the UNTOUCHED validate → claim flow applies it — never a discount source of truth), admin form `isPublic` toggle + «عمومی» badge. **Model change ⇒ dev-server restart was required** (Mongoose model cache stripped the new field). New `scripts/run-regression.js` sequential runner (21 suites, fetch pre-flight, exit 1/2/0). See CHANGELOG.
+
+**Maintenance note (post-Session 44 bugfix):** ✅ **Registration DB-Outage Resilience** — `dbConnect.js` now resets `cached.promise = null` when `mongoose.connect()` rejects, so a transient DB outage no longer poisons every later `dbConnect()` call in the process (previously it stuck until a dev-server restart), and `GET /api/notifications/unread-count` returns `{ count: 0 }` (200) instead of 500 when the DB is unavailable (isolated to that endpoint). Pure bugfix — no new features, no schema changes; checkout/payment/inventory/coupon flows and the `notifyOrderEvent()` facade untouched. See CHANGELOG / PROJECT_STATE.
+
+**Session 43 status:** ✅ **Variant-Level Wishlist VERIFIED LIVE** — `scripts/verify-variant-wishlist.js` **19/19** against the real API: unauth POST 401, supplier 403, variant add 201 + in ids, GET variantId + variantSnapshot (sku/label), duplicate (product+variant) 200 `{added:false}` + 1 row (unique `{user, product, variantId}` index), **product-level + variant rows COEXIST for one product** (new index semantics), invalid variantId 400, foreign/unknown variant 400, variantId on simple product 400, inactive variant 400, GET field contract (variant row exposes snapshot; product-level row null+null), **ids deduped (1 id) + count = total rows**, DELETE with variantId removes exactly that row (product-level survives), DELETE without variantId removes ALL rows, **Session 38 resolver regression — saved variant B preferred over first in-stock A**, resolver fallback product-level → A, cross-user isolation. Server: `POST /api/wishlist` accepts optional `variantId` (validated as belonging to the product AND active — **no silent default variant**), `GET` returns `variantId`/`variantSnapshot`, `DELETE` is variant-row vs remove-all, `ids` deduped + total-row count; unique index migrated `{user, product}` → `{user, product, variantId}` via `scripts/migrate-wishlist-index.js` (data-first: dup scan + invalid variant-ref scan before the swap; collision-safe because all legacy rows have `variantId: null`). Client: detail heart **saves the SELECTED variant** (remove uses remove-all — product-level toggle), wishlist page renders an in-flow variant strip (label + SKU). **Index migration + model change ⇒ dev-server restart was required** (the old unique index would block coexistence). See CHANGELOG.
+
+**Session 42 status:** ✅ **Supplier Storefront Pages VERIFIED LIVE** — `scripts/verify-suppliers.js` **20/20** against the real API: public list 200 + paginated + active-only, public detail 200 with **exact whitelist key-set**, **raw-JSON PROJECTION LEAK SCAN** (none of user/contactPhone/bankAccount/telegramChatId/balance/pendingReserve appear in list, detail, or the product-populate response), inactive supplier excluded + detail 404, malformed id 404, **productCount = active + in-stock only** (storefront visibility rules), additive `supplier=` filter on `/api/products` (only that supplier's visible products; zero-stock/inactive/cross-supplier excluded; malformed → 404), settings PUT (trim + 500 cap, `telegramChatId` behavior unchanged, customer 403, **cross-supplier isolation**, empty body 400), pagination shape. Server: public `GET /api/suppliers` + `GET /api/suppliers/[id]` with a **strict projection whitelist** (`_id businessName logo description`) — additive `logo`/`description` on the Supplier model (no migration, no index changes), additive `supplier=` filter on the existing public products route. Client: `/suppliers` listing + `/suppliers/[id]` detail pages, supplier-card component, supplier links on product cards + product detail, «پروفایل عمومی فروشگاه» editing on the supplier wallet page, dynamic sitemap entries (fail-silent). **Model change ⇒ dev-server restart was required** (Mongoose caches models by name — the stale process stripped the new fields). See CHANGELOG.
+
+**Session 41 status:** ✅ **Admin Analytics & Reporting VERIFIED LIVE** — `scripts/verify-analytics.js` **16/16** against the real API: unauth 401, customer 403, supplier 403, admin 200 + full shape (zero-filled timeSeries to range length), invalid range 400, valid range=7 accepted, **read-only guarantee** (collection counts unchanged across repeated calls), **baseline→delta correctness** (robust to any pre-existing shared-DB data): today +1 order / +100M (cancelled excluded), day-5 +1 / +36M, 60-day-old order invisible in the 30-day window, top products/categories exact aggregates, coupon deltas (+2 coupons, +4 usedCount, +1 discounted order, +4M in-window discount), supplier deltas (earnings +800K, paidOut +300K count 1, pending +100K count 1, balance +500K, reserve +100K). Server: `GET /api/admin/analytics?range=7|30|90` (default 30) — admin-only, **pure read-only** (`aggregate`/`countDocuments` only), zero DB schema changes, no business-logic files touched. Client: `/admin/analytics` page with hand-rolled SVG revenue chart (no chart dependency), range selector, ranked products/categories, coupon + supplier cards, status funnel; «گزارش‌ها» sidebar entry. See CHANGELOG.
+
+**Session 40 status:** ✅ **Real-time Notifications (SSE) VERIFIED LIVE** — `scripts/verify-sse.js` **11/11** against the real API: unauth 401, authenticated connect (`text/event-stream` + `: connected`), **live delivery after real notification creation** (admin confirm → `order_confirmed` event), **customer isolation** (B's stream receives nothing), **supplier isolation** (checkout → supplier gets `new_order`; B gets nothing), **disconnect/reconnect** (close unregisters, fresh connection still receives), **heartbeat** (`: ping`). Server: `GET /api/notifications/stream` (SSE, `requireAuth` → 401, cap → 429, heartbeat, unified cleanup on abort+cancel) + `src/lib/notification-stream.ts` (**globalThis** registry — mirrors `dbConnect.js`, REQUIRED because Next dev can duplicate the module across bundles, which silently split subscribe from publish in the first run). `notifyOrderEvent()` stays the ONLY facade and publishes AFTER the DB write commits (fail-silent; dedupe never re-pushes). Client: `useNotificationStream()` in the bell (storefront + supplier headers) invalidates `notificationKeys.all`; 30s polling fallback untouched. Zero DB schema changes; no business-logic files touched. See CHANGELOG.
+
+**Session 38 status:** ✅ **Wishlist → Cart Bulk Move VERIFIED LIVE** — `scripts/verify-wishlist-cart.js` **18/18** against the real API + the REAL zustand cart store: unauth 401, supplier 403, empty → 0, simple product resolves with FRESH price/stock/maxQuantity, **resolver never decrements stock**, variant → first ACTIVE variant (disable A → fall back to B), inactive/deleted/OOS skipped, partial counts, **productIds foreign ids ignored (no IDOR)**, dedicated `wishlist-cart` rate limiter → 429, and real-store merge tests (existing item + add → merged qty 2, maxQuantity cap, distinct composite keys). Architecture: API-assisted resolver (read-only) + client-side `addItem`; zero changes to checkout/inventory/payment/cart-store. See CHANGELOG.
+
+**Session 37 status:** ✅ **Supplier Review Replies VERIFIED LIVE** — `scripts/verify-supplier-replies.js` **21/21** against the real API: supplier-only authz (401 ×1, customer/admin 403), fresh queue empty, reply → 200 + saved, **double-reply blocked 400 (atomic claim on `reply: null`)**, pending/rejected → 400, **cross-supplier 404**, empty/over-1000-char 400, HTML/script sanitized in DB, public `GET /api/reviews` includes reply, `review_replied` notification to the review author, queue status filter + pagination. Model: `Review.supplier` (denormalized at creation) + single `reply` subdoc `{author, text, at}` (`_id:false`, `default:null`). See CHANGELOG.
+
+**Session 36 status:** ✅ **Customer Notifications VERIFIED LIVE** — `scripts/verify-notifications.js` **18/18** against the real API: unauth 401 ×3, event wiring (admin confirm → customer `order_confirmed`; checkout → supplier `new_order` with no telegram chat id; supplier self-confirm; refund → `order_refunded`; payment NOK → `payment_cancelled`), atomic dedupe via unique partial index (count stays 1), single read + read-all idempotency, cross-user isolation 404, pagination/category/unreadOnly filters, stock restored exactly once on refund/NOK. Code-review follow-ups all applied: dead `orderNotificationKey()` helper removed, refund `customerId` cast simplified, payment verify hardened with `safeNotifyOrderEvent()`. See CHANGELOG.
+
+**Session 35 status:** ✅ **Wishlist VERIFIED LIVE** — `scripts/verify-wishlist.js` **14/14** against the real API: customer-only authz (401/403), idempotent add/remove (duplicate → 200 `{added:false}`), cross-user isolation, deleted products kept as `product:null` placeholders, inactive surfaced with `isActive:false`, pagination + `{ ids, count }`. See CHANGELOG.
+
+**Session 34 status:** ✅ **Customer Reviews & Ratings VERIFIED LIVE** — `scripts/verify-reviews.js` **20/20** against the real API: verified-purchase gate (DELIVERED order required), one review per order-item (unique `{customer, product, order}`, duplicate → 409), pending→approved/rejected moderation (atomic claim, reason required for reject), approved-only public list + `ratingSummary` + `ProductJsonLd` aggregateRating sync. See CHANGELOG.
+
+**Session 33 status:** ✅ **Supplier Payout Approval VERIFIED LIVE** — `scripts/verify-payouts.js` **17/17** against the real API: reserve semantics (balance untouched until approval), atomic `$expr` over-reservation guard, admin approve/reject with atomic claims (concurrent double-approve → one 200 + one 400), audit fields, approved-only totalPaidOut. See CHANGELOG.
+
+**Session 32 status:** ✅ **Admin Refund Flow VERIFIED LIVE** — `scripts/verify-refund.js` **12/12** against the real API: admin-only refunds (401/403), atomic paid→refunded claim (no double refund), stock restored exactly once (variant + simple), refund metadata + history. See CHANGELOG.
+
+**Session 31 status:** ✅ **Variant Polish VERIFIED LIVE** — `scripts/verify-variant-polish.js` **13/13** against the real API: variant order snapshots (variantLabel + SKU + image), old-order compat, supplier variant stock quick-edit (ownership, negative-stock guard, stockVersion concurrency), simple-product compat. See CHANGELOG.
+
+**Upload fix status:** ✅ VERIFIED LIVE (Session 29 follow-up) — `scripts/verify-upload-repro.js` **15/15**, `scripts/verify-upload-formats.js` **9/9** (PNG/WEBP/JPG, multi-image, MongoDB persistence, edit add/remove), Liara S3 public URL reachable, browser UI upload flow confirmed working (admin login → drop-zone → native file chooser → preview). See CHANGELOG.
+
+## Last Completed Task (Session 44) — Coupon Marketing Surface
+
+### Model + admin (additive, backward compatible)
+- **`src/models/Coupon.js`** — `isPublic` (Boolean, default `false`). **No migration, no index changes** — legacy coupons render as `false` (private). Private coupons stay hidden; only `isPublic` coupons can ever be exposed.
+- **`src/app/api/admin/coupons/route.ts` + `[id]/route.ts`** — create/update accept `isPublic` with a **strict `body.isPublic === true`** check (a string `"false"` can never coerce to true — reviewer fix). Admin GET returns full docs (isPublic included).
+
+### Public API (dedicated, read-only)
+- **`src/app/api/coupons/public/route.ts`** — `GET` (no auth): filter `isPublic:true` + `isActive:true` + in-window (`startsAt ≤ now`, `endsAt > now` — same semantics as `isCouponUsable()`), sort `createdAt` desc, paginated (Session 27 shape). **STRICT projection** `.select("code type value minSubtotal maxDiscount endsAt")` — `usageLimit`/`perUserLimit`/`usedCount`/`startsAt`/`isActive`/`isPublic` NEVER exposed. **IP-keyed rate limit** `coupons:public:<ip>` (60/15min, x-forwarded-for fallback — register precedent). Pure read — never validates, claims, or computes discounts.
+- `src/lib/coupons.ts` (`validateCoupon`/`claimCouponForOrder`/`releaseCouponUsage`) — **byte-for-byte untouched** (locked decision).
+
+### Storefront + checkout + admin
+- `src/app/(storefront)/coupons/page.tsx` — public «کدهای تخفیف» page: RTL, gradient header, coupon cards (code/value/min-subtotal/expiry, fa-IR dates), copy-to-clipboard + toast + «کپی شد!» inline state, skeleton/error/empty states. No title/description fields added (renders from existing fields).
+- `src/app/(storefront)/checkout/page.tsx` — inline `PublicCouponPicker`: lists only public coupons (hidden when `data.total === 0`), click pre-fills the coupon input + info toast; submission goes through the UNTOUCHED `/api/coupons/validate` → `/api/checkout` claim flow. Never a discount source of truth.
+- `src/app/(storefront)/layout.tsx` — «کدهای تخفیف» nav entry.
+- `src/app/admin/coupons/page.tsx` — `isPublic` toggle switch in the form + «عمومی» success badge in the list; edit-form sync.
+- `src/hooks/use-public-coupons.ts` (staleTime 5min) + `src/hooks/use-admin-coupons.ts` isPublic payload; types `PublicCoupon`, `PublicCouponsResponse`, `CouponDoc/Coupon.isPublic`.
+
+### Verification
+- `scripts/verify-coupons-marketing.js` — **12/12 PASS** (see Session 44 status above). **Wipes the shared `couponusages`/`ratelimits` collections → must stay the FINAL suite** in the sequential regression.
+- `scripts/run-regression.js` — NEW sequential runner: Node `fetch` pre-flight against `/api/auth/csrf`, 21 suites one at a time, per-suite PASS/SKIP/FAIL + tail summary, exit 1 on failure / 2 on skipped / 0 on all-pass.
+- `npx tsc --noEmit` zero errors (fix: Button has no `success` variant — Badge does — the copy button uses a conditional emerald className instead); full regression green across **all 21 suites, sequential** (Skipped: 0).
+- Code-reviewer approved (multiple rounds). Reviewer-driven fixes: (1) Button `variant="success"` TS2322 → conditional className; (2) public endpoint IP rate limiting; (3) admin PUT `!!isPublic` → strict `=== true`; (4) regression-runner nits (skip counting, curl → Node fetch, closing brace, header comment).
+
+### Ops note (IMPORTANT)
+- **Model change ⇒ dev-server restart REQUIRED.** `src/models/Coupon.js` gained `isPublic`; the running process kept the old Mongoose schema (`$set: { isPublic: true }` would be silently stripped). Force-killed the stale server by PID (`taskkill //F //PID` on :3000) and booted fresh → 12/12. Any future model edit needs the same restart.
+- Verify scripts MUST run sequentially (shared dev DB); verify-coupons-marketing runs LAST.
+
+---
+
+## Last Completed Task (Session 43) — Variant-Level Wishlist
+
+### Data-first index migration
+- **`scripts/migrate-wishlist-index.js`** — re-runnable; aborts (no index change) on any consistency failure: duplicate `(user, product)` scan, and every row with a `variantId` must reference a REAL, ACTIVE variant of that product. Then drops the old unique `{ user, product }` index and creates `{ user, product, variantId }`. **Collision-safe by construction:** pre-migration all rows have `variantId: null` and `{user, product}` was unique → at most one `(user, product, null)` row → no collision (MongoDB treats `null` as a value, so one product-level row per user+product stays enforced).
+
+### Model + API (additive, backward compatible)
+- **`src/models/Wishlist.js`** — unique index `{user, product}` → `{user, product, variantId}`; product-level rows (`variantId: null`) and variant-level rows (real `variantId` + denormalized `variantSnapshot { sku, label }`) coexist. Stale "future milestone" field comment cleaned.
+- **`src/app/api/wishlist/route.ts`** — `POST { productId, variantId? }`: optional `variantId` validated as BELONGING to the product AND active (malformed/foreign/unknown/inactive → 400; variantId on a simple product → 400). **NO silent default-variant fallback on the write path.** `variantSnapshot { sku, label }` denormalized at save. Idempotent via the unique index (duplicate → 200 `{added:false}`; E11000 backstop). `GET` exposes `variantId` + `variantSnapshot` (null on product-level rows — matches the `WishlistItem` type). `DELETE` with `variantId` → exactly that variant row; without → ALL rows for the product.
+- **`src/app/api/wishlist/ids/route.ts`** — `ids` deduped to one id per product (hearts fill when ANY row exists); `count` = TOTAL rows (matches the wishlist page total).
+
+### Client
+- **`src/hooks/use-wishlist.ts`** — variant-aware toggle (`variantId` pass-through; optimistic cache keeps the deduped product id on variant-remove, drops it on remove-all; count ±1, invalidated on settle).
+- **`src/app/(storefront)/products/[slug]/page.tsx`** — heart **saves the SELECTED variant** (`variantId: activeVariant?._id`); REMOVE uses remove-all rows (the detail heart is a product-level toggle — per-variant removal happens on the wishlist page).
+- **`src/app/(storefront)/wishlist/page.tsx`** — variant rows render an **in-flow strip below the card** (saved label + SKU, LTR-isolated SKU) — NOT an absolute overlay (would cover the card's add-to-cart button); deleted variant rows keep the snapshot label; placeholder removal passes `variantId`.
+
+### Session 38 resolver — unchanged, regression-proven
+- `src/app/api/wishlist/add-to-cart/route.ts` is **byte-for-byte untouched** (locked decision). The new suite proves its existing `row.variantId` preference: a variant-level row resolves to the SAVED variant (B) even though A is the first active in-stock; a product-level row falls back to the first active in-stock variant (A).
+
+### Verification
+- `scripts/verify-variant-wishlist.js` — **19/19 PASS** (see Session 43 status above).
+- `npx tsc --noEmit` zero errors; **full regression green across all 20 suites, sequential** (incl. the pre-existing wishlist/wishlist-cart suites — their product-level-only fixtures keep `ids.length === count`).
+- Code-reviewer approved (multiple rounds). Reviewer-driven fixes: lean-typing `any` cast (TS2339), wishlist-page badge overlay → in-flow strip (was covering the add-to-cart button), detail-heart remove → remove-all (no-op-removal edge case), stale model comment.
+
+### Ops note (IMPORTANT)
+- **Index migration + model change ⇒ dev-server restart REQUIRED.** The old `{user, product}` unique index would BLOCK coexistence (variant row for a product already holding a product-level row → E11000). `scripts/migrate-wishlist-index.js` swaps the index data-first, then the dev server was force-killed (`taskkill //F //PID` on :3000) and booted fresh. Any future index/model edit needs the same restart.
+- Verify scripts MUST run sequentially (shared dev DB — each suite wipes `wishlists` in its sweep).
+
+---
+
+## Last Completed Task (Session 42) — Supplier Storefront Pages
+
+### Public API (read-only, strict projection whitelist)
+- **`GET /api/suppliers`** (`src/app/api/suppliers/route.ts`) — public (no auth), active-only, paginated (Session 27 shape); rows `{ _id, businessName, logo, description, productCount }`; `productCount` from a single `Product.aggregate` with the **same visibility rules as the storefront catalog** (`isActive: true, stock: { $gt: 0 }`). **STRICT projection whitelist** `_id businessName logo description` — `user`, `contactPhone`, `bankAccount`, `telegramChatId`, `balance`, `pendingReserve` are NEVER selected.
+- **`GET /api/suppliers/[id]`** — public detail: `isValidObjectId` guard → 404 (no CastError 500), inactive/missing → 404, same whitelist + `productCount` via `countDocuments`; response key-set exactly `{ _id, businessName, logo, description, productCount }`.
+- **`GET /api/products?supplier=<id>`** — additive filter (ObjectId-validated → 404), applied to the existing active+in-stock filter; populate now `_id businessName logo` (additive).
+
+### Model + settings (additive, backward compatible)
+- **`src/models/Supplier.js`** — `logo` + `description` (String, default `""`, trim, maxlength 500). **No migration, no index changes** — existing docs render as absent (`|| ""`).
+- **`src/app/api/supplier/settings/route.ts`** — `PUT` accepts any of `telegramChatId`/`logo`/`description` (trim + 500 caps), empty body → 400; **`telegramChatId` behavior unchanged**; `GET` selects the new fields too.
+
+### Storefront + supplier UI
+- `src/app/(storefront)/suppliers/page.tsx` — public listing (header, supplier-card grid, pagination, skeleton/error/empty).
+- `src/app/(storefront)/suppliers/[id]/page.tsx` — public detail (breadcrumb, storefront header card, `usePublicProducts({ supplier: id, limit: 12 })` grid, pagination).
+- `src/components/storefront/supplier-card.tsx` — logo w/ error fallback, businessName, productCount, description → `/suppliers/[id]`.
+- `product-card.tsx` + `products/[slug]/page.tsx` — supplier name → `/suppliers/[id]` link.
+- `src/app/supplier/wallet/page.tsx` — «پروفایل عمومی فروشگاه» card (logo URL + description ≤500, dirty-tracked save/cancel, `useEffect` sync).
+- `src/app/sitemap.ts` — async; dynamic `/suppliers/[id]` entries (active only), **fail-silent** on DB errors.
+- Hooks: `use-public-suppliers.ts` (`usePublicSuppliers`/`usePublicSupplier`), `use-public-products.ts` (supplier param), `use-supplier-settings.ts` (`useUpdatePublicProfile`). Types: `PublicSupplier`.
+
+### Verification
+- `scripts/verify-suppliers.js` — **20/20 PASS** (see Session 42 status above): raw-JSON **projection leak scan** (list/detail/product-populate), exact whitelist key-set, inactive + malformed → 404, `productCount` semantics, `supplier=` filter (only that supplier's visible products), settings PUT (trim/cap, `telegramChatId` unchanged, customer 403, **cross-supplier isolation**, empty body 400), pagination.
+- `npx tsc --noEmit` zero errors; full regression green (19 suites, sequential — the one transient `verify-payment-retry` failure was a Zarinpal 502 that passed 13/13 in isolation; no Session 42 code involved).
+- Code-reviewer approved (4 rounds). Bugs fixed: missing `Store` import (tsc), lean-typing `any` cast in `[id]`, `SupplierFilters` index signature, broken-logo fallback, verify-script shared-user fixture bug (B and C shared a user → settings PUT resolved to B).
+
+### Ops note (IMPORTANT)
+- **Model change ⇒ dev-server restart REQUIRED.** Mongoose caches models by name on `mongoose.models`; the running process kept the OLD Supplier schema, so `$set` silently stripped `logo`/`description` and `select` returned `undefined` (3 verify failures). Force-killed the stale server by PID (`taskkill //F //PID`) and booted fresh → 20/20. Any future model edit needs the same restart (Session 41 needed none — it had no schema changes).
+- Verify scripts MUST run sequentially (shared dev DB).
+
+## Last Completed Task (Session 41) — Admin Analytics & Reporting
+
+### API (read-only by construction)
+- **`GET /api/admin/analytics?range=7|30|90`** (`src/app/api/admin/analytics/route.ts`) — admin-only via `requireRoleOrError(["admin"])` (401/403), invalid range → 400, `dynamic = "force-dynamic"`. **Only `aggregate` + `countDocuments` — never writes.** 13-element `Promise.all` aligned with a 13-name destructure.
+- **`summary`** — revenue/orders (cancelled excluded, same rule as `/admin/stats`), avgOrderValue, couponSavings, newCustomers.
+- **`timeSeries`** — per-UTC-day `$dateToString` buckets, **zero-filled** by `buildSeries` (same UTC window → no gaps).
+- **`topProducts`** (top 10 by item revenue) + **`topCategories`** (top 10 via `Order.items.product → Product → Category` `$lookup`; deleted refs → «نامشخص»).
+- **`couponStats`** — total/active/totalUses (from `Coupon.usedCount`) + `discountedOrders`/`totalDiscount` from an **UNBOUNDED** in-window aggregation (shared `DISCOUNT_MATCH`; never capped by the top-5 display list — code-review fix) + `topCoupons` (top 5).
+- **`supplierStats`** — all-time ledger (window-independent): earnings (`order_credit`), paidOut (approved), pending payouts, outstandingBalance + pendingReserve (inactive suppliers' balances included deliberately).
+- **`ordersByStatus`** — status funnel (incl. cancelled) with Persian labels.
+
+### Client
+- `src/hooks/use-admin-analytics.ts` — `useAdminAnalytics(range)` (staleTime 30s; range in query key).
+- `src/app/admin/analytics/page.tsx` — RTL dashboard: range selector, stat cards, **hand-rolled SVG `RevenueChart`** (no chart dependency), ranked top products/categories rows with weight bars, coupon stats card, supplier payouts card, status funnel. Skeletons / error-with-retry / empty states.
+- `src/components/layout/admin/admin-sidebar.tsx` — «گزارش‌ها» nav entry (BarChart3).
+- `src/types/index.ts` — `AdminAnalytics` + related types.
+
+### Verification
+- `scripts/verify-analytics.js` — **16/16 PASS** (see Session 41 status above). **Baseline→delta design:** snapshot → seed fixtures → snapshot → assert only the fixture *contribution*, so the suite is robust to pre-existing data in the shared dev DB.
+- `npx tsc --noEmit` zero errors; full regression green across all 16 suites (see CHANGELOG).
+- Code-reviewer approved (4 rounds). Bugs found & fixed during verification: (1) coupon `discountedOrders`/`totalDiscount` from the top-5 list → unbounded aggregation; (2) **critical** Promise.all/destructure misalignment (duplicate `discountSummary` in the array) 500'd every request → rewritten with exactly 13/13 bindings; (3) test-fixture fixes (users before login, item name = product name, delta assertions); (4) unused `Badge` import removed.
+
+### Ops notes
+- **Read-only by construction** — no model changes, no dev-server restart needed.
+- **Verify scripts MUST run sequentially** — they share the dev DB; a parallel batch flaked (supplier-replies 3/21, refund 1/12, sse 7/11, wishlist-cart 16/18, variant-polish 8/13) and every one passed 100% alone.
+
+## Last Completed Task (Session 40) — Real-time Notifications (SSE)
+
+### Server (transport layer — the facade is unchanged)
+- **`src/lib/notification-stream.ts`** — in-memory registry `Map<userId, Set<subscriber>>` on **globalThis** (`__notificationStreamRegistry`, mirrors `global.mongoose`). Next dev can bundle the route handler and the shared lib separately; a module-level Map split subscribe() from publish() in the first verify run and the singleton fixed it. `subscribeToUserStream()` (idempotent unsubscribe, key removed when empty), `publishToUserStream()` (snapshot + prune, never throws), `countUserConnections()`, `MAX_CONNECTIONS_PER_USER = 5`, `STREAM_HEARTBEAT_MS = 15_000`.
+- **`src/app/api/notifications/stream/route.ts`** — `GET` SSE: `requireAuth` (401) → cap (429) → `ReadableStream` + `text/event-stream` headers + `dynamic = "force-dynamic"`. `: connected` initial comment; 15s `: ping` heartbeat; **unified idempotent `cleanup()`** from both `req.signal` abort and `cancel()` — no interval/subscription leak.
+- **`src/lib/notifications.ts`** — publish AFTER `Notification.create` commits; E11000 dedupe returns early (no re-push); try/catch — fail-silent.
+
+### Client (polling fallback intact)
+- **`src/hooks/use-notifications.ts`** — `useNotificationStream()`: EventSource per authenticated session; invalidates `notificationKeys.all` on events. `onopen` resets failures (SSE comments don't fire `onmessage`); tracked 5s retry cleared on unmount; give up after 10 failures → 30s polling takes over.
+- **`src/components/storefront/notification-bell.tsx`** — mounts the stream (storefront + supplier headers).
+- **`src/types/index.ts`** — `NotificationStreamEvent`.
+
+### Verification
+- `scripts/verify-sse.js` — **11/11 PASS** (see Session 40 status above). SSE parsed in-process via `fetch` + `getReader()` + frame splitting.
+- `npx tsc --noEmit` zero errors; regressions green: notifications 18/18, supplier-replies 21/21, coupons 27/27, wishlist-cart 18/18, payouts 17/17, reviews 20/20, wishlist 14/14, refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15, variants-e2e 32/32, upload-formats 9/9, concurrency 10/10.
+- Code-reviewer approved (3 rounds). Follow-ups: unified `cleanup()` (heartbeat leak on cancel), tracked retry timer + 10-failure cap, `onopen` failure reset, removed redundant `onmessage` reset.
+
+### Ops notes
+- **Multi-instance:** in-memory registry is single-process; scale-out needs a Redis/Upstash pub/sub adapter with the same subscribe/publish API surface. Polling fallback keeps the UI correct either way.
+- If SSE events stop arriving in dev, check `globalThis.__notificationStreamRegistry` is shared across bundles (module duplication).
+- No model changes → no dev-server restart required for this session.
+
+## Last Completed Task (Session 38) — Wishlist → Cart Bulk Move
+
+### Architecture (API-assisted, per approved design)
+- **`POST /api/wishlist/add-to-cart`** (`src/app/api/wishlist/add-to-cart/route.ts`) — customer-only resolver: **auth → payload validation → rate limit → DB resolution**. Optional `{ productIds?: string[] }` (missing/empty = ALL rows; provided = only owned matching rows — filter is always `{ user: token.id, product: { $in } }`, so foreign ids are silently ignored, **no IDOR**). Dedicated rate-limit key `wishlist-cart:<userId>` (10/15min).
+- **Resolution (fresh DB):** deleted → skip `deleted`; `isActive:false` → skip `inactive`; simple `stock<=0` → skip `out_of_stock`; variant → prefer future row `variantId`, else **first active variant with stock > 0** → skip `no_available_variant`. Returns `{ added: [{ id, variantId?, sku?, variantLabel?, slug, name, price, maxQuantity, image?, variant? }], addedCount, skipped: [{ productId, reason }], skippedCount }` — `variant` block extensible for future metadata.
+- **Consistency:** resolver NEVER calls `reserveStock()`/`restoreStock()` (checkout keeps exclusive inventory authority); fresh prices minimize — never bypass — checkout's price-revalidation 409s; wishlist rows NEVER modified (keep-in-wishlist). **Zero changes** to checkout/inventory/payment/cart-store.
+
+### Client / types
+- `src/hooks/use-wishlist-cart.ts` — `useAddWishlistToCart` (undefined → all rows; no cache invalidation needed).
+- `src/app/(storefront)/wishlist/page.tsx` — «افزودن همه به سبد» button (disabled when `isLoading || !data || data.total === 0` — matches the resolver's ALL-pages scope), maps `added` into `addItem`, toasts (all / partial `X اضافه شد؛ Y مورد در دسترس نیست` / nothing-available), opens the cart drawer. Unreachable «سبد خرید خالی است» branch removed.
+- `src/types/index.ts` — `WishlistCartSkippedReason`, `WishlistCartAddItem`, `WishlistCartAddResult`.
+
+### Verification
+- `scripts/verify-wishlist-cart.js` — **18/18 PASS** (see Session 38 status above). Cart merge tests load the REAL `src/stores/cart-store.ts` in-process (transpiled to CJS via `typescript.transpileModule` from an in-project temp file so `require("zustand")` resolves).
+- `npx tsc --noEmit` zero errors; regressions green: wishlist 14/14, reviews 20/20, notifications 18/18, supplier-replies 21/21, refund 12/12, payouts 17/17, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15.
+- Code-reviewer approved (no critical feedback). Review follow-ups applied: dead resolver call removed from TEST 10 (rate-limit headroom 9/10), unreachable toast branch removed, real cart store loaded once before the merge tests with clean assert guards.
+
+### Bugs found & fixed
+1. **Verify-script:** transpiled cart-store temp file in `os.tmpdir()` → `Cannot find module 'zustand'`; moved the temp file inside the project root (`.cart-store-s38-tmp.js`, unlinked + swept).
+2. **Verify-script:** rate-limit cleanup used `{ key: ... }` but docs are stored as `_id: "rl:<key>"` → silent no-ops; fixed to target `_id`.
+3. **Environmental (not code):** payment-retry showed 4 gateway 502s from the stale dev server (sandbox.zarinpal.com connect-timeouts) — force-killed by PID and restarted fresh → 13/13.
+
+### Ops note
+- Dev server restart needed only for the stale-network issue, not for Session 38 (no model changes).
+
+## Last Completed Task (Session 37) — Supplier Review Replies
+
+### Review model (additive)
+- `src/models/Review.js` — `supplier` ref (copied from `product.supplier` at creation; **invariant documented** — the only review-creation write path is `POST /api/reviews`, and the reply route re-verifies LIVE ownership via `Review.product → Product.supplier`, never trusting the snapshot) + single `reply` subdocument `{ author (User ref), text, at }` with `_id: false` + index `{ supplier, status, createdAt: -1 }`
+- `src/models/Notification.js` — `review_replied` added to the `type` enum
+
+### API surface
+- `GET /api/supplier/reviews?status=&page=&limit=` — supplier-only queue: supplier resolved from `token.id` (never client-supplied), scoped via `Review.supplier`, populated customer (name) + product (name/slug/images) + `reply.author`, paginated (Session 27 shape)
+- `POST /api/supplier/reviews/[id]/reply` — `{ text }` supplier-only: ObjectId 400 → supplier doc 404 → text validated (empty / >1000 400) BEFORE the 30/15min rate limiter → sanitize → review 404 → **ownership** `Product.findOne({ _id, supplier })` (404 — same message for not-found/not-owned, no existence leak) → **approved-only** pre-check (pending/rejected → 400 «فقط به دیدگاه‌های تأییدشده») → **atomic claim** `findOneAndUpdate({ _id, status: "approved", reply: null }, { $set: { reply } })` (double-reply impossible — loser → 400) → notify the author with `review_replied` via local `safeNotifyOrderEvent()` (structurally fail-silent — a notification failure can never turn a committed reply into a 500)
+- `GET /api/reviews` (public) — now populates `reply.author` (additive, backward compatible); `POST /api/reviews` — stores the denormalized `supplier`
+
+### UI / hooks / types
+- `src/app/supplier/reviews/page.tsx` — reply queue: status tabs (همه / در انتظار / تأیید شده / رد شده), review cards, inline reply box, replied badge
+- `src/hooks/use-supplier-reviews.ts` — `useSupplierReviews(page, status)` + `useReplyToReview` (invalidates `["supplier-reviews"]`)
+- Supplier sidebar «پاسخ به دیدگاه‌ها» (MessageSquareText icon); storefront `reviews-section.tsx` renders «پاسخ فروشنده» under each approved review; admin reviews page shows a read-only reply line
+- Types: `ReviewReply`, `Review.reply?`, `SupplierReview`, `AdminReview.reply?`
+
+### Verification
+- `scripts/verify-supplier-replies.js` — **21/21 PASS** (see Session 37 status above)
+- `npx tsc --noEmit` zero errors; regressions green: reviews 20/20, notifications 18/18, wishlist 14/14, refund 12/12, payouts 17/17, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15
+- Code-reviewer approved (no critical feedback); minor non-blocking notes: denormalized `Review.supplier` drift if a product is ever reassigned to another supplier (documented invariant covers creation-time; the queue and the reply route intentionally use different scoping — old supplier sees it but can't reply, new supplier doesn't see it yet), rate limiter fires after the review-load + ownership queries (matches the established Session 34 convention)
+
+### Bug found & fixed
+- **`reply` MUST be a typed single-nested subdocument with `default: null`.** The first attempt used an inline subdoc with field-level defaults → Mongoose auto-populated `{ author: null, text: "", at: null }` on EVERY review → the atomic claim `{ reply: null }` never matched → every reply failed with «قبلاً به این دیدگاه پاسخ داده شده است». Fixed to `{ type: new mongoose.Schema({...}, { _id: false }), default: null }`.
+- **Ops:** the 5 failing tests were ALSO masking a stale-server problem — `pkill -f 'next dev'` doesn't reliably kill `next dev` on Windows, so the old process kept serving with the PRE-fix schema. Force-killed by PID (`taskkill //F //PID <pid>` after `netstat -ano | grep :3000`), booted fresh («Ready in 486ms»), then 21/21 passed.
+
+### Ops note
+- Dev server restart required after the Review model change (stale Mongoose model would auto-populate `reply` with the old inline-subdoc shape). On Windows, verify the old process actually died (check `netstat -ano | grep :3000` and the boot log) before trusting a "restart".
+
+## Last Completed Task (Session 36) — Customer Notifications
+
+### Notification core
+- `src/lib/notifications.ts` — `notifyOrderEvent()` is the SINGLE facade. NEVER throws, NEVER blocks. In-app is the source of truth; an optional `telegram()` callback is dispatched fire-and-forget and its boolean result lands in `sentToTelegram`. Dedupe: each event carries a `notificationKey` ("order_<id>_<event>") and the unique partial index `{ recipient, notificationKey }` rejects a second insert with E11000 → no-op
+- `src/models/Notification.js` — extended with `category` (order/payment/payout/system), `link` (role-appropriate deep-link stored at event time), `notificationKey`, `readAt`, `metadata`; indexes `{ recipient, createdAt: -1 }` + `{ recipient, isRead: 1 }` + unique partial `{ recipient, notificationKey }`
+
+### API surface
+- `GET /api/notifications?page=&unreadOnly=&category=` — authenticated inbox (customer/supplier/admin, self-scoped to `token.id`), paginated (Session 27 shape) + `unreadCount`
+- `GET /api/notifications/unread-count` — lightweight badge count (single indexed query)
+- `PUT /api/notifications/read-all` — idempotent mark-all-read, rate-limited 30/15min
+- `PUT /api/notifications/[id]/read` — owner-scoped (invalid id 400, not-found/not-owned 404, already-read idempotent 200 with `readAt` preserved)
+
+### Event wiring (best-effort, AFTER the business commit)
+- Checkout → supplier `new_order`; admin orders → customer `order_confirmed`/`order_shipped`/`order_delivered`/`order_cancelled`; supplier orders → supplier `order_confirmed`; admin refund → customer `order_refunded`; payment verify → customer `payment_paid`/`payment_failed`/`payment_cancelled` (via `safeNotifyOrderEvent()` — a notification failure can never flip the payment redirect outcome)
+
+### UI / hooks / types
+- `NotificationBell` (unread badge, 30s refetch + window focus) in storefront header + supplier header
+- Shared `NotificationsList` — category tabs, mark-all-read, deep links, unread highlight, pagination — used by `/notifications` (customer) and `/supplier/notifications`
+- `use-notifications.ts` — `useUnreadCount`, `useNotifications(page, {unreadOnly, category})`, `useMarkRead`, `useMarkAllRead`
+- Types: `NotificationCategory`, `NotificationItem`, `NotificationsResponse`, `UnreadCountResponse`
+
+### Verification
+- `scripts/verify-notifications.js` — **18/18 PASS** (see Session 36 status above)
+- `npx tsc --noEmit` zero errors; regressions green: wishlist 14/14, reviews 20/20, payouts 17/17, refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15
+- **Code-review follow-ups (all applied):** (a) removed unused `orderNotificationKey()` export; (b) refund route `customerId` triple-cast → single typed optional access; (c) `safeNotifyOrderEvent()` try/catch wrapper at all three payment-verify dispatch sites
+- **Ops note:** dev server restarted after the Notification model indexes; `login_ip` rate limiter accumulates across long test sessions on localhost (`::1`, max 30/15min) — clear the `ratelimits` collection if logins start 401ing
+
+## Last Completed Task (Session 35) — Customer Wishlist
+
+### Wishlist model
+- `src/models/Wishlist.js` — `user`/`product` refs + optional `variantId`/`variantSnapshot` (reserved for a future variant-wishlist milestone, unused today) + timestamps; unique `{ user, product }` (atomic dedupe) + `{ user, createdAt: -1 }`; registered in `dbConnect.js`
+
+### API surface
+- `GET /api/wishlist?page=&limit=` — customer-only, paginated (newest first). **Two-query approach** (rows then `Product.find({ _id: { $in } })`) instead of `.populate().lean()` — lean+populate leaves a missing ref as a raw ObjectId, which broke the deleted-product placeholder. Rows: `{ _id, productId (raw ref), product (doc or null), createdAt }`; deleted → `product:null` (row kept, still removable), inactive → `isActive:false` surfaced
+- `POST /api/wishlist { productId }` — product must exist + active (404); idempotent (unique index + E11000 → 200 `{added:false}`); rate-limited 30/15min AFTER payload validation (Session 34 convention)
+- `DELETE /api/wishlist { productId }` — idempotent remove scoped to `token.id`; rate-limited
+- `GET /api/wishlist/ids` — `{ ids, count }`; count computed separately so the header badge survives future pagination/filtering
+
+### Storefront UI / hooks / types
+- Heart on product cards (top-right, filled when saved) + «افزودن به علاقه‌مندی‌ها» button on the detail page — both gate guests (toast + `/login`)
+- `/wishlist` page — customer gate, paginated grid, deleted-product placeholder card with remove (uses `productId`), empty state
+- Header heart icon + rose count badge + «علاقه‌مندی‌ها» nav link (customer only)
+- `use-wishlist.ts` — `useWishlistIds` (cached 60s, powers every heart), `useWishlistItems(page)`, `useToggleWishlist` (optimistic ids/count + rollback; invalidates `["wishlist"]`)
+- Types: `WishlistItem` (`productId` + nullable `product`), `WishlistIdsResponse`
+
+### Verification
+- `scripts/verify-wishlist.js` — **14/14 PASS** (unauth 401, supplier 403, add → 201 + in ids, duplicate → `{added:false}` + DB count 1, invalid 400 / nonexistent 404, remove → `removed:true` + gone / no-op `removed:false`, cross-user isolation, pagination shape, deleted → `product:null` placeholder, inactive → listed with `isActive:false`, ids `{ ids, count }` matches DB)
+- `npx tsc --noEmit` zero errors; regressions green: reviews 20/20, payouts 17/17, refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15
+- **Bugs found & fixed live:** lean+populate missing-ref bug (two-query fix); inactive-add test fixture; code-review follow-ups (guest gate on detail heart, rate-limit ordering, cast cleanup)
+- **Ops note:** dev server restarted after the new Wishlist model
+
+## Previously Completed (Session 34) — Customer Reviews & Ratings
+
+### Verified-purchase gating (per user decision)
+- **Eligibility requires a DELIVERED order** (not merely paid): `Order.findOne({ _id, customer, "payment.status": "paid", status: "delivered", items: { $elemMatch: { product } } })` → 403 «فقط خریداران این محصول (پس از تحویل سفارش) می‌توانند دیدگاه ثبت کنند»
+- **One review per purchased order-item** — unique index `{ customer, product, order }` (atomic; E11000 → 409). A customer with two delivered orders for the same product can review once per order (verified by tests)
+
+### API surface
+- `GET /api/reviews?product=&page=&limit=` — public, **approved only**, paginated + `ratingSummary` (approved aggregate)
+- `POST /api/reviews` — customer-only, payload validated BEFORE the 20/15min rate limiter (invalid payloads don't burn quota), delivered-order gate, duplicate 409, sanitizePlainText, creates `pending` with immutable `itemSnapshot` copied from the order item
+- `GET /api/reviews/mine?product=` — customer-only: my reviews (any status) + `eligibleOrders` (delivered+paid, not yet reviewed) → storefront form gate
+- `GET /api/admin/reviews?status=` — admin queue (product + customer populated, paginated)
+- `POST /api/admin/reviews/[id]/moderate` — atomic claim `{_id, status:"pending"}` → processed exactly once (loser 400; `exists()` distinguishes 404); reason required + sanitized for reject; reviewedBy/reviewedAt recorded
+- `GET /api/products?slug=` — response includes `ratingSummary` (approved only) → storefront summary + `ProductJsonLd` `aggregateRating` SEO sync
+
+### UI / hooks / types
+- Storefront `ReviewsSection` — summary (average + stars + count), approved list (paginated), gated star-picker + textarea form, my-review status badges (در انتظار تأیید / تأیید شده / رد شده + reason)
+- Admin `/admin/reviews` page (status tabs, approve + reject-with-reason modal) + sidebar «دیدگاه‌ها»
+- `use-reviews.ts` (list/mine/submit — invalidates the `["reviews"]` prefix) + `use-admin-reviews.ts` (queue/moderate)
+- Types: `ReviewStatus`, `RatingSummary`, `Review`, `ReviewsResponse`, `AdminReview` (`Omit<Review, "customer"|"product">`), `MyReviewsResponse`, `Product.ratingSummary?`, `Product.brand?`
+
+### Verification
+- `scripts/verify-reviews.js` — **20/20 PASS** (401, supplier 403, paid-only-not-delivered 403, delivered → 201 + pending + snapshot, duplicate same order-item 409 + count stays 1, rating 0/6 400, empty/1001-char 400, HTML sanitized, pending invisible publicly, approve → public + ratingSummary, approve-again 400, reject-no-reason 400 / with-reason → rejected + reason + not public, customer moderate 403, products ratingSummary approved-only, different product review works, second delivered order → review again, mine endpoint eligible orders)
+- `npx tsc --noEmit` zero errors; regressions green: payouts 17/17, refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15
+- **Bugs found & fixed live:** rate limit 5→20/15min (too aggressive for multi-product review sessions); over-1000-char text now 400 (was silently truncating → caused 2 test failures); TS fixes (ratingSummary cast on lean union, `AdminReview` via Omit, missing `Product.brand`); code-review follow-ups: dead cache key → `reviewKeys.all`, moderate 404-vs-400, removed dead re-export
+- **Ops note:** dev server restarted after the new Review model
+
+## Previously Completed (Session 33) — Supplier Payout Approval System
+
+### Reserve semantics (the key change)
+- **Wallet POST now RESERVES, not debits:** `Supplier.findOneAndUpdate({ _id, $expr: { $lte: [{ $add: ["$pendingReserve", amount] }, "$balance"] } }, { $inc: { pendingReserve: amount } })` — a single-document atomic claim, so concurrent payout requests can never over-reserve (invariant `pendingReserve <= balance`). The payout Transaction is created `pending`; balance is NOT debited until an admin approves. Reserve rolls back if Transaction creation fails.
+- Wallet GET returns `availableBalance` (= balance − pendingReserve) + `pendingReserve`; `totalPaidOut` counts only **approved** payouts (legacy docs without `status` count via `status: { $in: ["approved", null] }`)
+
+### Admin payout queue
+- `GET /api/admin/payouts?status=` — list with supplier + bank + user populated
+- `POST /api/admin/payouts` — approve/reject with the **atomic claim** pattern (mirrors refund/retry): `findOneAndUpdate({ _id, type: "payout", status: "pending" }, { $set: { status: ... } })` → a request is processed exactly once; the concurrent loser gets 400
+  - **Approve:** claim → atomic `Supplier.findOneAndUpdate({ _id, pendingReserve: { $gte: amount } }, { $inc: { balance: -amount, pendingReserve: -amount } })` → rollback claim to pending (409) if the reserve is gone → record `balanceAfter`
+  - **Reject:** claim → release reserve only (balance untouched) + required sanitized `rejectionReason`
+
+### UI / hooks / types
+- Admin `/admin/payouts` page (status tabs, request cards, approve + reject-with-reason modal) + sidebar «تسویه فروشندگان»
+- Supplier wallet: «موجودی قابل برداشت» + «در انتظار تأیید» cards, payout form caps at availableBalance, status badges + rejection reason in history
+- `use-admin-payouts.ts`, `PayoutStatus`/`AdminPayout` types, `use-supplier-wallet` return type
+
+### Verification
+- `scripts/verify-payouts.js` — **17/17 PASS** (two independent suppliers): request reserves w/ balance unchanged, over-available 400, **concurrent over-reservation prevented**, customer 403, unauth 401, supplier cannot approve 403, admin lists pending, approve → debited + released + approved + reviewedAt, re-approve 400, **concurrent double-approve → exactly one 200 + one 400 (no double debit)**, reject-no-reason 400, reject → rejected + reason + balance untouched, wallet totals (approved-only paidOut + availableBalance)
+- `npx tsc --noEmit` zero errors; regressions green: refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15
+- **Bug found & fixed live:** wallet POST response double-counted `pendingReserve` (`{new:true}` already includes `amount`) → 80000 instead of 40000; downstream test cascades (request id never set → 400) traced to that single root cause + a test-sequencing issue (leftover pending reserves blocked later requests) fixed by splitting the suite across two suppliers
+- **Ops note:** dev server restarted after Transaction/Supplier model changes (stale Mongoose model would strip the new fields)
+
+### Crash-window tradeoff (documented, accepted — mirrors refund/retry)
+The approve claim flips `status → approved` BEFORE the Supplier debit. A crash between the two leaves the payout approved-but-not-debited with the reserve still held: the supplier can't be paid and can't re-request (re-approve → 400) — a stuck state recoverable by manual DB fix, NOT a double-payout or fraud path. Do NOT swap to debit-first: a crash would then strand a debited-but-pending request instead.
+
+### Non-blocking notes (no code changed)
+- `Transaction.status` defaults to `"pending"` for ALL types (order_credit/adjustment created elsewhere also carry it) — harmless because the admin list filters `type: "payout"` and the wallet UI guards `tx.type === "payout"`.
+- `reviewedBy` is stored but not populated in the admin GET list — audit records who reviewed but the UI can't show the name. Could populate `User.name` later.
+- The supplier wallet dashboard no longer shows the delivered-but-unpaid `pendingPayouts` card (still in the API response; the new «در انتظار تأیید» reserve card replaces it).
+
+## Previously Completed (Session 32) — Admin Refund Flow
+
+### Refund API
+- **Created** `POST /api/admin/orders/refund` (`src/app/api/admin/orders/refund/route.ts`): admin-only (`requireRoleOrError(["admin"])`), atomic claim `findOneAndUpdate({ _id, "payment.status": "paid" }, { $set: { "payment.status": "refunded", refund: { reason, refundedAt, refundedBy } }, $push: statusHistory })` → concurrent double-refund impossible (loser → 400; missing order → 404)
+- **Inventory:** stock restored exactly once via the shared idempotent `restoreOrderStock()` — variant-aware + `stockRestored`-idempotent, so a refund never increases stock twice even if stock was already restored; NO duplicated inventory logic
+- **Ordering note:** the claim runs BEFORE `restoreOrderStock()` — do NOT swap (restore-before-claim would release stock for orders whose claim then fails). Narrow crash window between claim and restore = order refunded but stock still held — no inflation risk, matches retry/cleanup tradeoffs
+- **Model:** `refund` subdocument `{ reason, refundedAt, refundedBy }` added to Order; `AdminOrder.refund?` in types
+
+### Admin UI
+- «بازپرداخت سفارش» button on the Payment card — shown only for `payment.status === "paid"`
+- Confirmation modal — reason required (confirm disabled until non-empty), error display, backdrop-close unless pending
+- Refunded badge + refund date + refund reason on the Payment card; `paymentLabels` gained canceled/refunded
+- `statusConfig` widened to `OrderStatusV2 | "refunded"` so the timeline renders «بازپرداخت شده» in Persian
+- `useRefundOrder` mutation (invalidates lists + detail)
+
+### Verification
+- `scripts/verify-refund.js` — **12/12 PASS** against the real API (401 unauth, customer 403, supplier 403, paid refund → 200 + metadata + stock 8→10 once, pending 400, double-refund 400 + no double restore, variant restore red 8→10 + summary 15, simple product 6→10, refunded event in statusHistory with reason)
+- `npx tsc --noEmit` zero errors; regressions green: payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15
+- **Ops note:** dev server restarted after the Order-model change (stale Mongoose model would strip the `refund` field in `findOneAndUpdate`)
+
+## Previously Completed (Session 31) — Variant Polish
+
+### Variant-aware Order Display
+- **Added** immutable `image` snapshot to `Order` + `SupplierOrder` item schemas + checkout (variant image, falls back to product image)
+- **Updated** admin / supplier / storefront order detail pages — render product thumbnail (or placeholder) + existing variantLabel + SKU
+- **Updated** `src/types/index.ts` — `AdminOrderItem`/`SupplierOrderItem` get `image?: string`
+- Old orders (no variant snapshot / no image) still render correctly — verified
+
+### Variant-aware Status Management (verified, no code needed)
+- Supplier orders route has **zero** stock logic — confirm/reject/ship/deliver never touch inventory
+- Admin orders only touch stock on `cancelled` via the shared `restoreOrderStock()`
+- Suppliers only ever see their own `SupplierOrder.items`
+
+### Supplier Variant Stock Quick Edit
+- **Added** `setVariantStock()` to `src/lib/inventory.ts` — SAME single inventory system as `reserveStock`/`restoreStock`: `$elemMatch` + `stockVersion` optimistic lock, atomic summary-stock delta sync, never negative, null on version mismatch
+- **Created** `POST /api/supplier/products/stock` — supplier-only, ownership enforced, variant-existence + negative-stock 400, 409 on concurrent modification
+- **Added** `useUpdateSupplierVariantStock` hook + inline `VariantStockEditor` («ویرایش سریع») on the supplier products page
+
+### Verification
+- `scripts/verify-variant-polish.js` — **13/13 PASS** (variant order snapshot, old-order compat, quick-edit → 200 + summary 13→33, cross-supplier 404, invalid variant 400, negative stock 400, concurrent quick-edits → one 200 + one 409, simple-product 400, simple checkout 201)
+- `npx tsc --noEmit` zero errors; regressions green: payment-retry 13/13, pagination 24/24, variants 16/16, upload-repro 15/15
+- Bugs fixed during the session: fixture `_id` (Mixed arrays), JSX fragment in products page, TEST 3 summary expectation (35→33)
+
+## Previously Completed (Session 30) — Payment Retry & Abandoned Cleanup
+
+### Payment Retry Flow
+- **Created** `POST /api/payment/retry` (`src/app/api/payment/retry/route.ts`): auth + own-order ownership (404), retryable only for `pending_payment` + zarinpal + `payment.status ∈ {pending, failed, canceled}` (paid/refunded → 400)
+- **Stock semantics (critical):** `pending` + `stockRestored=false` (reservation still held) → fresh authority, NO stock change; `failed`/`canceled` + `stockRestored=true` (verify already restored) → **atomic re-reserve** via shared `reserveStock()` before the new authority
+- **Concurrency + crash safety:** `payment.status → pending` is the atomic claim serializing same-order concurrent retries (second → 409); the still-pending path (`stockRestored=false`) uses a transient `payment.retryToken` claim (field added to `Order.payment`) for the same reason — without it two concurrent retries would both issue authorities and last-write-wins would strand a paid authority; `stockRestored` flipped to `false` only in the FINAL update (with the new authority) so the invariant `stockRestored=false ⟺ stock reserved` always holds → no inflation crash window; failures roll back re-reserved items and restore previous `payment.status`
+- Insufficient stock → 409 (no authority); gateway unreachable → 502
+
+### Storefront UI
+- «پرداخت مجدد» button on the customer order detail Payment card via `canRetryPayment()` gate (hidden when paid/refunded); `OrderPaymentStatus` extended with canceled/refunded
+
+### Abandoned Payment Cleanup
+- **Created** `src/lib/payment-cleanup.ts` — `cleanupAbandonedPayments(maxAgeHours=24)`: finds `pending_payment` orders with `updatedAt < now-24h` (updatedAt so a freshly-retried order gets a new window), atomically claims each (status→cancelled, payment.status→canceled), restores via shared `restoreOrderStock()` (idempotent)
+- **Created** `GET /api/payment/cleanup` — admin-only (`requireRoleOrError`) + optional `CRON_SECRET` header/Bearer for Vercel Cron-style runs; returns `{ cleaned }`
+
+### Latent Zarinpal Bug Fixed
+- **`src/lib/zarinpal.ts`** — added `hasZarinpalErrors()`: Zarinpal v4 returns `errors: []` (truthy empty array) on SUCCESS and a non-empty object on failure; the old `if (result.errors)` check made every payment request/verification fail (502 at retry, broken checkout & verify callback too). Applied to both `requestPayment` and `verifyPayment`.
+
+### Verification
+- `scripts/verify-payment-retry.js` — **13/13 PASS** (401, own-failed retry → 200 + new sandbox authority + stock 10→8 re-reserved, authority persisted with payment.status=pending + stockRestored=false, cross-user 404, paid 400, cancelled 400, pending retry stock unchanged 8, **concurrent retries of same pending order → one 200 + one 409**, abandoned >24h auto-cancel + restore 7→10 once, second cleanup no-op)
+- `npx tsc --noEmit` zero errors; pagination 24/24; variants 16/16; upload-repro 15/15
+- **Ops note:** the long-running dev server got stale network state (connect-timeout to sandbox.zarinpal.com) while fresh Node probes worked — **restarting the dev server fixed it** (no code change). A second stale-model issue (Order.retryToken claim silently stripped until restart) was also resolved by restarting the dev server.
+
+### Final Production Review (pre-Session-31 gate)
+- **Inventory safety:** code search confirmed the ONLY `$inc: { stock }` in app code is inside `src/lib/inventory.ts` (`reserveStock`/`restoreStock`/`restoreOrderStock`); every route (checkout, payment/verify, payment/retry, admin/orders, cleanup) imports the shared helpers — **no duplicated stock logic**
+- **Cleanup auth verified safe:** `GET /api/payment/cleanup` is admin-only via `requireRoleOrError` + optional `CRON_SECRET` header/Bearer (Vercel Cron style) — not an abusable stock-restore vector
+- **Verify callback unaffected:** `hasZarinpalErrors()` change keeps success (`errors: []`) and failure (non-empty object) distinct; the authority cross-check + atomic claims in the callback are intact
+- **Real bug found & fixed:** concurrent retries of a still-pending order could both issue authorities (pending path had no claim) → added the `payment.retryToken` atomic claim (409 for the loser) + concurrent-retry test
+- **Known/accepted:** crash mid-retry can leave an order un-retryable until the 24h cleanup cancels it (deliberate — no inflation window)
+
+### Crash-window tradeoff (documented, accepted)
+The retry claim sets `payment.status→pending` (failed/canceled path) or `payment.retryToken` (pending path) before issuing the authority. If the process dies mid-request, the order can be left un-retryable (409) until the 24h cleanup cancels it. This is deliberate: flipping `stockRestored` early would create a stock-INFLATION window (worse — violates Session 26's no-oversell guarantee). The invariant is never corrupted; worst case is a recoverable cancelled order.
+
+## Previously Completed (Session 29) — Attributes & Product Variants
+
+### Architecture
+- **Embedded `variants[]`** inside the Product document (Option A from design review — chosen because MongoDB is standalone, no multi-doc transactions, so single-document atomic `findOneAndUpdate` is mandatory)
+- Simple products (no variants) continue to work unchanged — no migration required
+- Summary fields are authoritative for list filters: `price = min(active variant price)`, `stock = sum(active variant stock)`, recomputed on every product write via `recomputeVariantSummary()`
+
+### Data Model
+- **New `src/models/Attribute.js`** — name, slug, type (text/color/size/number), values[], isActive
+- **Extended `src/models/Product.js`** — `hasVariants`, `variants[]` (sku, attributes[{attributeId,name,value}], price, supplierPrice, stock, **stockVersion**, images, isActive); global sparse unique index on `variants.sku`
+- **Order + SupplierOrder** items now store immutable `variantId`/`sku`/`variantLabel` snapshots
+
+### Shared Helpers (SINGLE SOURCE OF TRUTH)
+- **`src/lib/product-variants.ts`** — `validateVariants()`, `prepareVariantsForSave()`, `recomputeVariantSummary()`, `MAX_VARIANTS = 200`
+- **`src/lib/inventory.ts`** — `reserveStock(productId, qty, variantId?)`, `restoreStock()`, `restoreOrderStock()` (stockRestored-idempotent). Used by checkout, payment verify, and admin cancel — NO duplicated inventory logic.
+
+### Critical Concurrency Detail
+MongoDB does **NOT** allow the positional `$` operator in a **query filter** — `"variants.$.stock"` in the query never matches (silently returns null). Variant reservation uses **`$elemMatch`** in the query (binds `_id`/`isActive`/`stock`/`stockVersion` to the same element) + `"variants.$"` in the `$inc` update. This bug was found & fixed during Session 29 verification.
+
+### Verification
+- **Created** `scripts/verify-variants.js` — 16 tests against real MongoDB (simple + variant checkout, price override, wrong-price rejection, stock enforcement, concurrent last-unit, never-negative, restore-once idempotency, admin cancel, summary correctness, backward compat, pagination, search/sort)
+- **16/16 passing**, zero TypeScript errors
+- **Created** `scripts/verify-variants-e2e.js` — **32 tests against the real HTTP API** (real NextAuth login, real routes): attributes/categories, variant product create/edit, SKU 409s + E11000, concurrent checkout race, payment restore-once, authz 401/403. **32/32 passing**
+- **Bug found & fixed:** storefront product detail page `Rendered more hooks than during the previous render` (hooks after early returns) — fixed + browser-verified
+
+## Session 29 Follow-up — Upload Bug Fix VERIFIED (live)
+
+### What was verified
+- `scripts/verify-upload-repro.js` — **15/15** against the real HTTP API (REPRO A: manual `Content-Type: multipart/form-data` w/o boundary → fails; REPRO B: fixed path → 201 + real S3 URL; 401/403 authz; type/size/empty validation; product create/edit with image; supplier upload)
+- `scripts/verify-upload-formats.js` (**NEW**) — **9/9**: PNG, WEBP, JPG uploads → 201 + real Liara URL; product created with 3 images; **MongoDB persistence** of all 3 URLs; edit add 4th image + remove one
+- Liara S3 **public URL GET → 200**, content-type image/png, correct byte count (`PUBLIC_URL_OK`)
+- Browser (Chrome): admin login OK, product form renders, drop-zone opens native file chooser, no console errors. Native chooser automation isn't possible via browser tooling — file select verified at API level instead.
+- `npx tsc --noEmit` zero errors; `scripts/verify-pagination.js` 24/24; `scripts/verify-variants.js` 16/16 — all re-run and green
+
+### Files changed this follow-up
+- **Created** `scripts/verify-upload-formats.js` — complements repro script (formats + persistence + self-cleaning: deletes test S3 objects + File records)
+- No changes to the upload system itself (root cause was already fixed: no manual Content-Type header in `file-upload.tsx`; duck-typed File check in `api/upload/route.ts`)
+
+## Previously Completed (Session 28) — Security Hardening
+
+- Rate limiting on login (5/15min) + register (10/15min) via `src/lib/rate-limiter.ts`
+- `requireRoleOrError()` — 401 vs 403 distinction in all admin/supplier routes
+- `src/lib/sanitize.ts` — input sanitization on all user-controlled text
+
+## Previously Completed (Session 27) — API Pagination
+
+- DB-level pagination on all four list APIs (`countDocuments` + `find().skip().limit`)
+- `src/lib/pagination.ts`, `src/components/ui/pagination.tsx`, `PaginatedResponse<T>`
+- `scripts/verify-pagination.js` — 24/24 tests passing
+
+## Known Issues
+
+1. ~~**Verify scripts don't hit the real API routes**~~ — **RESOLVED:** `scripts/verify-variants-e2e.js` now exercises the real HTTP API end-to-end (32/32 passing). `scripts/verify-variants.js` still inlines algorithms for offline/CI use.
+2. **Slot event handling** — Custom Slot doesn't chain handlers like the real @radix-ui/react-slot
+3. **No unit/E2E framework** — No Vitest/Playwright setup (E2E is script-based; browser verified manually)
+4. **Google Fonts blocker** — `next build` fails when Google Fonts are unreachable (use `npx tsc --noEmit`)
+5. **Rate limiter race** — slight overages under extreme concurrency (acceptable)
+6. **Variant value check is case-sensitive** — preset `values` list uses exact `includes`; the variant builder uses dropdowns so fine today
+7. **Production index** — reindex `variants.sku` on existing collections if deploying to a live DB
+8. ~~**Variant auto-select UX**~~ — **RESOLVED:** storefront `VariantSelector` now lazily pre-selects the first available (in-stock active) variant, so customers see the resolved price/stock immediately instead of "انتخاب تنوع"
+
+## Last Completed Task (Session 48) — Storefront Search Quality Upgrade
+
+Implemented per the approved Session 48 scope: expanded search coverage + weighted relevance ranking while keeping regex as the primitive (Persian substring preserved — **no `$text`, no indexes, no schema changes**) and the existing `find()` path byte-for-byte untouched when search is absent or an explicit sort is given. **Verified live: `scripts/verify-search.js` 17/17, full sequential regression 27/27, `npx tsc --noEmit` zero errors, code review approved across rounds (fixes: aggregation expression-context array-of-arrays flatten for the attribute-value score term — a real 500; contiguous-term substring fixture; test-12 `names()` helper contract).** See CHANGELOG.
+
+### Server
+- **`src/app/api/products/route.ts`** — search `$or` expanded to name, description, `variants.attributes.value`, plus `brand`/`tags`/`category` via `Brand/Tag/Category.find({name: $regex}).distinct("_id")` (empty set contributes no matches). All filter ids ObjectId-cast at build time (aggregation `$match` does not auto-cast — Session 47 lesson). **Ranked path** activates only for `search` + `sort === "newest"`: one aggregation `$match → $addFields score → $sort {score:-1, createdAt:-1} → $skip/$limit → $project {_id:1}`, then the existing populate chain re-hydrates the page and re-sorts to rank order; explicit sorts override relevance via the existing `find()` path. Weighted additive scores: exact 100 / prefix 60 / substring 40 / brand-tag-category 25 / attribute value 20 / description 10. Attribute-value term flattens `$variants.attributes` (array-of-arrays in expression context) with `$reduce`/`$concatArrays` + `$type` guard.
+
+### Client
+- **`src/hooks/use-catalog-filters.ts`** — 300ms search debounce: `searchQuery` stays the immediate input value; `debouncedSearch` commits to `queryParams` after a quiet pause (empty clears immediately; `clearFilters` resets both). useState kept — no `useSearchParams` migration; React Query flow unchanged.
+
+### Verification
+- **`scripts/verify-search.js`** — **17/17 PASS** (exact-first relevance order, Persian partial substring, brand/tag/category/attribute-value search, combined search+facet, explicit-sort override, pagination totals/slicing/stability, name-beats-description, empty result, regex special-char escaping with literal-dot pDot/pWild, backward compat incl. keyset + newest-first + no `score` leak, detail endpoints unaffected, populate preserved).
+- **`scripts/run-regression.js`** — +1 suite → **27 suites** (`verify-search` after `verify-attribute-facets`).
+
+## Last Completed Task (Session 47) — Storefront Faceted Filtering (Brand + Tag + Attribute Facets)
+
+Implemented exactly per the locked architecture + the Session 47 extension (attribute facets, which validate the extensibility claim: the framework's index-signature + generic `buildQueryString` seam absorbed nested `attributes[<slug>]` params with **zero data-flow changes**). **Verified live: `scripts/verify-facets.js` 22/22 + `scripts/verify-attribute-facets.js` 24/24, full sequential regression 26/26, `npx tsc --noEmit` zero errors, code review approved (3 rounds).** See CHANGELOG.
+
+### Server
+- **`src/app/api/brands/route.ts`** + **`src/app/api/tags/route.ts`** (new) — public `GET`, active-only, STRICT projection `.select("name slug")` (key-set `_id/name/slug`), mirror `/api/categories`.
+- **`src/app/api/attributes/facets/route.ts`** (new) — public `GET`, aggregation facet counts with **sticky self-exclusion** (attribute selections applied as JS set intersections; aggregation `$match` carries product-level filters only + explicit ObjectId casts), active-only, whitelist key-set.
+- **`src/app/api/products/route.ts`** — additive `brand=` + `tag=` params (ObjectId-validated like `supplier=`; malformed → 404, valid-but-nonexistent → 200 empty) **and** nested `attributes[<slug>]=<value>` filters (`$all`/`$elemMatch` AND; unknown slug → 200 empty). Existing params/detail path unchanged.
+
+### Client
+- **`use-public-brands.ts`** + **`use-public-tags.ts`** + **`use-public-attribute-facets.ts`** (new) — React Query, staleTime 5min; the facets hook reuses the exported `buildQueryString` and strips sort/page from its query key.
+- **`use-catalog-filters.ts`** (new) — shared filter state hook (useState; page reset; active count; params mapping; clearFilters) + `selectedAttributes` slug→value state (Session 47 extension).
+- **`filter-chip-group.tsx`** (new) — ONE reusable presentational component (category/brand/tag) + optional `counts` badge prop (backward compatible).
+- **`use-public-products.ts`** — `buildQueryString()` generalized (iterate filters, skip undefined/null/empty; behavior preserved) and **exported**; `ProductFilters` exported.
+- **`src/app/(storefront)/products/page.tsx`** — rewritten on the hook + chip groups; attribute facet groups + active badges added; search/sort/pagination/empty/mobile-chip states preserved (reviewer fix: mobile gate → `activeFilterCount > 0`).
+- **`src/types/index.ts`** — additive `PublicBrand`/`PublicTag`/`AttributeFacet`/`AttributeFacetValue`/`AttributeFacetsResponse`.
+
+### Verification
+- **`scripts/verify-facets.js`** — **22/22 PASS** (facet endpoints, combinations, 404/empty semantics, inactive-ref identity, pagination/sorting preservation, detail unaffected, leak scan). Header aligned to the real 22-test flow.
+- **`scripts/verify-attribute-facets.js`** — **24/24 PASS** (nested filters single/AND/combos, unknown slug, simple-product never-match, inactive-ref identity, sticky self-exclusion, facet narrowing with brand/category, sort/page stability, pagination/sorting preservation, detail unaffected, leak scan).
+- **`scripts/run-regression.js`** — +2 suites → **26 suites** (verify-facets after verify-variant-polish, verify-attribute-facets after verify-facets; ordering rules preserved).
+
+### Invariants preserved
+- `inventory.ts` authority, checkout-only reservation, `notifyOrderEvent()` only facade, `coupons.ts` byte-for-byte, payment-verify untouched, RBAC unchanged, **no schema/migration/index/model changes**. **No dev-server restart needed.**
+
+## Next Task (Session 53 — TBD)
+
+Awaiting the Session 53 design review. **Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅ (completed this session); **Session 53 = Homepage CMS** (replace the static homepage configuration with a fully admin-manageable content system — new homepage content model with graceful fallback to the current static config, hero slider + campaign banners + gift collections + trust badges CRUD with desktop/mobile images via the existing S3 upload, ordering + active/inactive, designed for future block extensibility); Session 54 = **best-sellers rail** (client-side, reuses the existing shared product pool — only if still needed after the CMS work). Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
+
+### Session 38 post-review notes (documented)
+- **Keep-in-wishlist design:** «افزودن همه به سبد» never modifies wishlist rows; the client `addItem` merge is idempotent (composite-key dedupe, quantity clamped to `maxQuantity`).
+- **Resolver is read-only by design:** no `reserveStock` — checkout remains the single source of truth for price/stock/inventory; the resolver returns FRESH values so checkout's 409 price-revalidation fires as rarely as possible.
+- **Extensible `variant` metadata:** the `added` payload carries a `variant: { id, sku, label }` block reserved for future variant-wishlist features.
+
+### Session 37 post-review notes (documented)
+- **Single reply per review:** the atomic `reply: null` claim makes a second reply impossible; `reply` is a typed subdoc with `default: null` (NOT an inline subdoc — that auto-populates on every document and breaks the claim).
+- **Denormalized `supplier`:** copied from `product.supplier` at review creation. The reply route re-verifies live ownership via `Review.product → Product.supplier`; the queue scopes via the snapshot. If an admin product-reassignment flow is ever added, keep `Review.supplier` in sync (or join through the product in the queue query).
+- **Approved-only + sanitized + rate-limited:** replies allowed only on approved reviews; no admin moderation for replies (approved design).
+
+### Session 36 post-review notes (documented)
+- **Per-order-item reviews:** unique `{customer, product, order}` means a customer can review the same product once per delivered order. The storefront form targets the most recent eligible order; if multiple eligible orders exist the customer can submit one review per order.
+- **SEO sync:** `ratingSummary` is computed on the fly from approved reviews in BOTH `/api/reviews` and `/api/products?slug=` — never stored, so it can't drift out of sync with moderation.
+- **Rate limit ordering:** payload validation runs before the 20/15min limiter, so invalid submissions don't consume a legit customer's quota.
+
+### Session 33 post-review notes (documented)
+- **Crash window (accepted):** approve claim flips `status → approved` before the Supplier debit — a crash between leaves a stuck approved-but-not-debited payout (reserve held, re-approve → 400), recoverable by manual DB fix, NOT a double-payout path. Do NOT swap to debit-first.
+- **Reserve invariant:** `pendingReserve <= balance` guaranteed by the atomic `$expr` claim at request time + the `pendingReserve: { $gte: amount }` guard at approve time.
+- **`Transaction.status` default is `"pending"` for all types** — harmless given `type: "payout"` filters everywhere.
+
+## Rules
+
+- UI text in Persian, code/comments in English
+- TypeScript validation: `npx tsc --noEmit`
+- Use `requireRoleOrError()` from `@/lib/auth-utils` for API auth → `const { token, error } = await requireRoleOrError(req, roles); if (error) return error;`
+- Use `unauthorized()` (401), `forbidden()` (403), `serverError()` (500) helpers
+- Import `cn()` from `@/lib/utils`
+- Mongoose models: `mongoose.models.Name || mongoose.model("Name", Schema)`
+- Inventory: ALWAYS use `reserveStock()`/`restoreStock()`/`restoreOrderStock()` from `@/lib/inventory` — NEVER manual read-then-write or direct `$inc`
+- Variant reservations: use `$elemMatch` in the query filter, `$` only in the update
+- Stock restoration: ALWAYS use the `stockRestored` atomic claim pattern
+- User input: Always sanitize with `sanitizePlainText()` from `@/lib/sanitize`
+- Rate limit: Use `rateLimiter.check()` from `@/lib/rate-limiter`
+- Verification: after variant/inventory changes run `node scripts/verify-variants.js` (16 tests) + `node scripts/verify-pagination.js` (24 tests) + `node scripts/verify-variants-e2e.js` (32 tests, requires dev server on :3000 + real DB)
+- Uploads: NEVER set `Content-Type: multipart/form-data` manually — let the browser add the boundary; use the duck-typed File check (not `instanceof File`) in route handlers
+- Upload verification: `node scripts/verify-upload-repro.js` (15 tests, requires dev server on :3000 + S3/Liara env)
+
+## First Action
+
+1. Read `src/app/api/admin/orders/route.ts`, `src/app/api/payment/verify/route.ts`, `src/models/Order.js`, admin order detail page
+2. Design the refund transition (paid → refunded) + stock restoration via `restoreOrderStock()`
+3. Implement, then run `npx tsc --noEmit` + verify scripts

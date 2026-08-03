@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# in-process verify-script transpile temp files
+.db-reconnect-tmp-*.js
+.cart-store-s38-tmp.js
