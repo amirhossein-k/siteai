@@ -42,7 +42,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await validateCoupon(rawCode);
+    // Session 55 — pass the authenticated user so a valid-but-not-for-you
+    // coupon returns the distinct eligibility error instead of the rules
+    // (a non-eligible user must never be told the coupon is "invalid").
+    const result = await validateCoupon(rawCode, token!.id);
     if (!result.ok || !result.coupon) {
       return NextResponse.json(
         { error: result.error || "کد تخفیف معتبر نیست" },

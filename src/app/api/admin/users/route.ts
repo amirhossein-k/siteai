@@ -9,6 +9,7 @@ import User from "@/models/User";
 import Supplier from "@/models/Supplier";
 import type { UserRole } from "@/types";
 import { sanitizePlainText } from "@/lib/sanitize";
+import { escapeRegex } from "@/lib/pagination";
 
 export async function GET(req: NextRequest) {
   const { error } = await requireRoleOrError(req, ["admin"]);
@@ -19,10 +20,16 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const roleFilter = searchParams.get("role");
+    // Session 55 — free-text search for the coupon user picker (name/phone)
+    const search = searchParams.get("search");
 
     const filter: Record<string, unknown> = {};
     if (roleFilter && ["customer", "supplier", "admin"].includes(roleFilter)) {
       filter.role = roleFilter;
+    }
+    if (search && search.trim()) {
+      const q = new RegExp(escapeRegex(search.trim()), "i");
+      filter.$or = [{ name: q }, { phone: q }];
     }
 
     const users = await User.find(filter)

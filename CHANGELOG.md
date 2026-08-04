@@ -1,5 +1,27 @@
 # Changelog
 
+## Session 55 (August 2026) — Private / Targeted Coupons (Coupon Eligibility / Audience)
+
+### Architecture (approved design — Option C embedded discriminated `eligibility`; no redesign)
+- **Audience embedded on the coupon doc** (`src/models/Coupon.js`): `eligibility { mode: "public" | "assigned_users" | "user_groups", assignedUsers: ObjectId[], groups: String[] }`. `public` is the default and a MISSING eligibility block means public → **zero migration for existing coupons** (Session 44 `isPublic` precedent). Two multikey indexes (`eligibility.assignedUsers`, `eligibility.groups`) exist ONLY for future list/admin lookups — never on the claim hot path.
+- **Eligibility checker in `src/lib/coupons.ts`** — the SINGLE enforcement point, reused by both preview and checkout: `getCouponEligibility` (missing/invalid → public, fail-safe), `isUserEligibleForCoupon` (pure JS membership over the already-fetched lean doc — **zero extra DB round-trips** on the money path), `userGroupsOf()` (NOT implemented yet → returns `[]` so group coupons are ineligible for EVERYONE — **fail-closed, never a silent grant**), `parseCouponEligibility` (admin input validation: mode whitelist, ObjectId guards → 400, dedupe, caps 1000 users / 50 groups / 32-char slugs, lowercase group slugs, sanitize).
+- **Validation flow** (approved order): exists → active/window → **usage-limit pre-check** (pure JS, so an exhausted coupon never leaks its audience) → **eligibility** (distinct Persian error «این کد تخفیف برای شما قابل استفاده نیست» — never «invalid coupon») → minSubtotal → atomic global claim → per-user claim → apply. Sub-second audience races accepted (mirrors the documented window race); the atomic claim remains the authoritative usage enforcement.
+
+### APIs (additive, RBAC unchanged)
+- **`POST/GET /api/admin/coupons`** — POST accepts `eligibility` (validated); GET **populates** `eligibility.assignedUsers` (name/phone) — one extra query for the whole list, no N+1.
+- **`PUT /api/admin/coupons/[id]`** — accepts `eligibility` (whole-block replace; additive partial-update semantics preserved for every other field).
+- **`POST /api/coupons/validate`** — now passes `token.id` into `validateCoupon(rawCode, userId)` so the preview is eligibility-aware (a valid-but-not-for-you coupon returns the eligibility error, not the rules).
+- **`GET /api/admin/users`** — additive `search` param (name/phone regex, `escapeRegex`) for the admin user picker.
+- **`GET /api/coupons/public` UNCHANGED** — strict projection already excludes eligibility; the marketing leak scan extended to assert `eligibility`/`assignedUsers`/`groups`/`targetingRules` never appear.
+
+### Admin UI
+- `/admin/coupons` — «مخاطب کد تخفیف» audience section in the create/edit form: mode segmented control (عمومی / کاربران منتخب / گروه کاربری), **debounced user picker** (searches `GET /api/admin/users?role=customer&search=…`, selected chips with remove, results capped at 50), groups comma-input (lowercased), audience badges in the list (کاربران منتخب (n) / گروهها). Client guards: assigned_users needs ≥1 user, user_groups needs ≥1 group.
+
+### Verification
+- **`scripts/verify-coupon-eligibility.js` — 18/18 PASS** (admin authz 401/403; invalid eligibility → 400; assigned_users single + multi create + persisted shape; user_groups lowercase storage; admin GET populated names/phones; validate eligibility-aware both directions; **non-assigned checkout → 400 + NO order + NO claim (usedCount untouched, no couponusage row)**; assigned checkout → 201 + exact discount; user_groups fail-closed on both validate + checkout; public coupon default backward-compatible; PUT reassign [A]→[B] flips eligibility; public-list leak scan). Cleans its own PREFIX'd fixtures incl. all its couponusage rows (no orphans).
+- Regression runner now **31 suites** (`verify-coupon-eligibility` after `verify-coupons-marketing`). Full regression **31/31 PASS** (incl. existing `verify-coupons` 27/27 and `verify-coupons-marketing` 12/12 unchanged — public coupons are a no-op through the new eligibility step). `npx tsc --noEmit` zero errors; lint clean on all changed files; production build passes; code review approved (reviewer findings M1–M3/L1–L3 all addressed).
+- **Ops note:** Coupon model change ⇒ dev-server restart required (done).
+
 ## Session 53 (August 2026) — Homepage CMS (Admin-Manageable Composition + Content)
 
 ### Architecture (v3, per approved design — no redesign)

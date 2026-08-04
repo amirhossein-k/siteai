@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { showToast } from "@/components/ui/toast";
+import { cn } from "@/lib/utils";
 import {
   Plus,
   Search,
@@ -24,15 +25,19 @@ import {
   Ticket,
   Percent,
   Banknote,
+  Users,
+  Layers,
 } from "lucide-react";
 import {
   useCoupons,
   useCreateCoupon,
   useUpdateCoupon,
   useDeleteCoupon,
+  useCustomerSearch,
   type CouponFormData,
+  type UserOption,
 } from "@/hooks/use-admin-coupons";
-import type { AdminCoupon } from "@/types";
+import type { AdminCoupon, CouponEligibilityMode } from "@/types";
 
 const emptyForm: CouponFormData = {
   code: "",
@@ -46,7 +51,121 @@ const emptyForm: CouponFormData = {
   isPublic: false,
   usageLimit: 0,
   perUserLimit: 0,
+  // Session 55 — audience defaults to public
+  eligibilityMode: "public",
+  assignedUserIds: [],
+  groups: [],
 };
+
+const MODE_OPTIONS: Array<{
+  value: CouponEligibilityMode;
+  label: string;
+  hint: string;
+}> = [
+  { value: "public", label: "عمومی", hint: "همه کاربران" },
+  { value: "assigned_users", label: "کاربران منتخب", hint: "فقط کاربران مشخص" },
+  { value: "user_groups", label: "گروه کاربری", hint: "فقط گروه‌های مشخص" },
+];
+
+/**
+ * Session 55 — assigned-user picker (search + multi-select) for
+ * mode:assigned_users coupons. Searches customers via GET /api/admin/users
+ * (role=customer + free-text search), renders selected chips + a searchable
+ * dropdown of remaining candidates.
+ */
+function UserPicker({
+  selectedIds,
+  details,
+  onToggle,
+}: {
+  selectedIds: string[];
+  details: Record<string, { name: string; phone: string }>;
+  onToggle: (user: UserOption) => void;
+}) {
+  const [query, setQuery] = useState("");
+  // Debounce the search so each keystroke doesn't fire a fresh API request.
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+  const { data: users, isLoading } = useCustomerSearch(debouncedQuery);
+
+  const candidates = (users || []).filter(
+    (u) => !selectedIds.includes(u._id)
+  );
+  const selected = selectedIds
+    .map((id) => details[id])
+    .filter((d): d is { name: string; phone: string } => Boolean(d));
+
+  return (
+    <div className="space-y-2">
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selected.map((u, i) => (
+            <span
+              key={selectedIds[i] || i}
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary"
+            >
+              <span className="max-w-40 truncate">{u.name}</span>
+              <span dir="ltr" className="font-mono text-[10px] opacity-70">
+                {u.phone}
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  onToggle({ _id: selectedIds[i], name: u.name, phone: u.phone })
+                }
+                aria-label="حذف کاربر"
+                className="rounded-full p-0.5 transition-colors hover:bg-primary/20"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <Input
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        placeholder="جستجوی نام یا شماره موبایل..."
+        className="h-9 text-sm"
+      />
+      {open && (
+        <div className="max-h-44 overflow-auto rounded-md border bg-background shadow-sm">
+          {isLoading && (
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              در حال جستجو...
+            </p>
+          )}
+          {!isLoading && candidates.length === 0 && (
+            <p className="px-3 py-2 text-xs text-muted-foreground">
+              کاربری یافت نشد
+            </p>
+          )}
+          {candidates.slice(0, 50).map((u) => (
+            <button
+              key={u._id}
+              type="button"
+              onClick={() => onToggle(u)}
+              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm text-left transition-colors hover:bg-accent"
+            >
+              <span className="truncate">{u.name}</span>
+              <span dir="ltr" className="shrink-0 font-mono text-xs text-muted-foreground">
+                {u.phone}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formatToman(n: number): string {
   return n.toLocaleString("fa-IR") + " تومان";
@@ -58,11 +177,26 @@ export default function AdminCouponsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<CouponFormData>(emptyForm);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  // Session 55 — name/phone details for assigned-user chips (from the
+  // populated eligibility.assignedUsers on edit, or the picker search results)
+  const [assignedDetails, setAssignedDetails] = useState<Record<
+    string,
+    { name: string; phone: string }
+  >>({});
 
   const { data: coupons, isLoading, isError, refetch } = useCoupons();
   const createCoupon = useCreateCoupon();
   const updateCoupon = useUpdateCoupon();
   const deleteCoupon = useDeleteCoupon();
+  // Timestamp for the "منقضی شده" badge, captured via a lazy state initializer
+  // (avoids calling the impure Date.now() directly in render — lint purity rule)
+  // and refreshed on every list reload.
+  const [listNow, setListNow] = useState(() => Date.now());
+  // refresh = refetch + fresh badge timestamp (event handlers may call Date.now())
+  const refresh = () => {
+    setListNow(Date.now());
+    void refetch();
+  };
 
   const filteredCoupons = useMemo(() => {
     if (!coupons) return [];
@@ -74,10 +208,15 @@ export default function AdminCouponsPage() {
   const openCreateForm = () => {
     setEditingId(null);
     setFormData(emptyForm);
+    setAssignedDetails({});
     setShowForm(true);
   };
 
   const openEditForm = (coupon: AdminCoupon) => {
+    const elig = coupon.eligibility;
+    const assignedUsers = (elig?.assignedUsers || []).map((u) =>
+      typeof u === "string" ? { _id: u, name: u, phone: "" } : u
+    );
     setEditingId(coupon._id);
     setFormData({
       code: coupon.code,
@@ -91,8 +230,34 @@ export default function AdminCouponsPage() {
       isPublic: coupon.isPublic,
       usageLimit: coupon.usageLimit,
       perUserLimit: coupon.perUserLimit,
+      eligibilityMode: elig?.mode || "public",
+      assignedUserIds: assignedUsers.map((u) => String(u._id)),
+      groups: elig?.groups || [],
     });
+    setAssignedDetails(
+      Object.fromEntries(
+        assignedUsers.map((u) => [String(u._id), { name: u.name, phone: u.phone }])
+      )
+    );
     setShowForm(true);
+  };
+
+  /** Session 55 — toggle a user in the assigned list (picker selection/removal). */
+  const toggleAssignedUser = (user: UserOption) => {
+    setFormData((prev) => {
+      const has = prev.assignedUserIds.includes(user._id);
+      return {
+        ...prev,
+        assignedUserIds: has
+          ? prev.assignedUserIds.filter((id) => id !== user._id)
+          : [...prev.assignedUserIds, user._id],
+      };
+    });
+    setAssignedDetails((prev) => ({ ...prev, [user._id]: { name: user.name, phone: user.phone } }));
+  };
+
+  const setEligibilityMode = (mode: CouponEligibilityMode) => {
+    setFormData((prev) => ({ ...prev, eligibilityMode: mode }));
   };
 
   const setNumber = (key: keyof CouponFormData, raw: string) => {
@@ -109,19 +274,41 @@ export default function AdminCouponsPage() {
       showToast.error("درصد تخفیف نمی‌تواند بیشتر از ۱۰۰ باشد");
       return;
     }
+    if (
+      formData.eligibilityMode === "assigned_users" &&
+      formData.assignedUserIds.length === 0
+    ) {
+      showToast.error("حداقل یک کاربر را انتخاب کنید");
+      return;
+    }
+    if (formData.eligibilityMode === "user_groups" && formData.groups.length === 0) {
+      showToast.error("حداقل یک گروه را وارد کنید");
+      return;
+    }
+
+    // Session 55 — API payload carries the eligibility block (mode + users + groups)
+    const payload = {
+      ...formData,
+      eligibility: {
+        mode: formData.eligibilityMode,
+        assignedUsers: formData.assignedUserIds,
+        groups: formData.groups,
+      },
+    };
 
     try {
       if (editingId) {
-        await updateCoupon.mutateAsync({ id: editingId, data: formData });
+        await updateCoupon.mutateAsync({ id: editingId, data: payload });
         showToast.success("کد تخفیف با موفقیت به‌روزرسانی شد");
       } else {
-        await createCoupon.mutateAsync(formData);
+        await createCoupon.mutateAsync(payload);
         showToast.success("کد تخفیف با موفقیت ایجاد شد");
       }
       setShowForm(false);
       setEditingId(null);
       setFormData(emptyForm);
-      refetch();
+      setAssignedDetails({});
+      refresh();
     } catch (err: unknown) {
       const message =
         err && typeof err === "object" && "response" in err
@@ -159,7 +346,7 @@ export default function AdminCouponsPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refetch()}
+            onClick={() => refresh()}
             disabled={isLoading}
           >
             <RefreshCw
@@ -342,6 +529,74 @@ export default function AdminCouponsPage() {
               </div>
             </div>
 
+            {/* Session 55 — audience (who may redeem the code) */}
+            <div className="mt-6 rounded-lg border p-4">
+              <div className="mb-3">
+                <label className="text-sm font-medium">مخاطب کد تخفیف</label>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  تعیین کنید چه کسانی اجازه استفاده از این کد را دارند
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {MODE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setEligibilityMode(opt.value)}
+                    aria-pressed={formData.eligibilityMode === opt.value}
+                    className={cn(
+                      "rounded-lg border px-3 py-2.5 text-right transition-colors",
+                      formData.eligibilityMode === opt.value
+                        ? "border-primary bg-primary/5 ring-1 ring-primary"
+                        : "hover:bg-accent"
+                    )}
+                  >
+                    <span className="block text-sm font-medium">{opt.label}</span>
+                    <span className="block text-[11px] text-muted-foreground">
+                      {opt.hint}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {formData.eligibilityMode === "assigned_users" && (
+                <div className="mt-4 space-y-2">
+                  <label className="text-sm font-medium">کاربران مجاز</label>
+                  <UserPicker
+                    selectedIds={formData.assignedUserIds}
+                    details={assignedDetails}
+                    onToggle={toggleAssignedUser}
+                  />
+                </div>
+              )}
+
+              {formData.eligibilityMode === "user_groups" && (
+                <div className="mt-4 space-y-2">
+                  <label className="text-sm font-medium">گروه‌های مجاز</label>
+                  <Input
+                    value={formData.groups.join("، ")}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        groups: e.target.value
+                          .split(",")
+                          .map((s) => s.trim().toLowerCase())
+                          .filter(Boolean)
+                          .slice(0, 50),
+                      }))
+                    }
+                    placeholder="مثال: vip, premium, wholesale"
+                    dir="ltr"
+                    className="text-left font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    گروه‌های کاربری هنوز پیاده‌سازی نشده‌اند — فعلاً برای همه
+                    غیرفعال است (ایمن در حالت بسته)
+                  </p>
+                </div>
+              )}
+            </div>
+
             <div className="mt-6 flex items-center gap-3">
               <Button onClick={handleSubmit} loading={isSubmitting}>
                 <Save className="ml-2 h-4 w-4" />
@@ -384,7 +639,7 @@ export default function AdminCouponsPage() {
                 لطفاً صفحه را بروزرسانی کنید
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <Button variant="outline" size="sm" onClick={() => refresh()}>
               تلاش مجدد
             </Button>
           </CardContent>
@@ -436,7 +691,7 @@ export default function AdminCouponsPage() {
 
           {filteredCoupons.map((coupon) => {
             const isExpired =
-              coupon.endsAt && new Date(coupon.endsAt).getTime() < Date.now();
+              coupon.endsAt && new Date(coupon.endsAt).getTime() < listNow;
             const isLimitReached =
               coupon.usageLimit > 0 && coupon.usedCount >= coupon.usageLimit;
             return (
@@ -472,6 +727,20 @@ export default function AdminCouponsPage() {
                     {coupon.isPublic && (
                       <Badge variant="success" className="text-[10px] px-1.5 py-0">
                         عمومی
+                      </Badge>
+                    )}
+                    {coupon.eligibility?.mode === "assigned_users" && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        <Users className="ml-1 h-2.5 w-2.5" />
+                        کاربران منتخب
+                        {coupon.eligibility.assignedUsers.length > 0 &&
+                          ` (${coupon.eligibility.assignedUsers.length})`}
+                      </Badge>
+                    )}
+                    {coupon.eligibility?.mode === "user_groups" && (
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        <Layers className="ml-1 h-2.5 w-2.5" />
+                        گروه‌ها: {coupon.eligibility.groups.join("، ")}
                       </Badge>
                     )}
                     {isExpired && (

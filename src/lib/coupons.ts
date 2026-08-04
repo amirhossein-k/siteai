@@ -25,12 +25,176 @@
  *    orders without a discount or already-released ones).
  */
 
+import mongoose from "mongoose";
 import Coupon from "@/models/Coupon";
 import CouponUsage from "@/models/CouponUsage";
 import Order from "@/models/Order";
+import { sanitizePlainText } from "@/lib/sanitize";
 
 // Code format: 3–50 chars of A-Za-z0-9_- (uppercased before storage/validation)
 export const COUPON_CODE_REGEX = /^[A-Za-z0-9_-]{3,50}$/;
+
+// --- Session 55: coupon audience (eligibility) ---
+
+export type CouponEligibilityMode = "public" | "assigned_users" | "user_groups";
+
+/**
+ * Who may redeem the coupon. Embedded on the coupon doc — the claim path
+ * already fetches the coupon by code, so eligibility is checked as pure JS on
+ * that doc (zero extra DB round-trips).
+ *   - mode "public"         → anyone (default; missing eligibility = public)
+ *   - mode "assigned_users" → users in assignedUsers (ObjectId strings)
+ *   - mode "user_groups"    → users in any group slug (groups not implemented
+ *     yet — userGroupsOf() returns [], so group coupons are ineligible for
+ *     everyone: FAIL-CLOSED).
+ */
+export interface CouponEligibility {
+  mode: CouponEligibilityMode;
+  assignedUsers: string[];
+  groups: string[];
+}
+
+export const ELIGIBILITY_MODES: CouponEligibilityMode[] = [
+  "public",
+  "assigned_users",
+  "user_groups",
+];
+
+/** Hard cap on assignedUsers — doubles as an admin-usability + scan-cost guard. */
+export const ELIGIBILITY_ASSIGNED_USERS_MAX = 1000;
+export const ELIGIBILITY_GROUPS_MAX = 50;
+export const ELIGIBILITY_GROUP_MAX_LENGTH = 32;
+
+const PUBLIC_ELIGIBILITY: CouponEligibility = {
+  mode: "public",
+  assignedUsers: [],
+  groups: [],
+};
+
+/** Distinct Persian error for a valid-but-not-for-you coupon (never "invalid"). */
+export function couponEligibilityErrorMessage(): string {
+  return "این کد تخفیف برای شما قابل استفاده نیست";
+}
+
+/** Persian error when the global usage quota is exhausted. */
+export function couponExhaustedErrorMessage(): string {
+  return "سهمیه استفاده از این کد تخفیف تمام شده است";
+}
+
+/** Missing/invalid eligibility (old coupons, manual DB edits) → public. */
+export function getCouponEligibility(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  coupon: any
+): CouponEligibility {
+  const e = coupon?.eligibility;
+  if (!e || !e.mode || !ELIGIBILITY_MODES.includes(e.mode)) {
+    return PUBLIC_ELIGIBILITY;
+  }
+  return {
+    mode: e.mode as CouponEligibilityMode,
+    assignedUsers: Array.isArray(e.assignedUsers)
+      ? e.assignedUsers.map(String)
+      : [],
+    groups: Array.isArray(e.groups) ? e.groups.map(String) : [],
+  };
+}
+
+/**
+ * Resolve the user's group slugs. NOT IMPLEMENTED YET (Session 55): returns []
+ * so user_groups coupons are ineligible for everyone (fail-closed — a group
+ * coupon can never be silently granted). Future sessions plug a real group
+ * source (User field / separate Group collection / segment resolver) here;
+ * no other coupon code changes are needed. Contract: return LOWERCASE slugs.
+ */
+export async function userGroupsOf(_userId: string): Promise<string[]> {
+  void _userId; // keep the seam signature — a future group source consumes it
+  return [];
+}
+
+/** Is `userId` (if any) allowed to redeem `coupon`? Pure JS + one resolver call. */
+export async function isUserEligibleForCoupon(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  coupon: any,
+  userId: string | null | undefined
+): Promise<boolean> {
+  const e = getCouponEligibility(coupon);
+  if (e.mode === "public") return true;
+  if (!userId) return false; // non-public coupon without a user context → deny
+  if (e.mode === "assigned_users") {
+    return e.assignedUsers.some((id) => String(id) === String(userId));
+  }
+  if (e.mode === "user_groups") {
+    const userGroups = await userGroupsOf(userId);
+    return e.groups.some((g) => userGroups.includes(g));
+  }
+  return false; // unknown mode → fail-closed
+}
+
+/**
+ * Validate + normalize an admin-submitted eligibility payload (POST/PUT).
+ * Additive-only: `{ value: undefined }` when the field was omitted (PUT
+ * partial update). Returns a 400-ready Persian error on invalid input.
+ */
+export function parseCouponEligibility(
+  input: unknown
+): { value: CouponEligibility | undefined } | { error: string } {
+  if (input === undefined || input === null) return { value: undefined };
+  if (typeof input !== "object" || Array.isArray(input)) {
+    return { error: "شرایط استفاده از کد تخفیف نامعتبر است" };
+  }
+  const body = input as Record<string, unknown>;
+  const { mode } = body;
+  if (mode !== "public" && mode !== "assigned_users" && mode !== "user_groups") {
+    return { error: "نوع مخاطب کد تخفیف نامعتبر است" };
+  }
+
+  // --- assignedUsers: array of valid ObjectIds, deduped, capped ---
+  let assignedUsers: string[] = [];
+  if (body.assignedUsers !== undefined) {
+    if (!Array.isArray(body.assignedUsers)) {
+      return { error: "لیست کاربران نامعتبر است" };
+    }
+    if (body.assignedUsers.length > ELIGIBILITY_ASSIGNED_USERS_MAX) {
+      return {
+        error: `لیست کاربران نمی‌تواند بیشتر از ${ELIGIBILITY_ASSIGNED_USERS_MAX} نفر باشد`,
+      };
+    }
+    const seen = new Set<string>();
+    for (const u of body.assignedUsers) {
+      const s = String(u);
+      if (!mongoose.Types.ObjectId.isValid(s)) {
+        return { error: "شناسه کاربر انتخاب‌شده نامعتبر است" };
+      }
+      seen.add(s);
+    }
+    assignedUsers = [...seen];
+  }
+
+  // --- groups: array of lowercase slug strings, sanitized, deduped, capped ---
+  let groups: string[] = [];
+  if (body.groups !== undefined) {
+    if (!Array.isArray(body.groups)) {
+      return { error: "لیست گروه‌ها نامعتبر است" };
+    }
+    if (body.groups.length > ELIGIBILITY_GROUPS_MAX) {
+      return {
+        error: `لیست گروه‌ها نمی‌تواند بیشتر از ${ELIGIBILITY_GROUPS_MAX} مورد باشد`,
+      };
+    }
+    const seen = new Set<string>();
+    for (const g of body.groups) {
+      const slug = sanitizePlainText(String(g))
+        .trim()
+        .toLowerCase()
+        .slice(0, ELIGIBILITY_GROUP_MAX_LENGTH);
+      if (!slug) return { error: "نام گروه نامعتبر است" };
+      seen.add(slug);
+    }
+    groups = [...seen];
+  }
+
+  return { value: { mode, assignedUsers, groups } };
+}
 
 /** Normalize a coupon code: uppercase + trim (done BEFORE validation/storage). */
 export function normalizeCouponCode(code: string): string {
@@ -50,6 +214,7 @@ export interface CouponDoc {
   usageLimit: number;
   perUserLimit: number;
   usedCount: number;
+  eligibility?: CouponEligibility;
 }
 
 export interface CouponValidateResult {
@@ -107,9 +272,17 @@ export function computeCouponDiscount(
  * Validate a coupon against its rules (no DB state change). Used by the
  * validate endpoint (rules preview). The checkout route calls
  * claimCouponForOrder() instead, which validates + atomically claims.
+ *
+ * `userId` (Session 55) — when provided and the coupon is NOT public, the
+ * audience check runs here so the preview is eligibility-aware: a valid-but-
+ * not-for-you coupon returns the distinct eligibility error instead of the
+ * rules (a non-eligible user must never be told the coupon is "invalid" —
+ * the coupon exists, it just isn't theirs). No userId (anonymous context)
+ * skips the audience check.
  */
 export async function validateCoupon(
-  rawCode: string
+  rawCode: string,
+  userId?: string | null
 ): Promise<CouponValidateResult> {
   const code = normalizeCouponCode(rawCode);
   if (!COUPON_CODE_REGEX.test(code)) {
@@ -120,6 +293,9 @@ export async function validateCoupon(
   if (!coupon) return { ok: false, error: "کد تخفیف معتبر نیست" };
   if (!isCouponUsable(coupon)) {
     return { ok: false, error: couponUnusableReason(coupon) };
+  }
+  if (userId && !(await isUserEligibleForCoupon(coupon, userId))) {
+    return { ok: false, error: couponEligibilityErrorMessage() };
   }
   return { ok: true, coupon };
 }
@@ -152,6 +328,22 @@ export async function claimCouponForOrder(
   if (!isCouponUsable(coupon)) {
     return { ok: false, error: couponUnusableReason(coupon) };
   }
+
+  // --- Global usage pre-check (pure JS on the fetched doc; Session 55 flow:
+  // usage-limit BEFORE eligibility, so an exhausted coupon never leaks its
+  // audience). The authoritative enforcement stays the atomic claim below. ---
+  if (coupon.usageLimit > 0 && coupon.usedCount >= coupon.usageLimit) {
+    return { ok: false, error: couponExhaustedErrorMessage() };
+  }
+
+  // --- Eligibility (Session 55): sits between usage-limit and minSubtotal per
+  // the approved validation flow. Distinct error — never "invalid coupon".
+  // Sub-second audience races (user just removed from a list) are accepted,
+  // mirroring the documented startsAt/endsAt window race. ---
+  if (!(await isUserEligibleForCoupon(coupon, userId))) {
+    return { ok: false, error: couponEligibilityErrorMessage() };
+  }
+
   if (coupon.minSubtotal > 0 && subtotal < coupon.minSubtotal) {
     return {
       ok: false,
@@ -178,7 +370,7 @@ export async function claimCouponForOrder(
     const fresh: any = await Coupon.findById(coupon._id).lean();
     const error = fresh && !isCouponUsable(fresh)
       ? couponUnusableReason(fresh)
-      : "سهمیه استفاده از این کد تخفیف تمام شده است";
+      : couponExhaustedErrorMessage();
     return { ok: false, error };
   }
 

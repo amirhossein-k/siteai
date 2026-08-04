@@ -2,6 +2,15 @@
 
 ## ✅ Completed Milestones
 
+### Private / Targeted Coupons — Coupon Eligibility (Session 55)
+- [x] Embedded `eligibility` on the Coupon model: `{ mode: "public" | "assigned_users" | "user_groups", assignedUsers: ObjectId[], groups: String[] }` — missing block = public, **zero migration** for existing coupons; multikey indexes only for future list/admin lookups (never the claim path)
+- [x] Single enforcement point in `src/lib/coupons.ts`: `getCouponEligibility` (fail-safe → public), `isUserEligibleForCoupon` (pure JS on the fetched doc — **no extra DB query on checkout**), `userGroupsOf()` (returns `[]` → **fail-closed** until groups exist), `parseCouponEligibility` (mode whitelist, ObjectId → 400, caps 1000 users / 50 groups / 32-char slugs, dedupe, lowercase + sanitize)
+- [x] Approved validation flow: exists → active/window → usage-limit pre-check → **eligibility** (distinct Persian error, never «invalid coupon») → minSubtotal → atomic claim/release (all Session 39 invariants preserved)
+- [x] Additive APIs: admin POST/PUT accept `eligibility`; admin GET populates `assignedUsers` (name/phone); `POST /api/coupons/validate` eligibility-aware via the authenticated user; `GET /api/admin/users` `search` param (user picker); public endpoint untouched + leak scan extended
+- [x] Admin UI: «مخاطب کد تخفیف» mode selector + debounced user picker + groups input + list badges
+- [x] `scripts/verify-coupon-eligibility.js` — **18/18 PASS**; regression runner now **31 suites** (full 31/31 PASS); tsc/lint/build green; code review approved; dev-server restart required (model change)
+- [x] Future extensibility sealed: first-purchase / spending / order-count / birthday / segments / affiliate are future `eligibility.mode` values or `targetingRules` — **no redesign needed** (the checker + parser + admin editor are mode-driven)
+
 ### Storefront Search Quality Upgrade (Session 48)
 - [x] Expanded search coverage on `GET /api/products?search=` — name, description, **variant attribute values**, plus **brand/tag/category names** resolved through reference collections (`Brand/Tag/Category.find({name: $regex}).distinct("_id")`); regex stays the primitive (Persian substring `پیراه` → `پیراهن` preserved) — **no `$text`, no indexes, no schema changes**
 - [x] Weighted relevance ranking — one aggregation (only when `search` + default `newest` sort): exact name 100 / name prefix 60 / name substring 40 / brand-tag-category 25 each / attribute value 20 / description 10 (additive); `$sort {score:-1, createdAt:-1}`; **pagination inside the aggregation** (skip/limit, never fetch-all); existing populate chain re-hydrates the page and re-sorts to ranked order; response shape unchanged with NO `score` leak
@@ -356,7 +365,7 @@
 
 ### Session 54 — Best-Sellers Rail
 
-**Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅ (completed); **Session 53 = Homepage CMS ✅ (completed)**; **Session 54 = best-sellers rail** (client-side, reuses the existing shared product pool — only if still needed after the CMS work). Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
+**Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅ (completed); **Session 53 = Homepage CMS ✅ (completed)**; **Session 55 = Private / Targeted Coupons ✅ (completed — approved Option C embedded eligibility)**; **Session 54 = best-sellers rail** (client-side, reuses the existing shared product pool — only if still needed after the CMS work). Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
 
 ---
 

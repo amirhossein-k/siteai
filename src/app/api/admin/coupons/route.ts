@@ -2,13 +2,20 @@ import { NextResponse, NextRequest } from "next/server";
 import { dbConnect } from "@/lib/dbConnect";
 import { requireRoleOrError, serverError } from "@/lib/auth-utils";
 import Coupon from "@/models/Coupon";
-import { normalizeCouponCode, COUPON_CODE_REGEX } from "@/lib/coupons";
+import {
+  normalizeCouponCode,
+  COUPON_CODE_REGEX,
+  parseCouponEligibility,
+} from "@/lib/coupons";
 
 /**
  * GET /api/admin/coupons — list all coupons (newest first).
  * POST /api/admin/coupons — create a coupon (admin only).
  *
  * Code is normalized to uppercase before storage (Session 39 constraint).
+ * GET (Session 55) populates eligibility.assignedUsers (name/phone) so the
+ * admin UI can render the assigned-user picker — a SINGLE extra query for the
+ * whole list (no N+1).
  */
 export async function GET(req: NextRequest) {
   const { error } = await requireRoleOrError(req, ["admin"]);
@@ -16,7 +23,10 @@ export async function GET(req: NextRequest) {
 
   try {
     await dbConnect();
-    const coupons = await Coupon.find().sort({ createdAt: -1 }).lean();
+    const coupons = await Coupon.find()
+      .sort({ createdAt: -1 })
+      .populate("eligibility.assignedUsers", "name phone")
+      .lean();
     return NextResponse.json(coupons);
   } catch (err) {
     console.error("Error fetching coupons:", err);
@@ -77,6 +87,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Session 55 — audience validation (mode whitelist, ObjectId guards → 400)
+    const eligibilityResult = parseCouponEligibility(body.eligibility);
+    if ("error" in eligibilityResult) {
+      return NextResponse.json(
+        { error: eligibilityResult.error },
+        { status: 400 }
+      );
+    }
+
     const code = normalizeCouponCode(String(body.code || ""));
 
     const existing = await Coupon.findOne({ code });
@@ -97,6 +116,9 @@ export async function POST(req: NextRequest) {
       endsAt: body.endsAt ? new Date(body.endsAt) : null,
       isActive: body.isActive ?? true,
       isPublic: body.isPublic === true, // Session 44 — default false
+      // Session 55 — default public when omitted (backward compatible)
+      eligibility:
+        eligibilityResult.value ?? { mode: "public", assignedUsers: [], groups: [] },
       usageLimit: Number(body.usageLimit ?? 0),
       perUserLimit: Number(body.perUserLimit ?? 0),
     });

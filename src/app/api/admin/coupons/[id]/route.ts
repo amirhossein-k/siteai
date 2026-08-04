@@ -3,7 +3,11 @@ import { dbConnect } from "@/lib/dbConnect";
 import { requireRoleOrError, serverError } from "@/lib/auth-utils";
 import Coupon from "@/models/Coupon";
 import CouponUsage from "@/models/CouponUsage";
-import { normalizeCouponCode, COUPON_CODE_REGEX } from "@/lib/coupons";
+import {
+  normalizeCouponCode,
+  COUPON_CODE_REGEX,
+  parseCouponEligibility,
+} from "@/lib/coupons";
 
 /** Parse an optional date field; returns Invalid Date for bad strings. */
 function parseDate(value: unknown): Date | null {
@@ -101,6 +105,19 @@ export async function PUT(
       }
     }
 
+    // --- Eligibility (Session 55) — mode whitelist + ObjectId guards → 400 ---
+    let eligibilityUpdate: unknown;
+    if (body.eligibility !== undefined) {
+      const eligibilityResult = parseCouponEligibility(body.eligibility);
+      if ("error" in eligibilityResult) {
+        return NextResponse.json(
+          { error: eligibilityResult.error },
+          { status: 400 }
+        );
+      }
+      eligibilityUpdate = eligibilityResult.value;
+    }
+
     // --- Dates ---
     const startsAt = parseDate(body.startsAt);
     const endsAt = parseDate(body.endsAt);
@@ -128,6 +145,9 @@ export async function PUT(
       update.maxDiscount = Number(body.maxDiscount);
     if (body.startsAt !== undefined) update.startsAt = startsAt;
     if (body.endsAt !== undefined) update.endsAt = endsAt;
+    // Session 55 — replace the whole eligibility block when provided (partial
+    // field edits are handled client-side by always sending the full block)
+    if (eligibilityUpdate !== undefined) update.eligibility = eligibilityUpdate;
     if (body.isActive !== undefined) update.isActive = !!body.isActive;
     // Strict boolean check (Session 44): a string "false" must not coerce to
     // true and silently publish a private coupon.

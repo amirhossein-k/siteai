@@ -292,6 +292,25 @@ export interface MyReviewsResponse {
 
 export type CouponType = "percent" | "fixed";
 
+/**
+ * Coupon audience (Session 55) — WHO may redeem the code.
+ * - public: anyone (default; a missing eligibility block means public).
+ * - assigned_users: only the users in `assignedUsers`.
+ * - user_groups: users belonging to any group slug in `groups` (groups are
+ *   NOT implemented yet — group coupons are ineligible for everyone, fail-closed).
+ */
+export type CouponEligibilityMode = "public" | "assigned_users" | "user_groups";
+
+/** Admin view of the eligibility block (GET /api/admin/coupons populates users). */
+export interface CouponEligibility {
+  mode: CouponEligibilityMode;
+  /** ObjectId refs of explicitly-assigned users (mode: assigned_users).
+   * Strings in raw POST/PUT payloads; populated user objects in admin GET. */
+  assignedUsers: Array<{ _id: string; name: string; phone: string } | string>;
+  /** Lowercase group slugs (mode: user_groups) — fail-closed today. */
+  groups: string[];
+}
+
 /** Admin coupon row (GET /api/admin/coupons). */
 export interface Coupon {
   _id: string;
@@ -308,6 +327,8 @@ export interface Coupon {
   isActive: boolean;
   /** Session 44: public marketing coupon (shown on the storefront + checkout picker) */
   isPublic: boolean;
+  /** Session 55: who may redeem the code (absent on pre-Session-55 coupons = public). */
+  eligibility?: CouponEligibility;
   /** total allowed uses (0 = unlimited) */
   usageLimit: number;
   /** max uses per customer (0 = unlimited) */

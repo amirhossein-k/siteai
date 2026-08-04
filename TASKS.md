@@ -2,6 +2,42 @@
 
 ---
 
+## ✅ Session 55 — Private / Targeted Coupons (Coupon Eligibility)
+
+### Model (additive, zero migration)
+- [x] `Coupon.js` — `eligibility { mode: "public" | "assigned_users" | "user_groups", assignedUsers: [ObjectId refs], groups: [String] }`; missing/empty block = public (existing coupons unchanged)
+- [x] Multikey indexes `eligibility.assignedUsers` + `eligibility.groups` — list/admin lookups only, never the claim hot path
+- [x] **Ops:** model change ⇒ dev-server restart required (done)
+
+### Enforcement (single source of truth in `src/lib/coupons.ts`)
+- [x] `getCouponEligibility` — missing/invalid → public (fail-safe)
+- [x] `isUserEligibleForCoupon` — pure JS membership on the fetched lean doc (zero extra DB queries on checkout)
+- [x] `userGroupsOf()` — NOT implemented → returns `[]` ⇒ group coupons **fail-closed** for everyone
+- [x] `parseCouponEligibility` — mode whitelist, ObjectId guards → 400, dedupe, caps (1000 users / 50 groups / 32-char slugs), lowercase group slugs, sanitize
+- [x] `claimCouponForOrder` — approved flow: usage-limit pre-check → eligibility (distinct error «این کد تخفیف برای شما قابل استفاده نیست») → minSubtotal → atomic claim; all Session 39 claim/release invariants preserved
+- [x] `validateCoupon(rawCode, userId?)` — eligibility-aware preview (non-eligible → eligibility error, never «invalid coupon»)
+
+### APIs (additive, RBAC unchanged)
+- [x] Admin POST `/api/admin/coupons` accepts `eligibility`; GET populates `eligibility.assignedUsers` (name/phone)
+- [x] Admin PUT `/api/admin/coupons/[id]` accepts `eligibility` (whole-block replace)
+- [x] `POST /api/coupons/validate` passes the authenticated user id
+- [x] `GET /api/admin/users` — additive `search` param (name/phone, escapeRegex) for the picker
+- [x] `GET /api/coupons/public` untouched — leak scan extended to assert eligibility fields never exposed
+
+### Admin UI
+- [x] «مخاطب کد تخفیف» mode segmented control (عمومی / کاربران منتخب / گروه کاربری)
+- [x] Debounced user picker (`useCustomerSearch` → `GET /api/admin/users?role=customer&search=`), selected chips + remove, ≤50 results
+- [x] Groups comma-input (lowercased) + fail-closed hint; list badges (کاربران منتخب (n) / گروه‌ها)
+- [x] Client guards: assigned_users ≥1 user, user_groups ≥1 group
+
+### Verification
+- [x] `scripts/verify-coupon-eligibility.js` — **18/18 PASS** (authz, invalid payloads, single/multi assigned create, groups lowercase, populated GET, validate both directions, non-assigned checkout no-order/no-claim, assigned checkout exact discount, fail-closed groups, public backward-compat, PUT reassign, public leak scan); self-cleaning (all PREFIX'd fixtures + its couponusage rows)
+- [x] `scripts/run-regression.js` — 31 suites, `verify-coupon-eligibility` after `verify-coupons-marketing`; full regression **31/31 PASS**, 0 skipped
+- [x] Existing suites unchanged: `verify-coupons` 27/27, `verify-coupons-marketing` 12/12
+- [x] `npx tsc --noEmit` zero errors; eslint clean on all changed files; production build passes; code review approved (all reviewer findings addressed)
+
+---
+
 ## ✅ Session 44 — Coupon Marketing Surface
 
 ### Model + admin (additive)

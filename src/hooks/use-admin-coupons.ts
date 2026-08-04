@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
-import type { AdminCoupon } from "@/types";
+import type { AdminCoupon, CouponEligibilityMode } from "@/types";
 
 export interface CouponFormData {
   code: string;
@@ -17,6 +17,32 @@ export interface CouponFormData {
   isPublic: boolean;
   usageLimit: number;
   perUserLimit: number;
+  /** Session 55 — audience */
+  eligibilityMode: CouponEligibilityMode;
+  /** assigned_users — user _ids picked in the form */
+  assignedUserIds: string[];
+  /** user_groups — lowercase group slugs (groups not implemented yet; fail-closed) */
+  groups: string[];
+}
+
+/** Session 55 — search customers for the assigned-user picker (admin only). */
+export interface UserOption {
+  _id: string;
+  name: string;
+  phone: string;
+}
+
+export function useCustomerSearch(search: string) {
+  return useQuery({
+    queryKey: ["admin", "users", "customers", search],
+    queryFn: async (): Promise<UserOption[]> => {
+      const { data } = await axios.get("/api/admin/users", {
+        params: { role: "customer", search: search || undefined },
+      });
+      return data;
+    },
+    staleTime: 60 * 1000,
+  });
 }
 
 const fetchCoupons = async (): Promise<AdminCoupon[]> => {
