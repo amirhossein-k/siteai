@@ -48,15 +48,21 @@ export function useCatalogFilters() {
   const [page, setPage] = useState(1);
 
   // Debounce the search term (Session 48): commit the query value 300ms after
-  // the last keystroke; an empty term clears immediately.
+  // the last keystroke (timer effect — the async commit in the callback is
+  // the legitimate effect use). An empty term is cleared synchronously below
+  // via a guarded render-phase adjustment, not in the effect body.
   useEffect(() => {
-    if (!searchQuery) {
-      setDebouncedSearch("");
-      return;
-    }
+    if (!searchQuery) return;
     const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // Clear the committed (debounced) term the moment the input empties — the
+  // React-documented "adjust state during render" pattern (guarded, so it only
+  // fires when they actually differ; compliant with set-state-in-effect).
+  if (!searchQuery && debouncedSearch !== "") {
+    setDebouncedSearch("");
+  }
 
   // Session 50 — one-time URL param seed. Links from the homepage
   // (/products?category=…&brand=…&search=…&sort=…) pre-filter the catalog on
@@ -70,30 +76,48 @@ export function useCatalogFilters() {
     const tag = params.get("tag");
     const search = params.get("search");
     const sort = params.get("sort");
+    // INTENTIONAL: one-time post-hydration URL seed (Session 50). Initializing
+    // state from the URL during render would mismatch the server HTML
+    // (hydration warning); a lazy initializer can't read window on the server
+    // either. Deferring to an effect is the only SSR-safe option, so the rule
+    // is disabled for this effect body.
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (category) setSelectedCategory(category);
     if (brand) setSelectedBrand(brand);
     if (tag) setSelectedTag(tag);
     if (search) setSearchQuery(search);
     if (
       sort &&
-      ["newest", "price_asc", "price_desc", "name", "oldest"].includes(sort)
+      ["newest", "best_selling", "price_asc", "price_desc", "name", "oldest"].includes(sort)
     ) {
       setSortBy(sort);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
-  // Reset to page 1 whenever any filter changes
-  useEffect(() => {
+  // Reset to page 1 whenever any filter changes. Implemented with the
+  // React-documented "adjust state during render" pattern (guarded so it only
+  // fires when the filter fingerprint actually changes) instead of an effect
+  // that calls setState directly (react-hooks/set-state-in-effect).
+  const filterFingerprint =
+    searchQuery +
+    "|" +
+    selectedCategory +
+    "|" +
+    selectedBrand +
+    "|" +
+    selectedTag +
+    "|" +
+    JSON.stringify(selectedAttributes) +
+    "|" +
+    sortBy;
+  const [lastFilterFingerprint, setLastFilterFingerprint] = useState(
+    filterFingerprint
+  );
+  if (filterFingerprint !== lastFilterFingerprint) {
+    setLastFilterFingerprint(filterFingerprint);
     setPage(1);
-  }, [
-    searchQuery,
-    selectedCategory,
-    selectedBrand,
-    selectedTag,
-    selectedAttributes,
-    sortBy,
-  ]);
+  }
 
   const activeFilterCount = useMemo(() => {
     let count = 0;

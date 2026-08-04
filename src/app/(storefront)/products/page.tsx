@@ -28,6 +28,7 @@ import { usePublicAttributeFacets } from "@/hooks/use-public-attribute-facets";
 
 const sortOptions = [
   { value: "newest", label: "جدیدترین" },
+  { value: "best_selling", label: "پرفروش‌ترین" },
   { value: "oldest", label: "قدیمی‌ترین" },
   { value: "price_asc", label: "ارزان‌ترین" },
   { value: "price_desc", label: "گران‌ترین" },

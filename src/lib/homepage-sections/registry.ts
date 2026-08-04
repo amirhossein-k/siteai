@@ -21,6 +21,7 @@ import { HeroCarousel } from "@/components/storefront/home/hero-carousel";
 import { QuickCategories } from "@/components/storefront/home/quick-categories";
 import { CampaignBanner } from "@/components/storefront/home/campaign-banner";
 import { SpecialPicks } from "@/components/storefront/home/special-picks";
+import { BestSellers } from "@/components/storefront/home/best-sellers";
 import { NewestProducts } from "@/components/storefront/home/newest-products";
 import { PremiumCollection } from "@/components/storefront/home/premium-collection";
 import { PopularBrands } from "@/components/storefront/home/popular-brands";
@@ -83,6 +84,13 @@ export const homepageBlockRegistry: Record<string, HomepageBlockDefinition> = {
     component: "special-picks",
     renderer: SpecialPicks,
     hasContent: false,
+  },
+  "best-sellers": {
+    component: "best-sellers",
+    renderer: BestSellers,
+    hasContent: false,
+    lazy: true,
+    minHeight: 320,
   },
   "newest-products": {
     component: "newest-products",

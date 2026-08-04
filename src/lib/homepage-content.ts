@@ -48,6 +48,9 @@ export interface DefaultSectionPresentation {
 export interface DefaultSection {
   slug: string;
   component: string;
+  /** Seed order — becomes HomepageSection.sortOrder so the initial composition
+   *  matches DEFAULT_SECTIONS exactly (admins reorder afterwards via CMS). */
+  sortOrder: number;
   title: string;
   subtitle: string;
   presentation: DefaultSectionPresentation;
@@ -76,6 +79,7 @@ const defaultBehavior = () => ({
 export const DEFAULT_SECTIONS: DefaultSection[] = [
   {
     slug: "hero",
+    sortOrder: 0,
     component: "hero-carousel",
     title: "",
     subtitle: "",
@@ -93,6 +97,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "quick-categories",
+    sortOrder: 1,
     component: "quick-categories",
     title: "",
     subtitle: "",
@@ -103,6 +108,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "campaign-banner",
+    sortOrder: 2,
     component: "campaign-banner",
     title: "",
     subtitle: "",
@@ -113,6 +119,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "special-picks",
+    sortOrder: 3,
     component: "special-picks",
     title: "",
     subtitle: "",
@@ -128,7 +135,23 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
     },
   },
   {
+    slug: "best-sellers",
+    sortOrder: 4,
+    component: "best-sellers",
+    title: "",
+    subtitle: "",
+    presentation: {
+      appearance: defaultAppearance(),
+      behavior: {
+        ...defaultBehavior(),
+        maxItems: 12,
+        layoutVariant: "carousel",
+      },
+    },
+  },
+  {
     slug: "newest-products",
+    sortOrder: 5,
     component: "newest-products",
     title: "",
     subtitle: "",
@@ -143,6 +166,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "premium-collection",
+    sortOrder: 6,
     component: "premium-collection",
     title: "",
     subtitle: "",
@@ -157,6 +181,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "popular-brands",
+    sortOrder: 7,
     component: "popular-brands",
     title: "",
     subtitle: "",
@@ -167,6 +192,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "gift-collections",
+    sortOrder: 8,
     component: "gift-collections",
     title: "",
     subtitle: "",
@@ -177,6 +203,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "trust-badges",
+    sortOrder: 9,
     component: "trust-badges",
     title: "",
     subtitle: "",
@@ -197,6 +224,7 @@ export const HOMEPAGE_COMPONENTS = [
   "quick-categories",
   "campaign-banner",
   "special-picks",
+  "best-sellers",
   "newest-products",
   "premium-collection",
   "popular-brands",
@@ -477,15 +505,24 @@ export async function seedHomepageContent(): Promise<void> {
   // That is expected (the winner already seeded) — swallow it instead of 500.
   // insertMany (not bulkWrite) is kept on purpose: it applies Mongoose
   // defaults + validation, which the public reader depends on.
-  const sectionCount = await HomepageSection.countDocuments({ deletedAt: null });
-  if (sectionCount === 0) {
+  //
+  // Session 56: the seed now inserts MISSING default sections (not only on an
+  // empty collection) — additive defaults like `best-sellers` appear on
+  // already-seeded DBs without disturbing admin edits. Existence is checked
+  // across ALL documents (deletedAt included) so a soft-deleted default is
+  // NEVER resurrected.
+  const existing = await HomepageSection.find({}).select("slug").lean();
+  const existingSlugs = new Set(existing.map((s) => s.slug));
+  const missing = DEFAULT_SECTIONS.filter((s) => !existingSlugs.has(s.slug));
+  if (missing.length > 0) {
     try {
       await HomepageSection.insertMany(
-        DEFAULT_SECTIONS.map((s) => ({
+        missing.map((s) => ({
           slug: s.slug,
           component: s.component,
           title: s.title,
           subtitle: s.subtitle,
+          sortOrder: s.sortOrder,
           presentation: s.presentation,
         }))
       );

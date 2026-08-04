@@ -1,5 +1,27 @@
 # Changelog
 
+## Session 56 (August 2026) — Best-Sellers Rail (Product.soldCount)
+
+### Architecture (approved design — denormalized counter + additive sort + CMS block; no redesign)
+- **`Product.soldCount`** (Number, default 0, min 0) — total units PAID and not later refunded/cancelled. **INTERNAL**: excluded from every public response via `-soldCount` projection (list, detail, and ranked-search re-hydration) — it exists ONLY to power the `sort=best_selling` ranking, never shown to customers. Non-unique index `{ soldCount: -1, createdAt: -1 }` (best-sellers ranking, newest tie-break). **Model change ⇒ dev-server restart required** (done).
+- **`src/lib/product-sales.ts`** — single source of truth: `recordOrderSales(orderId)` / `reverseOrderSales(orderId)` read the order's items and `Product.bulkWrite` MongoDB **pipeline updates** (`$add` on `$ifNull` for increments; `$max` floor at 0 for decrements — a legacy 0-count product can never go negative). `bulkWrite` bypasses Mongoose middleware (never touches stock/stockVersion). **Fail-silent** by design — a ranking-counter failure can never fail a committed payment/refund.
+- **Exactly-once by construction:** every mutation runs inside an existing atomic claim — payment verify `pending→paid` (increment), admin refund `paid→refunded` (decrement), **admin cancel of a PAID order** `processing/confirmed/shipped→cancelled` (decrement, reviewer finding fixed) — duplicate callbacks / double refunds / repeat cancels all hit early-return or 400 paths and can never double-count. Pending/cancelled-pending orders never touch the counter.
+- **`GET /api/products`** — additive `sort=best_selling` → `{ soldCount: -1, createdAt: -1 }`. Ranked-search path unaffected (explicit sort already overrides relevance). Public responses exclude `soldCount`; product write routes use explicit whitelists so clients can never set it (reviewer-confirmed).
+
+### CMS integration (Session 53 seam, one registry entry)
+- **`best-sellers` homepage block** — data-driven (`hasContent: false`, `lazy`, minHeight 320): `src/components/storefront/home/best-sellers.tsx` calls `usePublicProducts({ sort: "best_selling", limit: maxItems })` into the existing `ProductRail`; registered in the block registry + `HOMEPAGE_COMPONENTS`; new `DEFAULT_SECTIONS` entry placed after `special-picks` (sortOrder 4).
+- **Seed upgraded to insert-missing** (not just on empty collection): `seedHomepageContent` checks section slugs across ALL docs (soft-deleted included) so additive defaults like `best-sellers` appear on already-seeded DBs WITHOUT disturbing admin edits and WITHOUT resurrecting soft-deleted sections. `DEFAULT_SECTIONS` now carries explicit `sortOrder` (array index) so fresh seeds match the intended order exactly.
+- **Storefront catalog** — «پرفروشترین» sort option added to the sort dropdown + `useCatalogFilters` whitelist; `AdminProduct.soldCount?` type.
+
+### Client lint debt fixed (pre-existing, surfaced while touching the file)
+- `use-catalog-filters.ts` — the `setPage(1)`-in-effect and debounce-empty synchronous setState were converted to the React-documented **"adjust state during render"** pattern (guarded, SSR-safe, behavior-preserving); the intentional one-time post-hydration URL seed effect keeps an effect but is block-disabled with a justification comment (any render-time alternative would cause hydration mismatches).
+
+### Verification
+- **`scripts/verify-best-sellers.js` — 13/13 PASS** (real API + real DB): sort ranking + newest tie-break, **leak scans** (list + detail — soldCount never appears), refund reversal by exact item quantities (simple + variant product-level sum), double-refund → 400 no double decrement, legacy 0 floor never negative, pending order can't refund + never counted, **admin cancel of a PAID order reverses soldCount / pending cancel untouched** (reviewer-fix test), cash checkout → pending order never increments (paid-only rule; the payment-verify increment is gated by the same atomic claim verify-payment-retry already exercises — sandbox verify requires the interactive payment page and can't be driven headlessly, documented), CMS block seeded + present in public composition positioned at/after special-picks. Self-cleaning (PREFIX'd fixtures incl. orders/supplierorders).
+- **`scripts/backfill-sold-count.js`** — OPTIONAL one-time re-runnable backfill: aggregates paid + non-cancelled orders → `$set soldCount` (authoritative recompute, safe to re-run). Not part of the regression runner.
+- Regression runner now **32 suites** (`verify-best-sellers` after `verify-coupon-eligibility`). Full regression **32/32 PASS, 0 skipped**; `npx tsc --noEmit` zero errors; lint clean on all changed files; production build passes; code review approved (Medium-High admin-cancel reversal gap fixed + test added; product-write whitelist confirmed; backfill zero-sale + crash-window documented below).
+- **Known/accepted:** (1) crash-window between the `paid` claim and the counter write undercounts a paid order — recoverable via the optional backfill; (2) **variant-level sales aggregation is future scope** — `soldCount` is the product-level sum across all variants.
+
 ## Session 55 (August 2026) — Private / Targeted Coupons (Coupon Eligibility / Audience)
 
 ### Architecture (approved design — Option C embedded discriminated `eligibility`; no redesign)

@@ -9,6 +9,7 @@ import {
 } from "@/lib/notifications";
 import { restoreOrderStock } from "@/lib/inventory";
 import { releaseCouponUsage } from "@/lib/coupons";
+import { recordOrderSales } from "@/lib/product-sales";
 
 /**
  * Best-effort notification dispatch that can NEVER affect the payment flow.
@@ -282,6 +283,13 @@ export async function GET(req: NextRequest) {
     const custId = successClaimed.customer
       ? String(successClaimed.customer)
       : null;
+
+    // Session 56 — best-sellers counter. The pending→paid claim above is
+    // exactly-once (duplicate callbacks redirect via !successClaimed above
+    // and never reach here), so soldCount accrues exactly once per paid order.
+    // Fail-silent — a counter failure can never fail a committed payment.
+    await recordOrderSales(orderId);
+
     if (custId) {
       await safeNotifyOrderEvent({
         recipient: custId,

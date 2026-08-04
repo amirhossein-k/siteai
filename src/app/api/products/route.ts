@@ -74,6 +74,8 @@ export async function GET(req: NextRequest) {
       const product = await Product.findOne(
         id ? { _id: id, isActive: true } : { slug, isActive: true }
       )
+        // Session 56 — soldCount is INTERNAL (ranking only), never exposed.
+        .select("-soldCount")
         .populate("category", "name slug")
         .populate("supplier", "_id businessName logo")
         .populate("brand", "name slug logo")
@@ -231,6 +233,9 @@ export async function GET(req: NextRequest) {
     else if (sort === "price_desc") sortOption = { price: -1 };
     else if (sort === "name") sortOption = { name: 1 };
     else if (sort === "oldest") sortOption = { createdAt: 1 };
+    // Session 56 — best-sellers: most units sold first (soldCount is internal
+    // and never exposed; it exists only to power this sort). Newest breaks ties.
+    else if (sort === "best_selling") sortOption = { soldCount: -1, createdAt: -1 };
 
     // Pagination — at database level, never fetch-all
     const { page, limit, skip } = parsePaginationParams(searchParams);
@@ -403,6 +408,7 @@ export async function GET(req: NextRequest) {
         Product.countDocuments(filter),
         ids.length
           ? Product.find({ _id: { $in: ids } })
+              .select("-soldCount") // Session 56 — internal field, never public
               .populate("category", "name slug")
               .populate("supplier", "_id businessName logo")
               .populate("brand", "name slug logo")
@@ -427,6 +433,7 @@ export async function GET(req: NextRequest) {
     const [total, products] = await Promise.all([
       Product.countDocuments(filter),
       Product.find(filter)
+        .select("-soldCount") // Session 56 — internal field, never public
         .populate("category", "name slug")
         .populate("supplier", "_id businessName logo")
         .populate("brand", "name slug logo")

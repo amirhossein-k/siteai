@@ -141,6 +141,18 @@ const ProductSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Session 56 — Best-Sellers: total units SOLD (paid, non-refunded).
+    // Incremented at payment verify (pending→paid claim) and decremented at
+    // admin refund (paid→refunded claim) — both exactly-once by construction.
+    // Product-level sum across ALL variants; per-variant sales tracking is
+    // future scope (documented in NEXT_SESSION.md). INTERNAL: never exposed
+    // through the public products API (excluded by projection) — it exists
+    // only to power the sort=best_selling ranking.
+    soldCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   { timestamps: true }
 );
@@ -153,6 +165,11 @@ ProductSchema.set("toJSON", { virtuals: true });
 
 // Globally unique SKU across all products (sparse — simple products excluded)
 ProductSchema.index({ "variants.sku": 1 }, { unique: true, sparse: true });
+
+// Best-sellers ranking (Session 56) — most-sold first, newest as tie-breaker.
+// Non-unique; serves the public sort=best_selling path. soldCount is internal
+// (excluded from public responses) — the index only powers the sort.
+ProductSchema.index({ soldCount: -1, createdAt: -1 });
 
 // Auto-increment stockVersion whenever stock changes (via save)
 ProductSchema.pre("save", function (next) {

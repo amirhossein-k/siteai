@@ -10,6 +10,7 @@ import { sendAdminOrderStatusNotification } from "@/lib/telegram";
 import { notifyOrderEvent } from "@/lib/notifications";
 import { restoreOrderStock } from "@/lib/inventory";
 import { releaseCouponUsage } from "@/lib/coupons";
+import { reverseOrderSales } from "@/lib/product-sales";
 import {
   parsePaginationParams,
   buildPaginatedResponse,
@@ -182,6 +183,14 @@ export async function PUT(req: NextRequest) {
     // coupon was applied — mirrors the payment-failure release paths)
     if (status === "cancelled") {
       await releaseCouponUsage(id);
+    }
+
+    // Session 56 — a PAID order cancelled by admin is no longer a valid sale:
+    // reverse the best-sellers counter (fail-silent; exactly-once — the
+    // cancelled transition is reachable only once per order). Pending cancels
+    // were never counted, so they are skipped. Mirrors the refund reversal.
+    if (status === "cancelled" && order.payment.status === "paid") {
+      await reverseOrderSales(id);
     }
 
     // Notify admin about admin's own status change (for awareness)

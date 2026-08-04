@@ -2,6 +2,29 @@
 
 ---
 
+## ✅ Session 56 — Best-Sellers Rail (Product.soldCount)
+
+### Model + counter (additive)
+- [x] `Product.js` — `soldCount` (Number, default 0, min 0) + index `{ soldCount: -1, createdAt: -1 }`; **ops:** model change ⇒ dev-server restart required (done)
+- [x] `src/lib/product-sales.ts` — `recordOrderSales` / `reverseOrderSales` (pipeline updates, `$max` floor, fail-silent, bypasses stock/stockVersion)
+- [x] Exactly-once: increment after payment-verify `pending→paid`; decrement after refund `paid→refunded` AND admin cancel of a PAID order; pending cancels skipped
+- [x] `soldCount` INTERNAL — `-soldCount` projection on all three public `/api/products` paths (list/detail/ranked); leak-scan verified; product write routes whitelist-only
+- [x] Additive `sort=best_selling` (`{ soldCount: -1, createdAt: -1 }`)
+
+### CMS + storefront
+- [x] `best-sellers.tsx` renderer (own query `usePublicProducts({ sort: "best_selling", limit })` → ProductRail) + registry entry (lazy)
+- [x] `DEFAULT_SECTIONS` best-sellers entry after `special-picks` + `HOMEPAGE_COMPONENTS`; seed upgraded to insert-missing defaults (soft-delete-aware)
+- [x] «پرفروشترین» dropdown option + `useCatalogFilters` whitelist; `AdminProduct.soldCount?` type
+- [x] `use-catalog-filters.ts` pre-existing lint debt fixed (render-phase adjustment + justified block-disable for the intentional URL-seed effect)
+
+### Scripts + verification
+- [x] `scripts/verify-best-sellers.js` — **13/13 PASS** (ranking + tie-break, leak scans ×2, refund reversal simple + variant, double-refund 400, legacy floor, pending never counts, admin-cancel paid/pending, cash checkout never increments, CMS block)
+- [x] `scripts/backfill-sold-count.js` — OPTIONAL re-runnable backfill (paid + non-cancelled → `$set`); NOT in the regression runner
+- [x] `scripts/run-regression.js` — 32 suites; full regression **32/32 PASS, 0 skipped**; tsc zero errors; lint clean; production build passes; code review approved
+- [x] Known/accepted: payment-verify increment not directly HTTP-testable (sandbox verify needs the interactive page) — covered by verify-payment-retry's claim + reversal-math tests; crash-window recoverable via backfill; **variant-level sales = future scope**
+
+---
+
 ## ✅ Session 55 — Private / Targeted Coupons (Coupon Eligibility)
 
 ### Model (additive, zero migration)

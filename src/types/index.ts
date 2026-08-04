@@ -528,6 +528,10 @@ export interface AdminProduct {
   hasVariants?: boolean;
   variants?: ProductVariant[];
   isActive: boolean;
+  // Session 56 — internal best-sellers counter (units paid, non-refunded).
+  // Admin/supplier API responses include it; the PUBLIC products API never
+  // does (projection exclusion). Only used to power sort=best_selling.
+  soldCount?: number;
   createdAt: string;
   updatedAt: string;
 }

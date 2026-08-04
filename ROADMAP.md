@@ -2,6 +2,15 @@
 
 ## ✅ Completed Milestones
 
+### Best-Sellers Rail — Product.soldCount (Session 56)
+- [x] `Product.soldCount` (Number, default 0, min 0) — units **paid and not later refunded/cancelled**; **INTERNAL** (excluded from every public `/api/products` response via `-soldCount` projection — leak-scan verified); non-unique index `{ soldCount: -1, createdAt: -1 }`
+- [x] `src/lib/product-sales.ts` — `recordOrderSales`/`reverseOrderSales` (pipeline updates, `$max` floor at 0, fail-silent, bypasses stock/stockVersion); exactly-once inside the payment-verify `pending→paid`, refund `paid→refunded`, and admin-cancel-of-PAID-order atomic claims; pending cancels skipped
+- [x] Additive `sort=best_selling` on `GET /api/products` (`{ soldCount:-1, createdAt:-1 }`); product write routes whitelist-only (clients can never set soldCount)
+- [x] CMS block `best-sellers` (registry + renderer into ProductRail + `DEFAULT_SECTIONS` after `special-picks`); **seed upgraded to insert-missing defaults** (soft-delete-aware, never resurrects, doesn't disturb admin edits)
+- [x] «پرفروشترین» catalog sort option + `useCatalogFilters` whitelist; `AdminProduct.soldCount?` type; pre-existing `set-state-in-effect` lint debt fixed via render-phase adjustment
+- [x] `scripts/verify-best-sellers.js` — **13/13 PASS** (ranking + tie-break, list/detail leak scans, refund + admin-cancel reversals, legacy 0 floor, double-refund 400, pending-never-counts, cash checkout never increments, CMS block); `scripts/backfill-sold-count.js` OPTIONAL re-runnable backfill; regression runner now **32 suites**, full **32/32 PASS**; tsc/lint/build green; code review approved (admin-cancel reversal gap fixed); dev-server restart required (model change)
+- [x] **Variant-level sales aggregation = FUTURE SCOPE** — the counter is the product-level sum across all variants
+
 ### Private / Targeted Coupons — Coupon Eligibility (Session 55)
 - [x] Embedded `eligibility` on the Coupon model: `{ mode: "public" | "assigned_users" | "user_groups", assignedUsers: ObjectId[], groups: String[] }` — missing block = public, **zero migration** for existing coupons; multikey indexes only for future list/admin lookups (never the claim path)
 - [x] Single enforcement point in `src/lib/coupons.ts`: `getCouponEligibility` (fail-safe → public), `isUserEligibleForCoupon` (pure JS on the fetched doc — **no extra DB query on checkout**), `userGroupsOf()` (returns `[]` → **fail-closed** until groups exist), `parseCouponEligibility` (mode whitelist, ObjectId → 400, caps 1000 users / 50 groups / 32-char slugs, dedupe, lowercase + sanitize)
@@ -363,9 +372,13 @@
 
 ## 🚀 Next Milestone
 
-### Session 54 — Best-Sellers Rail
+### Best-Sellers Rail ✅ (completed as Session 56)
 
-**Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅ (completed); **Session 53 = Homepage CMS ✅ (completed)**; **Session 55 = Private / Targeted Coupons ✅ (completed — approved Option C embedded eligibility)**; **Session 54 = best-sellers rail** (client-side, reuses the existing shared product pool — only if still needed after the CMS work). Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
+**Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅; **Session 53 = Homepage CMS ✅**; **Session 55 = Private / Targeted Coupons ✅**; **Session 56 = best-sellers rail ✅** — the ROADMAP's original plan ("client-side, reuse the newest pool") was rejected because the pool carried **no sales data** (would have been a fake ranking, violating the Session 50 no-fake-data invariant); the approved denormalized `Product.soldCount` approach delivers a real, paid-only ranking. Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
+
+### Session 57 — Candidate (pick one)
+- **Production Readiness (first tranche):** performance (Core Web Vitals) + accessibility audit, then unit tests (Vitest + Testing Library) and E2E (Playwright) on the highest-risk paths (inventory concurrency, payment claims, coupon claim/release).
+- **Growth features:** SMS/OTP authentication, admin real charts (recharts), customer email/SMS order notifications, customer segments → first-purchase / birthday / spending coupons via the Session 55 `targetingRules` seam.
 
 ---
 

@@ -5,6 +5,7 @@ import { requireRoleOrError, serverError } from "@/lib/auth-utils";
 import Order from "@/models/Order";
 import { notifyOrderEvent } from "@/lib/notifications";
 import { restoreOrderStock } from "@/lib/inventory";
+import { reverseOrderSales } from "@/lib/product-sales";
 import { sanitizePlainText } from "@/lib/sanitize";
 
 /**
@@ -100,6 +101,12 @@ export async function POST(req: NextRequest) {
     // If stock was already restored, restoreOrderStock() no-ops — a refund
     // never increases stock twice. Variant items restore via their variantId.
     await restoreOrderStock(orderId);
+
+    // Session 56 — reverse the best-sellers counter. The paid→refunded claim
+    // above is exactly-once (double refund → 400), so refunded units are
+    // decremented exactly once and can never go below 0 (pipeline floor).
+    // Fail-silent — never blocks the refund itself.
+    await reverseOrderSales(orderId);
 
     // Notify the customer about the refund (in-app, best-effort — never
     // blocks the refund itself).
