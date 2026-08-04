@@ -1,66 +1,50 @@
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
-import { HeroCarousel } from "@/components/storefront/home/hero-carousel";
-import { QuickCategories } from "@/components/storefront/home/quick-categories";
-import { CampaignBanner } from "@/components/storefront/home/campaign-banner";
-import { SpecialPicks } from "@/components/storefront/home/special-picks";
-import { NewestProducts } from "@/components/storefront/home/newest-products";
-import { PremiumCollection } from "@/components/storefront/home/premium-collection";
-import { PopularBrands } from "@/components/storefront/home/popular-brands";
-import { GiftCollections } from "@/components/storefront/home/gift-collections";
-import { TrustBadges } from "@/components/storefront/home/trust-badges";
 import { LazySection } from "@/components/storefront/home/lazy-section";
+import { getHomepageComposition } from "@/lib/homepage-content";
+import { getHomepageBlock } from "@/lib/homepage-sections/registry";
 
 /**
- * Homepage (Session 50 — Homepage UX Redesign).
- * Thin server-component composition of reusable, self-contained sections
- * (each section owns its own max-width container + vertical rhythm). Every
- * section reuses existing APIs + hooks; no fake data; the single product pool
- * query feeds all three product rails. Below-the-fold sections lazy-mount on
- * scroll.
+ * Homepage (Session 50 — UX redesign; Session 53 — CMS data-driven).
+ *
+ * Thin server component: fetches the PUBLIC homepage composition once
+ * server-side (`getHomepageComposition` — enabled, non-deleted sections in
+ * sortOrder, each with its published content rows), then renders every
+ * section through the block registry. Unknown components are skipped
+ * fail-safe (a bad `component` id never crashes the homepage). Below-the-fold
+ * sections still lazy-mount on scroll.
+ *
+ * The homepage is force-dynamic so CMS edits always render live in
+ * production (`next start`); without this, Next prerenders `/` statically at
+ * build time and the served HTML is stale until a rebuild. See H1.
  */
-export default function HomePage() {
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const composition = await getHomepageComposition();
+
   return (
     <div className="flex min-h-screen flex-col">
       <StorefrontHeader />
 
       <main className="flex-1 pb-14">
-        {/* 1. Hero Carousel */}
-        <HeroCarousel />
+        {composition.sections.map((section) => {
+          const block = getHomepageBlock(section.component);
+          if (!block) return null;
 
-        {/* 2. Quick Categories */}
-        <QuickCategories />
-
-        {/* 3. Featured Campaign Banner */}
-        <CampaignBanner />
-
-        {/* 4. Special Picks (real prices, countdown) */}
-        <SpecialPicks />
-
-        {/* 5. Newest Products */}
-        <LazySection>
-          <NewestProducts />
-        </LazySection>
-
-        {/* 6. Premium Collection */}
-        <LazySection>
-          <PremiumCollection />
-        </LazySection>
-
-        {/* 7. Popular Brands */}
-        <LazySection minHeight={200}>
-          <PopularBrands />
-        </LazySection>
-
-        {/* 8. Gift Collections */}
-        <LazySection minHeight={260}>
-          <GiftCollections />
-        </LazySection>
-
-        {/* 9. Trust Badges */}
-        <LazySection minHeight={280}>
-          <TrustBadges />
-        </LazySection>
+          const Renderer = block.renderer;
+          if (block.lazy) {
+            return (
+              <LazySection
+                key={section.slug}
+                minHeight={block.minHeight}
+              >
+                <Renderer section={section} />
+              </LazySection>
+            );
+          }
+          return <Renderer key={section.slug} section={section} />;
+        })}
       </main>
 
       <StorefrontFooter />

@@ -5,6 +5,7 @@ import { LayoutGrid } from "lucide-react";
 import { usePublicCategories } from "@/hooks/use-public-categories";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SectionHeader } from "@/components/storefront/home/section-header";
+import type { HomepageSectionRendererProps } from "@/types";
 
 /**
  * Quick Categories (Session 50).
@@ -13,7 +14,7 @@ import { SectionHeader } from "@/components/storefront/home/section-header";
  * to the catalog with the category pre-selected (useCatalogFilters reads the
  * ?category= URL param once on mount).
  */
-export function QuickCategories() {
+export function QuickCategories({ section }: HomepageSectionRendererProps) {
   const { data: categories, isLoading, isError } = usePublicCategories();
 
   const count = categories?.length ?? 0;
@@ -21,8 +22,8 @@ export function QuickCategories() {
   return (
     <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
       <SectionHeader
-        title="دسته‌بندی‌های محبوب"
-        subtitle="از میان دسته‌بندی‌های فروشگاه انتخاب کنید"
+        title={section.title || "دسته‌بندی‌های محبوب"}
+        subtitle={section.subtitle || "از میان دسته‌بندی‌های فروشگاه انتخاب کنید"}
         icon={<LayoutGrid className="h-4.5 w-4.5" />}
       />
 

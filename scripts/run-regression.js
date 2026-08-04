@@ -54,6 +54,7 @@ const suites = [
   "verify-variant-wishlist",
   "verify-product-import-export", // Session 51 (before coupons-marketing: creates users/suppliers/products, cleans its own PREFIX'd rows)
   "verify-coupons-marketing",
+  "verify-homepage-cms", // Session 53 — admin CRUD + public composition + visibility rules
   "verify-telegram-alerts",
 ];
 

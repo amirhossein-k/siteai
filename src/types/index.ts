@@ -772,6 +772,80 @@ export interface NotificationStreamEvent {
 }
 
 // ============================================================
+// Homepage CMS (Session 53)
+// ============================================================
+
+/** Grouped presentation settings stored on a HomepageSection (Tier 1). */
+export interface HomepagePresentation {
+  appearance: {
+    themeColor: string;
+    background: string;
+    spacing: string;
+    borderRadius: string;
+  };
+  behavior: {
+    autoplay: boolean;
+    autoplayInterval: number;
+    showArrows: boolean;
+    showDots: boolean;
+    countdownEnabled: boolean;
+    countdownTarget: "end_of_day" | "fixed" | "off";
+    countdownEndsAt: string | null;
+    maxItems: number;
+    layoutVariant: "grid" | "carousel" | "stacked" | "split";
+  };
+}
+
+/** Admin section row (GET /api/admin/homepage/sections). */
+export interface AdminHomepageSection {
+  _id: string;
+  slug: string;
+  component: string;
+  title: string;
+  subtitle: string;
+  enabled: boolean;
+  sortOrder: number;
+  presentation: HomepagePresentation;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Public content row (strict projection). */
+export interface PublicHomepageContent {
+  _id: string;
+  title: string;
+  subtitle: string;
+  tagline?: string;
+  description?: string;
+  ctaLabel: string;
+  ctaHref: string;
+  imageDesktop: string;
+  imageMobile: string;
+  themeColor: string;
+  icon?: string;
+}
+
+/** Public section (GET /api/homepage). */
+export interface PublicHomepageSection {
+  slug: string;
+  component: string;
+  title: string;
+  subtitle: string;
+  presentation: HomepagePresentation;
+  content: PublicHomepageContent[];
+}
+
+/** GET /api/homepage response. */
+export interface PublicHomepageComposition {
+  sections: PublicHomepageSection[];
+}
+
+/** Props every storefront section renderer receives (registry). */
+export interface HomepageSectionRendererProps {
+  section: PublicHomepageSection;
+}
+
+// ============================================================
 // Bulk Product CSV Import/Export (Session 51)
 // ============================================================
 

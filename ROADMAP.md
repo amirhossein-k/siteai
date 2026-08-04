@@ -342,11 +342,21 @@
 - [x] **Regression runner hermeticity:** the shared login rate-limiter keys (`login:<phone>` 10/15min, `login_ip:<ip>` 30/15min) accumulate across the 29 sequential suites and caused mid-run 401s — `scripts/run-regression.js` now clears those keys before EACH suite (same env/dbName convention; fail-safe warn; **production limiter untouched**).
 - [x] Zero API/schema/model/index changes; `npx tsc --noEmit` zero errors; `node --check` clean; code review approved; **full regression 29/29 PASS**; browser QA mobile drawer green (opened/closed/navigated, no console errors); **no dev-server restart needed**.
 
+## ✅ Homepage CMS (Session 53)
+- [x] **Two-tier model:** `HomepageSection` (Tier 1 composition — immutable `slug`/`component`, `enabled`, `sortOrder`, grouped `presentation {appearance, behavior}`; soft-delete) + four Tier-2 content models (`HomepageHeroSlide`/`HomepageCampaignBanner`/`HomepageGiftCollection`/`HomepageTrustBadge`) bound by `sectionSlug` with `sortOrder`/`isActive`/`status` (draft|published)/`publishedAt`/soft-delete — **model change ⇒ dev-server restart required**
+- [x] **Block registry** `src/lib/homepage-sections/registry.ts` — server-only `component` → renderer + content resolver adapter (DB isolated behind adapters); unknown component skipped fail-safe; adding a block = one entry
+- [x] **Seed + graceful static fallback** `src/lib/homepage-content.ts` — `DEFAULT_SECTIONS` (9 sections) seeds empty DB + idempotent migration from `homepage-config.ts`; public reader `getHomepageComposition()` (enabled + non-deleted in `sortOrder`, published+active+non-deleted rows, **strict projection**, unknown skipped) falls back to the static config when the CMS is un-bootstrapped
+- [x] **Admin API** — sections route (GET seeds/list, POST/PUT/DELETE, slug/component immutable) + `createContentRouteHandlers` factory behind 4 thin content routes (admin-only RBAC, per-type validation, soft-delete, `publishedAt` stamping); **public** `GET /api/homepage` (no auth, same strict-projection shape)
+- [x] **Storefront** — `src/app/page.tsx` thin async server component rendering through the registry; all 9 Session 50 renderers take `HomepageSectionRendererProps` (content-bearing read `section.content`, data-driven read `presentation.behavior`); lazy-mount preserved
+- [x] **Admin UI** `/admin/homepage` — tabs (sections + 4 content editors), section-scope picker, S3 image upload via existing `/api/upload`, «صفحه اصلی» sidebar entry; hooks `use-admin-homepage.ts` + types
+- [x] **Invariants** — zero existing-API/schema/index changes, zero new dependencies, `homepage-config.ts` retained as seed/fallback source
+- [x] `scripts/verify-homepage-cms.js` — **13/13 PASS** (real API + real DB; incl. malformed ObjectId → 400); `npx tsc --noEmit` zero errors; build passes; code review approved; regression runner → **30 suites**; dev server restarted (fresh boot, `/api/homepage` live)
+
 ## 🚀 Next Milestone
 
-### Session 53 — TBD
+### Session 54 — Best-Sellers Rail
 
-Awaiting the Session 53 design review. **Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅ (completed); **Session 53 = Homepage CMS** — replace the static homepage configuration with a fully admin-manageable content system: new homepage content model, graceful fallback to the current static config when empty, hero slider + campaign banners + gift collections + trust badges CRUD (desktop/mobile images via the existing S3 upload, ordering, active/inactive), designed for future block extensibility; Session 54 = **best-sellers rail** (client-side, reuses the shared product pool — only if still needed after the CMS work). Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
+**Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅ (completed); **Session 53 = Homepage CMS ✅ (completed)**; **Session 54 = best-sellers rail** (client-side, reuses the existing shared product pool — only if still needed after the CMS work). Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
 
 ---
 

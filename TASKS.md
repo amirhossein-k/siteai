@@ -821,9 +821,32 @@
 - [x] **Browser QA (390px):** drawer opens/closes/navigates, no console errors; **caught + fixed the render-prop RSC-boundary crash** («Functions are not valid as a child of Client Components») → plain children + store-driven close
 - [x] **Zero API/schema/model/index changes → no dev-server restart needed**
 
-## 🔄 Next Task (Session 53 — TBD)
+## ✅ Session 53 — Homepage CMS
 
-Awaiting the Session 53 design review. **Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅ (completed); **Session 53 = Homepage CMS** (replace the static homepage configuration with a fully admin-manageable content system — new homepage content model, graceful fallback to the static config when empty, hero slider + campaign banners + gift collections + trust badges CRUD with desktop/mobile images via the existing S3 upload, ordering + active/inactive, future block extensibility); Session 54 = **best-sellers rail** (client-side, reuses the existing shared product pool — only if still needed after the CMS work). Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
+### Architecture (approved v3, no redesign)
+- [x] `HomepageSection` (Tier 1 composition: immutable `slug` + `component`, `title`/`subtitle` overrides, `enabled`, `sortOrder`, grouped `presentation {appearance: themeColor/background/spacing/borderRadius, behavior: autoplay/autoplayInterval/showArrows/showDots/countdownEnabled/countdownTarget/countdownEndsAt/maxItems/layoutVariant}`, soft-delete `deletedAt`)
+- [x] Four Tier-2 content models (`HomepageHeroSlide`/`HomepageCampaignBanner`/`HomepageGiftCollection`/`HomepageTrustBadge`) bound by `sectionSlug` — `sortOrder`/`isActive`/`status` (draft|published)/`publishedAt`/`publishAt` (reserved)/soft-delete
+- [x] **Block registry** `src/lib/homepage-sections/registry.ts` — `component` → renderer + content resolver adapter (no raw model access); fail-safe `getHomepageBlock()`; future block = one entry
+- [x] `src/lib/homepage-content.ts` — `DEFAULT_SECTIONS` seed + fallback, idempotent migration from `homepage-config.ts`, `getHomepageComposition()` public reader (strict projection, unknown skipped, static fallback when DB empty)
+
+### Admin API (RBAC, additive)
+- [x] `GET/POST/PUT/DELETE /api/admin/homepage/sections` — idempotent seed on first GET; slug/component immutable (400); grouped presentation validation
+- [x] `createContentRouteHandlers(type, model)` factory + 4 thin routes (`hero-slides`/`campaign-banners`/`gift-collections`/`trust-badges`) — GET/POST/PUT/DELETE, admin-only, `validateContentRow` + `normalizeContentCommon`, soft-delete, `publishedAt` stamping
+- [x] `GET /api/homepage` — public composition (no auth, strict projection, s-maxage=60 cache header)
+
+### Storefront + admin UI
+- [x] `src/app/page.tsx` — thin async server component rendering through the registry; all 9 renderers take `HomepageSectionRendererProps`
+- [x] `/admin/homepage` — tabs + `SectionsEditor` + `ContentEditor` (section-scope picker) + `ImageField` (existing `/api/upload` S3 flow); sidebar «صفحه اصلی» entry
+- [x] `use-admin-homepage.ts` React Query hooks; `src/types/index.ts` homepage types
+
+### Verification
+- [x] `scripts/verify-homepage-cms.js` — **13/13 PASS** (real API + real DB: authz, bootstrap seed, public composition + leak scan, unknown-component fail-safe, shared-renderer isolation, slug/component immutability, visibility/draft/soft-delete rules, publishedAt stamping, per-type CRUD + validation, malformed ObjectId → 400)
+- [x] `npx tsc --noEmit` zero errors; build passes; lint clean on new files; code review approved (fixes: `isValidObjectId` guards → 400, E11000-race-tolerant seed, unused-code cleanup); regression runner → **30 suites** (`verify-homepage-cms` after `verify-coupons-marketing`)
+- [x] **Ops:** model changes ⇒ dev-server restart required — performed (fresh boot after system restart; `/api/homepage` confirmed live)
+
+## 🔄 Next Task (Session 54 — Best-Sellers Rail)
+
+**Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅; **Session 53 = Homepage CMS ✅ (completed)**; **Session 54 = best-sellers rail** (client-side, reuses the existing shared product pool — only if still needed after the CMS work). Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
 
 ## 📋 Backlog (Future)
 

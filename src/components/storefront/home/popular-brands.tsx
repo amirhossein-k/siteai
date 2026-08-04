@@ -5,14 +5,15 @@ import { BadgeCheck } from "lucide-react";
 import { usePublicBrands } from "@/hooks/use-public-brands";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SectionHeader } from "@/components/storefront/home/section-header";
+import type { HomepageSectionRendererProps } from "@/types";
 
 /**
- * Popular Brands (Session 50).
+ * Popular Brands (Session 50; Session 53 — CMS-driven title).
  * The public brands API exposes only _id/name/slug (no logo), so tiles show
  * styled initial circles — the same visual language as a logo wall, with zero
  * API changes. Desktop: grid; mobile: horizontal scroll-snap.
  */
-export function PopularBrands() {
+export function PopularBrands({ section }: HomepageSectionRendererProps) {
   const { data: brands, isLoading, isError } = usePublicBrands();
 
   const list = brands ?? [];
@@ -20,8 +21,8 @@ export function PopularBrands() {
   return (
     <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
       <SectionHeader
-        title="برندهای محبوب"
-        subtitle="فروشندگان و برندهای معتبر فروشگاه"
+        title={section.title || "برندهای محبوب"}
+        subtitle={section.subtitle || "فروشندگان و برندهای معتبر فروشگاه"}
         icon={<BadgeCheck className="h-4.5 w-4.5" />}
       />
 

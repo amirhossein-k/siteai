@@ -1,5 +1,32 @@
 # Changelog
 
+## Session 53 (August 2026) — Homepage CMS (Admin-Manageable Composition + Content)
+
+### Architecture (v3, per approved design — no redesign)
+- **Two-tier model:** `HomepageSection` (Tier 1 — composition: `slug` identity + `component` renderer id + `enabled` + `sortOrder` + grouped `presentation { appearance, behavior }`; `slug`/`component` are **immutable** after creation) and four Tier-2 per-type content models (`HomepageHeroSlide` / `HomepageCampaignBanner` / `HomepageGiftCollection` / `HomepageTrustBadge`) bound to a section by `sectionSlug`, each with `sortOrder` / `isActive` / `status` (draft|published) / `publishedAt` / soft-delete `deletedAt`. **Model change ⇒ dev-server restart was required** (Mongoose model cache).
+- **Block registry** `src/lib/homepage-sections/registry.ts` — server-only registry mapping a `component` id to its storefront renderer + an optional content RESOLVER ADAPTER. The registry never stores raw Mongoose models (DB access isolated behind adapters in `homepage-content.ts`). Adding a future block = one registry entry (+ content model + admin editor). `getHomepageBlock()` is fail-safe (unknown component → skipped, homepage never crashes).
+
+### Seed + graceful static fallback
+- **`src/lib/homepage-content.ts`** — `DEFAULT_SECTIONS` (the 9 Session 50 sections in order) seeds the DB when empty and doubles as the fallback order; `seedHomepageContent()` is the idempotent migration from `homepage-config.ts` (sections + per-type static rows inserted only when that section has no content yet); `getHomepageComposition()` — the PUBLIC reader (enabled + non-deleted sections in `sortOrder`, published + active + non-deleted content rows under a **strict projection** that excludes status/publishedAt/isActive/deletedAt, unknown components skipped). When the CMS has never been bootstrapped the storefront falls back to the Session 50 static config byte-for-byte, so an empty DB can never break the homepage.
+
+### Admin API (RBAC, additive)
+- **`GET /api/admin/homepage/sections`** (seeds on first call) + POST (create section, slug/component immutable), PUT (presentation/title/subtitle/enabled/sortOrder with grouped validation), DELETE (soft delete).
+- **`src/lib/homepage-admin-api.ts`** — `createContentRouteHandlers(type, model)` factory shared by the four thin routes `src/app/api/admin/homepage/{hero-slides,campaign-banners,gift-collections,trust-badges}/route.ts` (GET/POST/PUT/DELETE): admin-only via `requireRoleOrError(["admin"])`, per-type field validation via `validateContentRow` (title required, http(s)-or-internal-path hrefs only, whitelisted trust-badge icons, sanitize), common fields via `normalizeContentCommon`, soft-delete, `publishedAt` stamping (draft → null; publish → now).
+- **`GET /api/homepage`** — PUBLIC composition endpoint (no auth) returning the same strict-projection shape used server-side by the storefront page.
+
+### Storefront + admin UI
+- **`src/app/page.tsx`** — thin async server component: `getHomepageComposition()` once, then renders every section through the block registry (below-fold sections still lazy-mount via `LazySection`).
+- **All 9 Session 50 renderers** now take `HomepageSectionRendererProps` (`{ section }`): content-bearing ones render from `section.content` (hero-carousel, campaign-banner, gift-collections, trust-badges — themeColor/hex backgrounds, responsive desktop/mobile images, CTA only when both label+href present); data-driven ones read `section.presentation.behavior` (maxItems, countdown settings, autoplay/arrows/dots, layout variant) and `section.title`/`subtitle` overrides. Renders nothing when a content section has no published rows.
+- **`src/app/admin/homepage/page.tsx`** — tabbed admin UI (بخش‌ها / اسلایدر / بنر کمپین / کالکشن هدیه / نشان‌های اعتماد) with `SectionsEditor` (order/visibility/presentation) + `ContentEditor` (per-type CRUD, section-scope picker) + `ImageField` (existing `/api/upload` S3 flow).
+- **Admin sidebar** — «صفحه اصلی» entry (LayoutTemplate icon).
+- **`src/hooks/use-admin-homepage.ts`** — React Query hooks (sections + per-type content CRUD with key-factory invalidation); **types** added in `src/types/index.ts` (`HomepagePresentation`, `PublicHomepageSection`, `PublicHomepageContent`, `HomepageSectionRendererProps`, `AdminHomepageSection`).
+
+### Verification
+- **`scripts/verify-homepage-cms.js` — 13/13 PASS** (admin authz 401/403; idempotent sections bootstrap + static-config seed; public composition ordering + projection leak scan; unknown component skipped and `GET /` still 200; multiple sections sharing one renderer keep their own content; slug/component immutability → 400; `enabled=false` hides publicly; soft-deleted content hidden; draft content hidden; `publishedAt` stamping draft→null→now; per-type CRUD + validation errors; **malformed ObjectId → 400 on content + section PUT/DELETE — never a CastError 500**).
+- Code-review fixes applied: `mongoose.isValidObjectId` guards (→ 400) added to the content factory + sections PUT/DELETE (project convention); seed made E11000-race-tolerant (concurrent first boot no longer 500s); unused `str()` length arg + unused constants/imports removed (lint clean on all new files).
+- Regression runner now **30 suites** (`verify-homepage-cms` after `verify-coupons-marketing`). `npx tsc --noEmit` zero errors; production build passes; code review approved.
+- **Ops note:** model changes ⇒ dev-server restart required (done — booted fresh after the system restart; `/api/homepage` confirmed returning live DB content).
+
 ## Session 52 (August 2026) — Mobile Dashboard Navigation Fix + Regression Runner Hermeticity
 
 ### Mobile navigation fix (Admin + Supplier dashboards)

@@ -21,6 +21,7 @@ import {
   Ticket,
   BarChart3,
   FileUp,
+  LayoutTemplate,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,11 @@ const navItems = [
     title: "گزارش‌ها",
     href: "/admin/analytics",
     icon: BarChart3,
+  },
+  {
+    title: "صفحه اصلی",
+    href: "/admin/homepage",
+    icon: LayoutTemplate,
   },
   {
     title: "محصولات",
