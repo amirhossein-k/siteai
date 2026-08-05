@@ -1,5 +1,39 @@
 # Changelog
 
+## Session 57 (August 2026) — Order Management v2 (Claim-Based Transitions + Shipping Metadata + Shared Components)
+
+### Approved Rev 2 design (implemented as designed — no redesign)
+- **No packed status / payment domain separation** — the six order statuses (`pending_payment` … `cancelled`) remain pure order-domain states; payment states (`pending/paid/failed/canceled/refunded`) live **ONLY** in `payment.status`. `refunded` appears only as a statusHistory/display entry (`ORDER_STATUS_CONFIG`), never as a settable `order.status` (verify tests 9 + 17 assert this).
+- **`SupplierOrder` untouched** — zero changes to the supplier-side order model/flow.
+- **No CSV export, no reorder feature** — both explicitly out of scope and absent.
+
+### Model (additive, backward compatible)
+- **`src/models/Order.js`** — `shipping` subdocument `{ provider, trackingCode, shippedAt, deliveredAt, note }` (all defaulted — old orders render without tracking) + non-unique index `{ status: 1, createdAt: -1 }` for the status-filtered admin list (newest-first). **Model change ⇒ dev-server restart required** (done).
+- **`src/types/index.ts`** — `OrderShipping` + `AdminOrder.shipping?`.
+
+### Server — atomic claim + shipping + sort
+- **`src/app/api/admin/orders/route.ts`** — the PUT handler replaced the read-modify-write (`findById → mutate → save`) with an **atomic claim** `findOneAndUpdate({ _id, status: order.status })`: two concurrent admin requests can no longer both win a transition or double-append statusHistory (loser → 400 «وضعیت سفارش همزمان تغییر کرده است»). **Reviewer-driven hardening (M1):** for CANCELS the claim ALSO gates on `payment.status: "pending"` (the Session 46 race-safe pattern) so an admin cancel and a concurrent payment-verify SUCCESS claim are mutually exclusive even on an advanced order (`processing` + still-pending payment) — the stale-read fingerprint (a cancel that had read `payment=pending` stamping `payment.status: "failed"` onto a concurrently-paid order and skipping the sale reversal) is impossible.
+- **Cancelling an unpaid order now records `payment.status: "canceled"`** (was `"failed"`) — aligned with the Session 46 customer-cancel and the payment-NOK state for the same business event (reviewer finding L5); the payment domain still never leaks into `order.status`.
+- **Shipping metadata** accepted ONLY on `shipped`/`delivered` (400 otherwise): `shipped` sets `shipping.shippedAt` + optional sanitized `provider`/`trackingCode`/`note` (100/100/500 caps); `delivered` sets `shipping.deliveredAt` (tracking preserved). **`trackingCode` is optional by design** (verify test 7).
+- **GET list** — additive `sort=newest|oldest` (default newest → `createdAt: -1`).
+- All Session 56/46 side-effects preserved: cancel → `restoreOrderStock` (idempotent) + `releaseCouponUsage` + `reverseOrderSales` (paid orders only); customer notifications + Telegram unchanged.
+
+### Shared components (one source of truth for every order surface)
+- **`src/components/orders/order-status-badge.tsx`** (new) — `ORDER_STATUS_CONFIG` (6 order statuses + `refunded` display entry), `OrderStatusBadge`, `PaymentStatusBadge` (payment domain), `statusNoteLabel` (Session 46 `customer_cancelled` → «لغو توسط مشتری»).
+- **`src/components/orders/order-timeline.tsx`** (new) — `OrderEventTimeline` (admin: every history entry + actor chips مدیر/مشتری/سیستم) / `OrderProgressTimeline` (customer: lifecycle steps up to the current status, timestamps picked from statusHistory).
+- **`src/components/orders/order-invoice.tsx`** (new) — items table + subtotal/discount/total footer, shared by admin + customer detail pages.
+- **`src/app/admin/orders/page.tsx`** — newest/oldest sort toggle (ArrowDownWideNarrow/ArrowUpNarrowWide) + shared badges; dead client-side `filteredOrders` alias removed (reviewer L3).
+- **`src/app/admin/orders/[id]/page.tsx`** — optional shipping provider/tracking inputs on the `shipped` transition + «اطلاعات ارسال» card; render-phase form reset preserved.
+- **`src/app/(storefront)/orders/[id]/page.tsx`** — «پیگیری ارسال» card (provider/trackingCode/shippedAt/deliveredAt); Session 46 self-cancel + Session 30 retry-payment intact.
+- **`src/hooks/use-admin-orders.ts`** — `sort` filter + `shipping` payload in the update mutation.
+
+### Verification
+- **`scripts/verify-order-management.js` — 17/17 PASS** (real HTTP API + real DB): happy path checkout→paid→confirmed→shipped(+tracking)→delivered; stock never restored on the paid path; statusHistory `actor: "admin"`; forbidden transitions → 400; **atomic hardening** (concurrent confirmed claims → exactly one 200 + one 400 + single history entry); shipping rejected on non-shipped → 400; **trackingCode optional**; admin cancel of PAID order reverses soldCount (Session 56 invariant); refund → `payment.status=refunded` + `order.status` stays in the ORDER domain + double-refund 400; payment NOK → stock restored once + coupon released; admin PUT authz (401/403); list `sort=newest|oldest` + search-by-id + status filter + pagination; customer self-cancel pre-payment (actor=customer) + post-payment 409; delivered orders retain tracking; **test 17: admin cancel vs payment-verify at `processing` — no stale-read payment corruption** (never `payment.status: "failed"`; every race outcome is a consistent state). Self-cleaning (PREFIX'd fixtures + its own coupon codes).
+- **`scripts/run-regression.js`** — 33 suites (`verify-order-management` after `verify-best-sellers`). Full sequential regression **33/33 PASS, 0 skipped** (a single transient `verify-coupons` failure on the first post-fix run passed standalone 27/27 and on the sequential re-run — the documented shared-DB flake pattern).
+- `npx tsc --noEmit` **zero errors**; **lint clean on all changed TS/TSX files** (the `no-require-imports` findings in `scripts/*.js` are the pre-existing whole-directory pattern shared by every verify suite — unchanged convention).
+- Code review approved — reviewer findings all addressed: M1 (cancel claim payment-state guard, closed + regression-tested as test 17), L1 (dead `waitFor`/`prodTerminal` removed), L2 (dead `filteredOrders` alias removed), L3 (test 9 strengthened to the order-domain set), L4 (`failed`→`canceled` aligned + documented).
+- **Ops note:** Order model change ⇒ dev-server restart required (done — fresh boot confirmed the `shipping` subdocument + new index are live).
+
 ## Session 56 (August 2026) — Best-Sellers Rail (Product.soldCount)
 
 ### Architecture (approved design — denormalized counter + additive sort + CMS block; no redesign)

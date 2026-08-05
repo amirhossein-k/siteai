@@ -1,13 +1,11 @@
 "use client";
 
-import { use, useState, useMemo, useEffect } from "react";
+import { use, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAdminOrder, useUpdateOrderStatus, useRefundOrder } from "@/hooks/use-admin-orders";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
   CardContent,
@@ -20,12 +18,7 @@ import {
   AlertCircle,
   RefreshCw,
   Loader2,
-  Package,
-  Truck,
-  CheckCircle2,
-  XCircle,
   Clock,
-  Ban,
   ArrowLeft,
   Save,
   Undo2,
@@ -33,62 +26,17 @@ import {
 } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 import { showToast } from "@/components/ui/toast";
+import {
+  ORDER_STATUS_CONFIG,
+  OrderStatusBadge,
+  PaymentStatusBadge,
+  type OrderStatusWithRefund,
+} from "@/components/orders/order-status-badge";
+import { OrderEventTimeline } from "@/components/orders/order-timeline";
+import { OrderInvoice } from "@/components/orders/order-invoice";
 import type { OrderStatusV2 } from "@/types";
 
-// --- Status Configuration ---
-
-const statusConfig: Record<
-  OrderStatusV2 | "refunded",
-  {
-    label: string;
-    variant: "default" | "secondary" | "destructive" | "success" | "warning";
-    icon: React.ElementType;
-    color: string;
-  }
-> = {
-  pending_payment: {
-    label: "در انتظار پرداخت",
-    variant: "secondary",
-    icon: Clock,
-    color: "text-gray-500 bg-gray-100 dark:bg-gray-800 dark:text-gray-400",
-  },
-  processing: {
-    label: "در حال پردازش",
-    variant: "warning",
-    icon: Package,
-    color: "text-amber-600 bg-amber-50 dark:bg-amber-950 dark:text-amber-300",
-  },
-  confirmed: {
-    label: "تأیید شده",
-    variant: "default",
-    icon: CheckCircle2,
-    color: "text-blue-600 bg-blue-50 dark:bg-blue-950 dark:text-blue-300",
-  },
-  shipped: {
-    label: "ارسال شده",
-    variant: "default",
-    icon: Truck,
-    color: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950 dark:text-indigo-300",
-  },
-  delivered: {
-    label: "تحویل شده",
-    variant: "success",
-    icon: CheckCircle2,
-    color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-300",
-  },
-  cancelled: {
-    label: "لغو شده",
-    variant: "destructive",
-    icon: Ban,
-    color: "text-red-600 bg-red-50 dark:bg-red-950 dark:text-red-300",
-  },
-  refunded: {
-    label: "بازپرداخت شده",
-    variant: "secondary",
-    icon: Undo2,
-    color: "text-orange-600 bg-orange-50 dark:bg-orange-950 dark:text-orange-300",
-  },
-};
+const statusConfig = ORDER_STATUS_CONFIG;
 
 // Valid transitions for each status
 const validTransitions: Record<OrderStatusV2, OrderStatusV2[]> = {
@@ -99,27 +47,6 @@ const validTransitions: Record<OrderStatusV2, OrderStatusV2[]> = {
   delivered: [],
   cancelled: [],
 };
-
-const paymentLabels: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "success" | "warning" }> = {
-  paid: { label: "پرداخت شده", variant: "success" },
-  pending: { label: "در انتظار", variant: "warning" },
-  failed: { label: "ناموفق", variant: "destructive" },
-  canceled: { label: "لغو شده", variant: "destructive" },
-  refunded: { label: "بازپرداخت شده", variant: "secondary" },
-};
-
-/**
- * statusHistory notes are machine-readable audit keys (Session 46) — map
- * known keys to Persian labels for display; passthrough for human-entered
- * notes (admin writes Persian/empty notes today).
- */
-const statusNoteLabels: Record<string, string> = {
-  customer_cancelled: "لغو توسط مشتری",
-};
-function statusNoteLabel(note?: string): string | undefined {
-  if (!note) return undefined;
-  return statusNoteLabels[note] || note;
-}
 
 // --- Page Component ---
 
@@ -136,6 +63,9 @@ export default function OrderDetailPage({
 
   const [selectedStatus, setSelectedStatus] = useState<string>("");
   const [statusNote, setStatusNote] = useState("");
+  // Session 57 — optional shipping metadata captured on the shipped transition.
+  const [shippingProvider, setShippingProvider] = useState("");
+  const [shippingTracking, setShippingTracking] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [refundReason, setRefundReason] = useState("");
@@ -147,13 +77,18 @@ export default function OrderDetailPage({
     return validTransitions[order.status as OrderStatusV2] || [];
   }, [order]);
 
-  // Reset form when order changes
-  useEffect(() => {
+  // Reset form when order changes — render-phase adjustment (the lint-compliant
+  // pattern; an effect-based reset would cascade renders).
+  const [prevOrderId, setPrevOrderId] = useState<string | undefined>(order?._id);
+  if (prevOrderId !== order?._id) {
+    setPrevOrderId(order?._id);
     setSelectedStatus("");
     setStatusNote("");
+    setShippingProvider("");
+    setShippingTracking("");
     setRefundReason("");
     setRefundError("");
-  }, [order?._id]);
+  }
 
   const handleRefund = async () => {
     if (!refundReason.trim()) {
@@ -188,6 +123,13 @@ export default function OrderDetailPage({
         id,
         status: selectedStatus,
         note: statusNote,
+        shipping:
+          selectedStatus === "shipped"
+            ? {
+                provider: shippingProvider.trim() || undefined,
+                trackingCode: shippingTracking.trim() || undefined,
+              }
+            : undefined,
       });
       showToast.success("وضعیت سفارش با موفقیت بروزرسانی شد");
       setSelectedStatus("");
@@ -258,7 +200,13 @@ export default function OrderDetailPage({
     );
   }
 
-  const CurrentStatusIcon = statusConfig[order.status as OrderStatusV2]?.icon || Clock;
+  const CurrentStatusIcon =
+    statusConfig[order.status as OrderStatusV2]?.icon || Clock;
+  const shipping = order.shipping;
+  const hasShippingInfo = Boolean(
+    shipping &&
+      (shipping.provider || shipping.trackingCode || shipping.shippedAt)
+  );
 
   return (
     <div className="space-y-6">
@@ -278,12 +226,10 @@ export default function OrderDetailPage({
             <h1 className="text-2xl font-bold tracking-tight">
               سفارش #{order._id.slice(-6)}
             </h1>
-            <Badge
-              variant={statusConfig[order.status as OrderStatusV2]?.variant}
+            <OrderStatusBadge
+              status={order.status as OrderStatusWithRefund}
               className="text-sm"
-            >
-              {statusConfig[order.status as OrderStatusV2]?.label}
-            </Badge>
+            />
           </div>
           <p className="text-sm text-muted-foreground mt-1">
             ثبت شده در {new Date(order.createdAt).toLocaleDateString("fa-IR")}
@@ -308,87 +254,7 @@ export default function OrderDetailPage({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-muted-foreground">
-                      <th className="px-4 py-3 text-right font-medium">محصول</th>
-                      <th className="px-4 py-3 text-right font-medium">قیت واحد</th>
-                      <th className="px-4 py-3 text-right font-medium">تعداد</th>
-                      <th className="px-4 py-3 text-left font-medium">جمع</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(order.items || []).map((item, idx) => (
-                      <tr key={idx} className="border-b last:border-0">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            {item.image ? (
-                              <img
-                                src={item.image}
-                                alt={item.name}
-                                className="h-10 w-10 shrink-0 rounded-md border object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                                <Package className="h-4 w-4" />
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <p className="font-medium">{item.name}</p>
-                              {item.variantLabel && (
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  {item.variantLabel}
-                                </p>
-                              )}
-                              {item.sku && (
-                                <p className="text-[10px] text-muted-foreground font-mono mt-0.5" dir="ltr">
-                                  SKU: {item.sku}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">{formatPrice(item.price)}</td>
-                        <td className="px-4 py-3">{item.quantity}</td>
-                        <td className="px-4 py-3 text-left font-medium">
-                          {formatPrice(item.price * item.quantity)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    {order.subtotalAmount != null && order.discount?.amount ? (
-                      <>
-                        <tr className="border-t">
-                          <td colSpan={3} className="px-4 py-2 text-left text-muted-foreground">
-                            جمع جزء
-                          </td>
-                          <td className="px-4 py-2 text-left font-medium">
-                            {formatPrice(order.subtotalAmount)}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td colSpan={3} className="px-4 py-2 text-left text-emerald-600">
-                            تخفیف ({order.discount.code})
-                          </td>
-                          <td className="px-4 py-2 text-left font-medium text-emerald-600">
-                            −{formatPrice(order.discount.amount)}
-                          </td>
-                        </tr>
-                      </>
-                    ) : null}
-                    <tr className="border-t-2">
-                      <td colSpan={3} className="px-4 py-3 text-left font-bold">
-                        جمع کل
-                      </td>
-                      <td className="px-4 py-3 text-left font-bold text-lg">
-                        {formatPrice(order.totalAmount)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+              <OrderInvoice order={order} />
             </CardContent>
           </Card>
 
@@ -399,44 +265,7 @@ export default function OrderDetailPage({
             </CardHeader>
             <CardContent>
               {order.statusHistory && order.statusHistory.length > 0 ? (
-                <div className="space-y-0">
-                  {order.statusHistory.map((entry, idx) => {
-                    const config = statusConfig[entry.status as OrderStatusV2];
-                    const Icon = config?.icon || Clock;
-                    const isLast = idx === order.statusHistory!.length - 1;
-                    return (
-                      <div key={idx} className="relative flex gap-4 pb-6 last:pb-0">
-                        {/* Timeline line */}
-                        {!isLast && (
-                          <div className="absolute right-[15px] top-8 bottom-0 w-px bg-border" />
-                        )}
-                        {/* Icon circle */}
-                        <div className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${config?.color || "bg-muted"}`}>
-                          <Icon className="h-4 w-4" />
-                        </div>
-                        {/* Content */}
-                        <div className="flex-1 pt-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-sm">
-                              {config?.label || entry.status}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {new Date(entry.at).toLocaleDateString("fa-IR", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                          </div>
-                          {statusNoteLabel(entry.note) && (
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {statusNoteLabel(entry.note)}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <OrderEventTimeline entries={order.statusHistory} />
               ) : (
                 <p className="text-sm text-muted-foreground text-center py-4">
                   تاریخچه‌ای ثبت نشده است
@@ -511,6 +340,33 @@ export default function OrderDetailPage({
                   />
                 </div>
 
+                {/* Session 57 — optional shipping metadata on the shipped transition */}
+                {selectedStatus === "shipped" && (
+                  <div className="space-y-3 rounded-lg border p-3">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        شرکت پست / باربری (اختیاری)
+                      </label>
+                      <Input
+                        value={shippingProvider}
+                        onChange={(e) => setShippingProvider(e.target.value)}
+                        placeholder="مثلاً تیپاکس، پست پیشتاز..."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        کد رهگیری (اختیاری)
+                      </label>
+                      <Input
+                        value={shippingTracking}
+                        onChange={(e) => setShippingTracking(e.target.value)}
+                        placeholder="کد رهگیری مرسوله..."
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <Button
                   className="w-full gap-2"
                   onClick={handleStatusChange}
@@ -551,15 +407,10 @@ export default function OrderDetailPage({
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">وضعیت</span>
-                <Badge
-                  variant={
-                    paymentLabels[order.payment?.status]?.variant || "secondary"
-                  }
+                <PaymentStatusBadge
+                  status={order.payment?.status}
                   className="text-xs"
-                >
-                  {paymentLabels[order.payment?.status]?.label ||
-                    order.payment?.status}
-                </Badge>
+                />
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">روش</span>
@@ -685,6 +536,63 @@ export default function OrderDetailPage({
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Shipping Info (Session 57) */}
+          {hasShippingInfo && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">اطلاعات ارسال</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {shipping?.provider && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      شرکت ارسال
+                    </span>
+                    <span className="text-sm font-medium">
+                      {shipping.provider}
+                    </span>
+                  </div>
+                )}
+                {shipping?.trackingCode && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">کد رهگیری</p>
+                    <p className="text-sm font-mono" dir="ltr">
+                      {shipping.trackingCode}
+                    </p>
+                  </div>
+                )}
+                {shipping?.shippedAt && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      تاریخ ارسال
+                    </span>
+                    <span className="text-sm font-medium">
+                      {new Date(shipping.shippedAt).toLocaleDateString("fa-IR")}
+                    </span>
+                  </div>
+                )}
+                {shipping?.deliveredAt && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      تاریخ تحویل
+                    </span>
+                    <span className="text-sm font-medium">
+                      {new Date(shipping.deliveredAt).toLocaleDateString("fa-IR")}
+                    </span>
+                  </div>
+                )}
+                {shipping?.note && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">یادداشت</p>
+                    <p className="text-sm text-muted-foreground">
+                      {shipping.note}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
 
           {/* Shipping Address */}

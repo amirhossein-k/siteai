@@ -7,7 +7,6 @@ import { useSession } from "next-auth/react";
 import axios from "axios";
 import { useCustomerOrder, useCancelOrder } from "@/hooks/use-customer-orders";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
@@ -20,9 +19,6 @@ import {
   ChevronRight,
   AlertCircle,
   RefreshCw,
-  Package,
-  Truck,
-  CheckCircle2,
   Clock,
   Ban,
   ArrowLeft,
@@ -32,66 +28,21 @@ import {
   Phone,
   Building,
   Loader2,
+  Truck,
 } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 import { showToast } from "@/components/ui/toast";
+import {
+  ORDER_STATUS_CONFIG,
+  OrderStatusBadge,
+  PaymentStatusBadge,
+} from "@/components/orders/order-status-badge";
+import { OrderProgressTimeline } from "@/components/orders/order-timeline";
+import { OrderInvoice } from "@/components/orders/order-invoice";
 import type { OrderStatusV2 } from "@/types";
 
-// --- Status Configuration (same as admin for consistency) ---
-const statusConfig: Record<
-  OrderStatusV2,
-  {
-    label: string;
-    variant: "default" | "secondary" | "destructive" | "success" | "warning";
-    icon: React.ElementType;
-    color: string;
-  }
-> = {
-  pending_payment: {
-    label: "در انتظار پرداخت",
-    variant: "secondary",
-    icon: Clock,
-    color: "text-gray-500 bg-gray-100 dark:bg-gray-800 dark:text-gray-400",
-  },
-  processing: {
-    label: "در حال پردازش",
-    variant: "warning",
-    icon: Package,
-    color: "text-amber-600 bg-amber-50 dark:bg-amber-950 dark:text-amber-300",
-  },
-  confirmed: {
-    label: "تأیید شده",
-    variant: "default",
-    icon: CheckCircle2,
-    color: "text-blue-600 bg-blue-50 dark:bg-blue-950 dark:text-blue-300",
-  },
-  shipped: {
-    label: "ارسال شده",
-    variant: "default",
-    icon: Truck,
-    color: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950 dark:text-indigo-300",
-  },
-  delivered: {
-    label: "تحویل شده",
-    variant: "success",
-    icon: CheckCircle2,
-    color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-300",
-  },
-  cancelled: {
-    label: "لغو شده",
-    variant: "destructive",
-    icon: Ban,
-    color: "text-red-600 bg-red-50 dark:bg-red-950 dark:text-red-300",
-  },
-};
-
-const paymentLabels: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "success" | "warning" }> = {
-  paid: { label: "پرداخت شده", variant: "success" },
-  pending: { label: "در انتظار", variant: "warning" },
-  failed: { label: "ناموفق", variant: "destructive" },
-  canceled: { label: "لغو شده", variant: "destructive" },
-  refunded: { label: "مسترد شده", variant: "secondary" },
-};
+// --- Status Configuration (shared with admin) ---
+const statusConfig = ORDER_STATUS_CONFIG;
 
 /**
  * Payment can be retried when the order is still awaiting payment and the
@@ -122,19 +73,6 @@ function canCancelOrder(order: {
   return (
     order.status === "pending_payment" && order.payment?.status === "pending"
   );
-}
-
-/**
- * statusHistory notes are machine-readable audit keys (Session 46) — map
- * known keys to Persian labels for display; passthrough for human-entered
- * notes (admin writes Persian/empty notes today).
- */
-const statusNoteLabels: Record<string, string> = {
-  customer_cancelled: "لغو توسط مشتری",
-};
-function statusNoteLabel(note?: string): string | undefined {
-  if (!note) return undefined;
-  return statusNoteLabels[note] || note;
 }
 
 const statusOrder: OrderStatusV2[] = [
@@ -300,6 +238,12 @@ export default function CustomerOrderDetailPage({
 
   const CurrentStatusIcon =
     statusConfig[order.status as OrderStatusV2]?.icon || Clock;
+  const shipping = order.shipping;
+  const hasTracking = Boolean(shipping?.trackingCode);
+  const hasShippingInfo = Boolean(
+    shipping &&
+      (shipping.provider || shipping.trackingCode || shipping.shippedAt)
+  );
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
@@ -321,12 +265,10 @@ export default function CustomerOrderDetailPage({
             <h1 className="text-2xl font-bold tracking-tight">
               سفارش #{order._id.slice(-8)}
             </h1>
-            <Badge
-              variant={statusConfig[order.status as OrderStatusV2]?.variant}
+            <OrderStatusBadge
+              status={order.status as OrderStatusV2}
               className="text-sm"
-            >
-              {statusConfig[order.status as OrderStatusV2]?.label}
-            </Badge>
+            />
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             ثبت شده در{" "}
@@ -358,98 +300,7 @@ export default function CustomerOrderDetailPage({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-muted-foreground">
-                      <th className="px-4 py-3 text-right font-medium">محصول</th>
-                      <th className="px-4 py-3 text-right font-medium">قیمت واحد</th>
-                      <th className="px-4 py-3 text-right font-medium">تعداد</th>
-                      <th className="px-4 py-3 text-left font-medium">جمع</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(order.items || []).map((item, idx) => (
-                      <tr key={idx} className="border-b last:border-0">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            {item.image ? (
-                              <img
-                                src={item.image}
-                                alt={item.name}
-                                className="h-10 w-10 shrink-0 rounded-md border object-cover"
-                              />
-                            ) : (
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                                <Package className="h-4 w-4" />
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <p className="font-medium">{item.name}</p>
-                              {item.variantLabel && (
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  {item.variantLabel}
-                                </p>
-                              )}
-                              {item.sku && (
-                                <p className="text-[10px] text-muted-foreground font-mono mt-0.5" dir="ltr">
-                                  SKU: {item.sku}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          {formatPrice(item.price)}
-                        </td>
-                        <td className="px-4 py-3">{item.quantity}</td>
-                        <td className="px-4 py-3 text-left font-medium">
-                          {formatPrice(item.price * item.quantity)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    {order.subtotalAmount != null && order.discount?.amount ? (
-                      <>
-                        <tr className="border-t">
-                          <td
-                            colSpan={3}
-                            className="px-4 py-2 text-left text-muted-foreground"
-                          >
-                            جمع جزء
-                          </td>
-                          <td className="px-4 py-2 text-left font-medium">
-                            {formatPrice(order.subtotalAmount)}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td
-                            colSpan={3}
-                            className="px-4 py-2 text-left text-emerald-600"
-                          >
-                            تخفیف ({order.discount.code})
-                          </td>
-                          <td className="px-4 py-2 text-left font-medium text-emerald-600">
-                            −{formatPrice(order.discount.amount)}
-                          </td>
-                        </tr>
-                      </>
-                    ) : null}
-                    <tr className="border-t-2">
-                      <td
-                        colSpan={3}
-                        className="px-4 py-3 text-left font-bold"
-                      >
-                        جمع کل
-                      </td>
-                      <td className="px-4 py-3 text-left font-bold text-lg">
-                        {formatPrice(order.totalAmount)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+              <OrderInvoice order={order} />
             </CardContent>
           </Card>
 
@@ -463,70 +314,10 @@ export default function CustomerOrderDetailPage({
             </CardHeader>
             <CardContent>
               {timelineEntries.length > 0 ? (
-                <div className="space-y-0">
-                  {timelineEntries.map((status, idx) => {
-                    const config = statusConfig[status];
-                    const Icon = config?.icon || Clock;
-                    const isLast = idx === timelineEntries.length - 1;
-                    const isCancelled = status === "cancelled";
-
-                    // Find the actual timestamp from statusHistory if available
-                    const historyEntry = order.statusHistory?.find(
-                      (h) => h.status === status
-                    );
-                    const timestamp = historyEntry?.at;
-
-                    return (
-                      <div
-                        key={status}
-                        className="relative flex gap-4 pb-6 last:pb-0"
-                      >
-                        {/* Timeline line */}
-                        {!isLast && (
-                          <div className="absolute right-[15px] top-8 bottom-0 w-px bg-border" />
-                        )}
-
-                        {/* Icon circle */}
-                        <div
-                          className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                            config?.color || "bg-muted"
-                          }`}
-                        >
-                          <Icon className="h-4 w-4" />
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex-1 pt-1">
-                          <div
-                            className={`flex items-center gap-2 ${
-                              isCancelled ? "text-destructive" : ""
-                            }`}
-                          >
-                            <span className="font-medium text-sm">
-                              {config?.label || status}
-                            </span>
-                            {timestamp && (
-                              <span className="text-xs text-muted-foreground">
-                                {new Date(timestamp).toLocaleDateString(
-                                  "fa-IR",
-                                  {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  }
-                                )}
-                              </span>
-                            )}
-                          </div>
-                          {statusNoteLabel(historyEntry?.note) && (
-                            <p className="mt-1 text-sm text-muted-foreground">
-                              {statusNoteLabel(historyEntry?.note)}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <OrderProgressTimeline
+                  steps={timelineEntries}
+                  history={order.statusHistory}
+                />
               ) : (
                 <p className="py-4 text-center text-sm text-muted-foreground">
                   اطلاعات وضعیت در دسترس نیست
@@ -579,15 +370,10 @@ export default function CustomerOrderDetailPage({
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">وضعیت</span>
-                <Badge
-                  variant={
-                    paymentLabels[order.payment?.status]?.variant || "secondary"
-                  }
+                <PaymentStatusBadge
+                  status={order.payment?.status}
                   className="text-xs"
-                >
-                  {paymentLabels[order.payment?.status]?.label ||
-                    order.payment?.status}
-                </Badge>
+                />
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">روش</span>
@@ -673,6 +459,61 @@ export default function CustomerOrderDetailPage({
               )}
             </CardContent>
           </Card>
+
+          {/* Shipping tracking info (Session 57) */}
+          {hasShippingInfo && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Truck className="h-5 w-5 text-muted-foreground" />
+                  <CardTitle className="text-lg">پیگیری ارسال</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {shipping?.provider && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      شرکت ارسال
+                    </span>
+                    <span className="text-sm font-medium">
+                      {shipping.provider}
+                    </span>
+                  </div>
+                )}
+                {hasTracking && (
+                  <div className="flex items-start gap-2">
+                    <Truck className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <div>
+                      <p className="text-xs text-muted-foreground">کد رهگیری</p>
+                      <p className="font-mono text-sm" dir="ltr">
+                        {shipping!.trackingCode}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {shipping?.shippedAt && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      تاریخ ارسال
+                    </span>
+                    <span className="text-sm font-medium">
+                      {new Date(shipping.shippedAt).toLocaleDateString("fa-IR")}
+                    </span>
+                  </div>
+                )}
+                {shipping?.deliveredAt && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">
+                      تاریخ تحویل
+                    </span>
+                    <span className="text-sm font-medium">
+                      {new Date(shipping.deliveredAt).toLocaleDateString("fa-IR")}
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Shipping Address */}
           {order.shippingAddress && (

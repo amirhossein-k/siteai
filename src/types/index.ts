@@ -549,6 +549,19 @@ export interface AdminOrderItem {
   quantity: number;
 }
 
+/**
+ * Shipping fulfillment metadata (Session 57). Additive — absent on orders
+ * placed before Session 57; renderers must optional-chain. `provider` is the
+ * courier name (future courier-integration seam).
+ */
+export interface OrderShipping {
+  provider?: string;
+  trackingCode?: string;
+  shippedAt?: string | null;
+  deliveredAt?: string | null;
+  note?: string;
+}
+
 export interface AdminOrder {
   _id: string;
   customer: { _id: string; name: string; phone: string };
@@ -564,6 +577,8 @@ export interface AdminOrder {
     address?: string;
     postalCode?: string;
   };
+  /** Shipping fulfillment metadata (Session 57 — additive). */
+  shipping?: OrderShipping;
   payment: {
     status: OrderPaymentStatus;
     method?: string;

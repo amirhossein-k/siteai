@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   Card,
@@ -19,31 +19,16 @@ import {
   AlertCircle,
   RefreshCw,
   PackageOpen,
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
 } from "lucide-react";
 import { useAdminOrders } from "@/hooks/use-admin-orders";
 import { formatPrice } from "@/lib/utils";
-import type { OrderStatusV2 } from "@/types";
-
-const statusConfig: Record<
-  OrderStatusV2,
-  { label: string; variant: "default" | "secondary" | "destructive" | "success" | "warning" }
-> = {
-  pending_payment: { label: "در انتظار پرداخت", variant: "secondary" },
-  processing: { label: "در حال پردازش", variant: "warning" },
-  confirmed: { label: "تأیید شده", variant: "default" },
-  shipped: { label: "ارسال شده", variant: "default" },
-  delivered: { label: "تحویل شده", variant: "success" },
-  cancelled: { label: "لغو شده", variant: "destructive" },
-};
-
-const paymentStatusConfig: Record<
-  string,
-  { label: string; variant: "default" | "secondary" | "destructive" | "success" | "warning" }
-> = {
-  paid: { label: "پرداخت شده", variant: "success" },
-  pending: { label: "در انتظار", variant: "warning" },
-  failed: { label: "ناموفق", variant: "destructive" },
-};
+import {
+  OrderStatusBadge,
+  PaymentStatusBadge,
+} from "@/components/orders/order-status-badge";
+import type { OrderStatusWithRefund } from "@/components/orders/order-status-badge";
 
 const statusFilters = [
   { value: null, label: "همه" },
@@ -56,6 +41,7 @@ const statusFilters = [
 export default function AdminOrders() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [sort, setSort] = useState<"newest" | "oldest">("newest");
   const [page, setPage] = useState(1);
 
   const {
@@ -66,6 +52,7 @@ export default function AdminOrders() {
   } = useAdminOrders({
     search: searchQuery || undefined,
     status: statusFilter || undefined,
+    sort,
     page,
   });
 
@@ -73,13 +60,17 @@ export default function AdminOrders() {
   const totalOrders = paged?.total || 0;
   const totalPages = paged?.totalPages || 1;
 
-  // Reset to page 1 whenever filters change
-  useEffect(() => {
+  // Reset to page 1 whenever filters or sort change — render-phase adjustment
+  // (the lint-compliant pattern; an effect-based reset would cascade renders).
+  const [prevFilters, setPrevFilters] = useState({ searchQuery, statusFilter, sort });
+  if (
+    prevFilters.searchQuery !== searchQuery ||
+    prevFilters.statusFilter !== statusFilter ||
+    prevFilters.sort !== sort
+  ) {
+    setPrevFilters({ searchQuery, statusFilter, sort });
     setPage(1);
-  }, [searchQuery, statusFilter]);
-
-  // Server-side search (id, customer name/phone) + status filter
-  const filteredOrders = orders;
+  }
 
   if (isError) {
     return (
@@ -138,6 +129,21 @@ export default function AdminOrders() {
                   {filter.label}
                 </Button>
               ))}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setSort((s) => (s === "newest" ? "oldest" : "newest"))
+                }
+                className="gap-1"
+              >
+                {sort === "newest" ? (
+                  <ArrowDownWideNarrow className="h-3.5 w-3.5" />
+                ) : (
+                  <ArrowUpNarrowWide className="h-3.5 w-3.5" />
+                )}
+                {sort === "newest" ? "جدیدترین" : "قدیمی‌ترین"}
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -158,7 +164,7 @@ export default function AdminOrders() {
                 <Skeleton key={i} className="h-14 w-full" />
               ))}
             </div>
-          ) : filteredOrders.length === 0 ? (
+          ) : orders.length === 0 ? (
             <div className="py-12 text-center text-muted-foreground">
               <PackageOpen className="mx-auto mb-3 h-8 w-8" />
               <p>سفارشی یافت نشد</p>
@@ -179,7 +185,7 @@ export default function AdminOrders() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredOrders.map((order) => (
+                  {orders.map((order) => (
                     <tr
                       key={order._id}
                       className="border-b last:border-0 hover:bg-muted/50"
@@ -204,22 +210,18 @@ export default function AdminOrders() {
                         {formatPrice(order.totalAmount)}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge
-                          variant={
-                            paymentStatusConfig[order.payment?.status]?.variant
-                          }
+                        <PaymentStatusBadge
+                          status={order.payment?.status}
                           className="text-xs"
-                        >
-                          {paymentStatusConfig[order.payment?.status]?.label}
-                        </Badge>
+                        />
                       </td>
                       <td className="px-4 py-3">
-                        <Badge
-                          variant={statusConfig[order.status]?.variant}
+                        <OrderStatusBadge
+                          status={
+                            order.status as OrderStatusWithRefund
+                          }
                           className="text-xs"
-                        >
-                          {statusConfig[order.status]?.label}
-                        </Badge>
+                        />
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">
                         {new Date(order.createdAt).toLocaleDateString("fa-IR")}
@@ -243,10 +245,10 @@ export default function AdminOrders() {
       </Card>
 
       {/* Pagination */}
-      {!isLoading && filteredOrders.length > 0 && (
+      {!isLoading && orders.length > 0 && (
         <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground flex-wrap">
           <p>
-            نمایش {filteredOrders.length} سفارش از {totalOrders} سفارش
+            نمایش {orders.length} سفارش از {totalOrders} سفارش
           </p>
           <PaginationControls
             page={page}

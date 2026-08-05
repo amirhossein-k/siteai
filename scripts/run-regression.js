@@ -56,6 +56,7 @@ const suites = [
   "verify-coupons-marketing",
   "verify-coupon-eligibility", // Session 55 — private/targeted coupons (audience), runs AFTER coupons-marketing (shared-collection wipes)
   "verify-best-sellers", // Session 56 — Product.soldCount ranking, leak scans, refund reversal, CMS block (cleans its own PREFIX'd rows)
+  "verify-order-management", // Session 57 — order lifecycle state machine, claim-based transitions, shipping metadata, actor audit, list sort (cleans its own PREFIX'd rows)
   "verify-homepage-cms", // Session 53 — admin CRUD + public composition + visibility rules
   "verify-telegram-alerts",
 ];

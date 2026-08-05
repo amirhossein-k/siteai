@@ -18,6 +18,8 @@ export interface AdminOrderFilters {
   limit?: number;
   search?: string;
   status?: string;
+  /** Session 57 — column sort: newest (default) / oldest. */
+  sort?: "newest" | "oldest";
 }
 
 const fetchAdminOrders = async (
@@ -28,6 +30,7 @@ const fetchAdminOrders = async (
   if (filters.limit) params.set("limit", String(filters.limit));
   if (filters.search) params.set("search", filters.search);
   if (filters.status) params.set("status", filters.status);
+  if (filters.sort) params.set("sort", filters.sort);
   const qs = params.toString();
   const { data } = await axios.get(`/api/admin/orders${qs ? `?${qs}` : ""}`);
   return data;
@@ -42,14 +45,18 @@ const updateOrderStatus = async ({
   id,
   status,
   note,
+  shipping,
 }: {
   id: string;
   status: string;
   note?: string;
+  /** Session 57 — optional shipping metadata accepted on shipped/delivered. */
+  shipping?: { provider?: string; trackingCode?: string; note?: string };
 }): Promise<AdminOrder> => {
   const { data } = await axios.put(`/api/admin/orders?id=${id}`, {
     status,
     note,
+    shipping,
   });
   return data;
 };

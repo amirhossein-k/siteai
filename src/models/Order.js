@@ -80,6 +80,18 @@ const OrderSchema = new mongoose.Schema(
       address: String,
       postalCode: String,
     },
+    // --- Shipping fulfillment metadata (Session 57) ---
+    // Additive — old orders render without tracking (all fields defaulted).
+    // `shipping.*At` are denormalized convenience timestamps; statusHistory
+    // remains the immutable source of truth for transitions. `provider` is
+    // the courier name — the future courier-integration seam.
+    shipping: {
+      provider: { type: String, default: "" },
+      trackingCode: { type: String, default: "" },
+      shippedAt: { type: Date, default: null },
+      deliveredAt: { type: Date, default: null },
+      note: { type: String, default: "" },
+    },
     payment: {
       status: {
         type: String,
@@ -144,5 +156,8 @@ const OrderSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Admin orders list: status-filtered, newest-first (Session 57).
+OrderSchema.index({ status: 1, createdAt: -1 });
 
 export default mongoose.models.Order || mongoose.model("Order", OrderSchema);

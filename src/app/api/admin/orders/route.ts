@@ -11,6 +11,7 @@ import { notifyOrderEvent } from "@/lib/notifications";
 import { restoreOrderStock } from "@/lib/inventory";
 import { releaseCouponUsage } from "@/lib/coupons";
 import { reverseOrderSales } from "@/lib/product-sales";
+import { sanitizePlainText } from "@/lib/sanitize";
 import {
   parsePaginationParams,
   buildPaginatedResponse,
@@ -89,11 +90,16 @@ export async function GET(req: NextRequest) {
 
     const { page, limit, skip } = parsePaginationParams(searchParams);
 
+    // Session 57 — column sorting: newest (default) / oldest.
+    const sort = searchParams.get("sort");
+    const sortOption: Record<string, 1 | -1> =
+      sort === "oldest" ? { createdAt: 1 } : { createdAt: -1 };
+
     const [total, orders] = await Promise.all([
       Order.countDocuments(filter),
       Order.find(filter)
         .populate("customer", "name phone")
-        .sort({ createdAt: -1 })
+        .sort(sortOption)
         .skip(skip)
         .limit(limit)
         .lean(),
@@ -126,11 +132,21 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { status, note } = body;
+    const { status, note, shipping } = body;
 
-    if (!status) {
+    if (typeof status !== "string" || !status) {
       return NextResponse.json(
         { error: "وضعیت جدید الزامی است" },
+        { status: 400 }
+      );
+    }
+
+    // Session 57 — shipping metadata is only meaningful on shipped/delivered.
+    // Reject it on every other transition so admins can't attach tracking
+    // where it doesn't belong.
+    if (shipping != null && !["shipped", "delivered"].includes(status)) {
+      return NextResponse.json(
+        { error: "اطلاعات ارسال فقط هنگام «ارسال» یا «تحویل» قابل ثبت است" },
         { status: 400 }
       );
     }
@@ -157,22 +173,78 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    // Add status history entry
-    order.statusHistory.push({
-      status,
-      at: new Date(),
-      note: note || "",
-    });
+    // --- Atomic transition claim (Session 57) ---
+    // Replace the previous read-modify-write (findById → mutate → save) with a
+    // conditional findOneAndUpdate on the CURRENT status: two concurrent admin
+    // requests can no longer both win the same transition or double-append the
+    // history. The second caller gets null → 400 below.
+    //
+    // For CANCELS the claim ALSO gates on the pre-claim payment state (the
+    // Session 46 race-safe pattern): while the payment is still pending, the
+    // admin-cancel claim and the payment-verify SUCCESS claim both require
+    // `payment.status: "pending"` → MongoDB per-document write serialization
+    // means exactly ONE wins — an advanced order (processing + still-pending
+    // payment) can never end up cancelled+paid (money taken, stock restored)
+    // or with the sales-counter reversal skipped. Cancelling an unpaid order
+    // records `payment.status: "canceled"` — the same state the Session 46
+    // customer cancel and the payment-NOK path use; the payment domain is
+    // never a packed order status.
+    const update: Record<string, unknown> = {
+      $set: {
+        status,
+        ...(status === "cancelled" && order.payment?.status === "pending"
+          ? { "payment.status": "canceled" }
+          : {}),
+      },
+      $push: {
+        statusHistory: {
+          status,
+          at: new Date(),
+          note: typeof note === "string" ? sanitizePlainText(note).slice(0, 500) : "",
+          actor: "admin",
+        },
+      },
+    };
 
-    // Update order status
-    order.status = status;
-
-    // Auto-update payment status when order is cancelled
-    if (status === "cancelled" && order.payment.status === "pending") {
-      order.payment.status = "failed";
+    // Session 57 — attach shipping metadata on shipped/delivered.
+    if (status === "shipped" || status === "delivered") {
+      const shippingSet: Record<string, unknown> = {};
+      if (status === "shipped") {
+        shippingSet["shipping.shippedAt"] = new Date();
+        if (shipping && typeof shipping === "object") {
+          const s = shipping as Record<string, unknown>;
+          if (typeof s.provider === "string")
+            shippingSet["shipping.provider"] = sanitizePlainText(s.provider).slice(0, 100);
+          if (typeof s.trackingCode === "string")
+            shippingSet["shipping.trackingCode"] = sanitizePlainText(s.trackingCode).slice(0, 100);
+          if (typeof s.note === "string")
+            shippingSet["shipping.note"] = sanitizePlainText(s.note).slice(0, 500);
+        }
+      } else if (status === "delivered") {
+        shippingSet["shipping.deliveredAt"] = new Date();
+      }
+      Object.assign(update.$set as Record<string, unknown>, shippingSet);
     }
 
-    await order.save();
+    // Session 57 — atomic claim on the CURRENT status (+ payment state for
+    // cancels, so the cancel claim is mutually exclusive with the
+    // payment-verify success claim — see the comment above).
+    const claimFilter: Record<string, unknown> = { _id: id, status: order.status };
+    if (status === "cancelled" && order.payment?.status === "pending") {
+      claimFilter["payment.status"] = "pending";
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const claimed: any = await Order.findOneAndUpdate(claimFilter, update, {
+      new: true,
+    }).lean();
+
+    if (!claimed) {
+      return NextResponse.json(
+        { error: "وضعیت سفارش همزمان تغییر کرده است؛ لطفاً دوباره تلاش کنید" },
+        { status: 400 }
+      );
+    }
 
     // When cancelling, restore stock for all items (if not already restored)
     if (status === "cancelled" && !order.stockRestored) {
@@ -189,7 +261,7 @@ export async function PUT(req: NextRequest) {
     // reverse the best-sellers counter (fail-silent; exactly-once — the
     // cancelled transition is reachable only once per order). Pending cancels
     // were never counted, so they are skipped. Mirrors the refund reversal.
-    if (status === "cancelled" && order.payment.status === "paid") {
+    if (status === "cancelled" && order.payment?.status === "paid") {
       await reverseOrderSales(id);
     }
 
@@ -198,7 +270,7 @@ export async function PUT(req: NextRequest) {
       id,
       status,
       "مدیر سیستم",
-      note
+      typeof note === "string" ? sanitizePlainText(note).slice(0, 500) : ""
     );
 
     // --- Notify the CUSTOMER about order status changes (in-app, best-effort) ---

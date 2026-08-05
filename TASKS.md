@@ -2,6 +2,40 @@
 
 ---
 
+## ✅ Session 57 — Order Management v2 (Claim-Based Transitions + Shipping Metadata + Shared Components)
+
+### Approved Rev 2 design
+- [x] **No packed status** — six order statuses (`pending_payment`…`cancelled`) stay pure; payment states live ONLY in `payment.status` (`refunded` is a history/display entry, never a settable `order.status`)
+- [x] **`SupplierOrder` untouched**; no CSV export; no reorder feature
+
+### Model (additive)
+- [x] `Order.js` — `shipping` subdocument `{provider, trackingCode, shippedAt, deliveredAt, note}` (defaulted — old orders render without tracking) + index `{status: 1, createdAt: -1}`; **ops:** model change ⇒ dev-server restart required (done)
+- [x] `src/types/index.ts` — `OrderShipping` + `AdminOrder.shipping?`
+
+### Server — atomic claim + shipping + sort
+- [x] `PUT /api/admin/orders` — **atomic claim** `findOneAndUpdate({_id, status: order.status})` (concurrent loser → 400, single history entry); **cancel claims ALSO gate on `payment.status: "pending"`** (Session 46 race-safe pattern) → mutually exclusive with the payment-verify SUCCESS claim even on `processing`+pending orders (stale-read corruption impossible)
+- [x] Cancelling an unpaid order records `payment.status: "canceled"` (aligned with Session 46 customer-cancel / payment-NOK; was `"failed"`)
+- [x] Shipping metadata ONLY on `shipped`/`delivered` (400 otherwise); `shipped` → `shippedAt` + optional sanitized `provider`/`trackingCode`/`note` (100/100/500 caps); `delivered` → `deliveredAt`; **trackingCode optional**
+- [x] GET list — additive `sort=newest|oldest` (default newest); Session 56/46 side-effects preserved (restoreOrderStock / releaseCouponUsage / reverseOrderSales on paid cancel)
+
+### Shared components
+- [x] `src/components/orders/order-status-badge.tsx` — `ORDER_STATUS_CONFIG` (+`refunded` display), `OrderStatusBadge`, `PaymentStatusBadge`, `statusNoteLabel`
+- [x] `src/components/orders/order-timeline.tsx` — `OrderEventTimeline` (admin, actor chips) / `OrderProgressTimeline` (customer steps)
+- [x] `src/components/orders/order-invoice.tsx` — items + totals footer
+- [x] Admin list — newest/oldest sort toggle + shared badges; Admin detail — shipping inputs on `shipped` + «اطلاعات ارسال» card; Customer detail — «پیگیری ارسال» card (Session 46 cancel + retry intact); `use-admin-orders.ts` — `sort` + `shipping` payload
+
+### Review fixes (code-reviewer findings all addressed)
+- [x] M1: cancel claim payment-state guard + regression test 17 (admin cancel vs verify at `processing` — never `payment.status: "failed"`)
+- [x] L1: dead `waitFor` + `prodTerminal` removed from the suite; L2: dead `filteredOrders` alias removed; L3: test 9 asserts the order-domain set; L4: `failed`→`canceled` aligned + documented
+
+### Verification
+- [x] `scripts/verify-order-management.js` — **17/17 PASS** (real API): happy path + tracking, actor history, forbidden transitions, atomicity (concurrent → 1×200/1×400), shipping validation, optional tracking, paid-cancel soldCount reversal, refund domain separation + double-refund 400, NOK stock+coupon release, authz, list sort/search/filter/pagination, customer cancel pre/post payment, delivered tracking, **race test 17**; self-cleaning
+- [x] `scripts/run-regression.js` — 33 suites; full sequential regression **33/33 PASS, 0 skipped** (one transient `verify-coupons` flake on the first post-fix run passed standalone + on the re-run)
+- [x] `npx tsc --noEmit` zero errors; lint clean on all changed TS/TSX files (scripts `no-require-imports` = pre-existing whole-directory pattern)
+- [x] Dev-server restart performed (Order model change)
+
+---
+
 ## ✅ Session 56 — Best-Sellers Rail (Product.soldCount)
 
 ### Model + counter (additive)

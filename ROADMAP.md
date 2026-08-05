@@ -2,6 +2,14 @@
 
 ## ✅ Completed Milestones
 
+### Order Management v2 — Claim-Based Transitions + Shipping Metadata + Shared Components (Session 57)
+- [x] **No packed status / payment-domain separation** — six order statuses only; payment states (`pending/paid/failed/canceled/refunded`) live ONLY in `payment.status` (`refunded` is a history/display entry, never a settable `order.status` — verify tests 9 + 17); `SupplierOrder` untouched; no CSV export; no reorder feature
+- [x] **Atomic admin status transition** — `PUT /api/admin/orders` claims via `findOneAndUpdate({_id, status: order.status})` (concurrent loser → 400, single history entry); **cancel claims also gate on `payment.status: "pending"`** (Session 46 race-safe pattern) → mutually exclusive with the payment-verify SUCCESS claim on advanced orders; unpaid cancels record `payment.status: "canceled"` (was `"failed"`)
+- [x] **Shipping subdocument** on `Order` (`provider`/`trackingCode`/`shippedAt`/`deliveredAt`/`note`) — set on `shipped`/`delivered` only, **optional trackingCode**, sanitized + capped (100/100/500); additive + defaulted (old orders render without tracking); index `{status: 1, createdAt: -1}`
+- [x] **Admin newest/oldest sorting** — additive `sort=newest|oldest` on the list API + UI toggle button
+- [x] **Shared components** — `OrderStatusBadge`/`PaymentStatusBadge`/`ORDER_STATUS_CONFIG` + `OrderEventTimeline`/`OrderProgressTimeline` + `OrderInvoice` replace the duplicated maps/tables in the admin + customer detail pages; admin detail gains shipping inputs; customer detail gains «پیگیری ارسال»
+- [x] `scripts/verify-order-management.js` — **17/17 PASS** (incl. atomicity, shipping validation, optional tracking, refund domain separation, paid-cancel soldCount reversal, list sort, cancel-vs-verify race); regression runner → **33 suites**, full **33/33 PASS**; `tsc` zero errors; lint clean on changed TS/TSX files; code review approved; dev-server restart required (Order model change) and done
+
 ### Best-Sellers Rail — Product.soldCount (Session 56)
 - [x] `Product.soldCount` (Number, default 0, min 0) — units **paid and not later refunded/cancelled**; **INTERNAL** (excluded from every public `/api/products` response via `-soldCount` projection — leak-scan verified); non-unique index `{ soldCount: -1, createdAt: -1 }`
 - [x] `src/lib/product-sales.ts` — `recordOrderSales`/`reverseOrderSales` (pipeline updates, `$max` floor at 0, fail-silent, bypasses stock/stockVersion); exactly-once inside the payment-verify `pending→paid`, refund `paid→refunded`, and admin-cancel-of-PAID-order atomic claims; pending cancels skipped
@@ -376,7 +384,8 @@
 
 **Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅; **Session 53 = Homepage CMS ✅**; **Session 55 = Private / Targeted Coupons ✅**; **Session 56 = best-sellers rail ✅** — the ROADMAP's original plan ("client-side, reuse the newest pool") was rejected because the pool carried **no sales data** (would have been a fake ranking, violating the Session 50 no-fake-data invariant); the approved denormalized `Product.soldCount` approach delivers a real, paid-only ranking. Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
 
-### Session 57 — Candidate (pick one)
+### Session 58 — Candidate (pick one)
+> **Session 57 was completed as Order Management v2** (claim-based admin transitions, shipping subdocument + tracking, shared order components, admin list sort) — see the completed milestone above. The candidates below remain for the next session.
 - **Production Readiness (first tranche):** performance (Core Web Vitals) + accessibility audit, then unit tests (Vitest + Testing Library) and E2E (Playwright) on the highest-risk paths (inventory concurrency, payment claims, coupon claim/release).
 - **Growth features:** SMS/OTP authentication, admin real charts (recharts), customer email/SMS order notifications, customer segments → first-purchase / birthday / spending coupons via the Session 55 `targetingRules` seam.
 
