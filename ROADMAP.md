@@ -2,6 +2,13 @@
 
 ## ✅ Completed Milestones
 
+### Vitest Unit-Test Foundation (Session 58)
+- [x] **Zero-application-change invariant** — no `src/` code modified, no behavior changed, no pure-function extraction needed; new devDeps `vitest` + `@vitest/coverage-v8` only
+- [x] `vitest.config.ts` — node env, explicit `@/` → `./src` alias, Windows-safe `forks` pool, report-only v8 coverage over `src/lib/**/*.ts`
+- [x] `package.json` — `test` / `test:watch` / `test:coverage` scripts
+- [x] **9 hermetic suites / 152 tests** — sanitize, utils, pagination, product-variants, product-csv, coupons (claim/release/E11000-retry/eligibility), inventory (optimistic-lock reserve/set/restore), product-sales (pipeline shape), payment-cleanup; Mongoose models mocked (`vi.mock` + `vi.hoisted`), no DB/network
+- [x] `npm test` **152/152**; coverage report generated (target libs ≥92% lines, report-only); `tsc` zero errors; ESLint clean; full regression **33/33 PASS** (unchanged); no dev-server restart needed
+
 ### Order Management v2 — Claim-Based Transitions + Shipping Metadata + Shared Components (Session 57)
 - [x] **No packed status / payment-domain separation** — six order statuses only; payment states (`pending/paid/failed/canceled/refunded`) live ONLY in `payment.status` (`refunded` is a history/display entry, never a settable `order.status` — verify tests 9 + 17); `SupplierOrder` untouched; no CSV export; no reorder feature
 - [x] **Atomic admin status transition** — `PUT /api/admin/orders` claims via `findOneAndUpdate({_id, status: order.status})` (concurrent loser → 400, single history entry); **cancel claims also gate on `payment.status: "pending"`** (Session 46 race-safe pattern) → mutually exclusive with the payment-verify SUCCESS claim on advanced orders; unpaid cancels record `payment.status: "canceled"` (was `"failed"`)
@@ -384,8 +391,8 @@
 
 **Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅; **Session 53 = Homepage CMS ✅**; **Session 55 = Private / Targeted Coupons ✅**; **Session 56 = best-sellers rail ✅** — the ROADMAP's original plan ("client-side, reuse the newest pool") was rejected because the pool carried **no sales data** (would have been a fake ranking, violating the Session 50 no-fake-data invariant); the approved denormalized `Product.soldCount` approach delivers a real, paid-only ranking. Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
 
-### Session 58 — Candidate (pick one)
-> **Session 57 was completed as Order Management v2** (claim-based admin transitions, shipping subdocument + tracking, shared order components, admin list sort) — see the completed milestone above. The candidates below remain for the next session.
+### Session 59 — Candidate (pick one)
+> **Session 58 was completed as the Vitest unit-test foundation** (152 hermetic tests over the src/lib helpers — see the completed milestone above). The candidates below remain for the next session.
 - **Production Readiness (first tranche):** performance (Core Web Vitals) + accessibility audit, then unit tests (Vitest + Testing Library) and E2E (Playwright) on the highest-risk paths (inventory concurrency, payment claims, coupon claim/release).
 - **Growth features:** SMS/OTP authentication, admin real charts (recharts), customer email/SMS order notifications, customer segments → first-purchase / birthday / spending coupons via the Session 55 `targetingRules` seam.
 

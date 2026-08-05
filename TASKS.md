@@ -2,6 +2,40 @@
 
 ---
 
+## ✅ Session 58 — Vitest Unit-Test Foundation
+
+### Scope + invariants
+- [x] **Zero application-code changes** — no `src/` file modified, no behavior changed, no pure-function extraction needed
+- [x] New devDeps only: `vitest` + `@vitest/coverage-v8`
+
+### Infrastructure
+- [x] `vitest.config.ts` — node env, `@/` → `./src` alias, `pool: "forks"` (Windows-safe), `tests/unit/*.test.ts`, report-only v8 coverage over `src/lib/**/*.ts`
+- [x] `package.json` — `test` / `test:watch` / `test:coverage` scripts
+
+### Test suites (9 files / 152 tests — hermetic; models mocked via `vi.mock` + `vi.hoisted`)
+- [x] sanitize — XSS vectors (tags, `javascript:`, `on*` handlers, trim) + `sanitizeOptional`
+- [x] utils — cn conflict resolution, Persian formatPrice, Jalali formatDate, slugify, truncate, env-driven getBaseUrl
+- [x] pagination — param coercion + caps, response boundaries, escapeRegex
+- [x] product-variants — summary math (min/sum/inactive/zero-price), full validation matrix, prepareVariantsForSave (normalization, SKU 409, excludeProductId)
+- [x] product-csv — digit normalization, per-row errors, isActive forms, formula escaping, BOM serialization
+- [x] coupons — usability windows, discount math, eligibility modes, parseCouponEligibility caps/dedupe, validateCoupon taxonomy, claim + E11000 retry + rollback, release idempotency
+- [x] inventory — reserveStock simple+variant (`$elemMatch` optimistic lock), setVariantStock delta, restoreStock, restoreOrderStock claim + fail-silent
+- [x] product-sales — increment/decrement pipeline shape (`$ifNull` add / `$max` floor), skipped items, fail-silent
+- [x] payment-cleanup — cutoff math (24h default + custom), atomic claim, Persian note, double-run skip
+
+### Review fixes (code-reviewer findings all addressed)
+- [x] Product-csv fixtures normalized to full 12-column rows
+- [x] Expected fail-silent console output silenced in the DB-mocked suites (scoped `vi.spyOn`)
+- [x] Coverage gaps closed (non-array variants → 400; zero-priced variants summary)
+
+### Verification
+- [x] `npm test` — **152/152 PASS**; `npm run test:coverage` — report-only (target libs 92–100% lines)
+- [x] `npx tsc --noEmit` — zero errors (tests + config strict-clean); ESLint — clean on all changed files
+- [x] `node scripts/run-regression.js` — **33/33 PASS, 0 skipped** (zero `src/` impact)
+- [x] No model/schema/index/env changes → no dev-server restart needed
+
+---
+
 ## ✅ Session 57 — Order Management v2 (Claim-Based Transitions + Shipping Metadata + Shared Components)
 
 ### Approved Rev 2 design

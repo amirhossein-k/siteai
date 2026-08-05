@@ -1,5 +1,38 @@
 # Changelog
 
+## Session 58 (August 2026) — Vitest Unit-Test Foundation
+
+### Scope (approved design — no app changes, no redesign)
+- **Zero-application-change invariant:** NO `src/` code was modified — no behavior changed, and no pure-function extraction was needed. This session adds test infrastructure + **152 hermetic unit tests** over the existing `src/lib` helpers. New devDeps only: `vitest` + `@vitest/coverage-v8` (precedent: `csv-parse`/`csv-stringify` in Session 51).
+
+### Infrastructure
+- **`vitest.config.ts`** (new) — node environment; explicit `@/` → `./src` alias (Vite does not read tsconfig paths); Windows-safe `forks` pool; tests in `tests/unit/*.test.ts`; **report-only** v8 coverage scoped to `src/lib/**/*.ts` (no fail threshold — coverage is a report, not a gate).
+- **`package.json`** — scripts `test` (`vitest run`), `test:watch` (`vitest`), `test:coverage` (`vitest run --coverage`). tsconfig untouched — `**/*.ts` already includes `tests/**` and `vitest.config.ts`, so `npx tsc --noEmit` strict-type-checks the tests too.
+
+### Test suite (9 files / 152 tests — all hermetic: no DB, no network; Mongoose models mocked via `vi.mock` + `vi.hoisted`)
+- **sanitize** — HTML tag stripping, `javascript:` URLs, `on*` handlers, trimming, `sanitizeOptional` semantics (asserts the *actual* behavior: empty string passes through).
+- **utils** — `cn` conflict resolution, Persian `formatPrice`, **Jalali** `formatDate`, `slugify` (incl. leading/trailing-dash behavior), `truncate`, env-driven `getBaseUrl`.
+- **pagination** — param coercion + caps, `buildPaginatedResponse` boundaries, `escapeRegex`.
+- **product-variants** — `recomputeVariantSummary` (min price / summed stock / inactive exclusion / zero-priced), the full `validateVariants` matrix (SKU, attribute id/value/preset, duplicate combos order-insensitive, price/stock rules, `MAX_VARIANTS`, active-required), `prepareVariantsForSave` with mocked `Attribute`/`Product` (simple-product shortcut, normalization + denormalization, SKU-conflict 409, `excludeProductId` passthrough).
+- **product-csv** — Persian/Arabic digit normalization, per-row validation errors, all `isActive` representations, formula-injection escaping, BOM + header + row serialization.
+- **coupons** — code normalization/regex, usability windows, discount math (percent floor / `maxDiscount` cap / fixed clamp / never-negative), eligibility (public default, `assigned_users`, fail-closed groups), admin `parseCouponEligibility` (mode/ids/groups validation + caps + dedupe), `validateCoupon` error taxonomy (eligibility-vs-invalid), `claimCouponForOrder` (atomic global + per-user claims, usage-limit guard, minSubtotal, E11000 retry + rollback), `releaseCouponUsage` (idempotent no-ops, single-release claim, per-user decrement).
+- **inventory** — `reserveStock` simple + variant (`$elemMatch` optimistic lock, inactive/insufficient), `setVariantStock` (invalid input, top-level delta sync), `restoreStock`, `restoreOrderStock` (claim no-op, variant routing, fail-silent).
+- **product-sales** — increment/decrement pipeline shape (`$ifNull` add / `$max` floor at 0), skipped items, fail-silent paths.
+- **payment-cleanup** — cutoff math (default 24h + custom), claim-based cancellation, Persian note, double-run skip.
+
+### Review fixes (code-reviewer findings all addressed)
+- Two product-csv fixtures normalized to full 12-column rows (the off-by-one column placement was inconsistent — the errors fired for the right reason but the fixtures were malformed).
+- Expected fail-silent `console.error`/`console.log` output silenced in the DB-mocked suites (scoped `vi.spyOn`).
+- Coverage gaps closed: `prepareVariantsForSave` non-array payload → 400; `recomputeVariantSummary` zero-priced variants.
+
+### Verification
+- `npm test` — **152/152 PASS** (9 files).
+- `npm run test:coverage` — report generated (report-only). Target libs: sanitize / pagination / payment-cleanup / product-csv-constants / product-csv / product-sales **100% lines**; inventory **100% lines**; product-variants ~97.7%; coupons ~94.7%; utils 100% lines. (The ~37% "All files" figure includes untested infrastructure libs — env/telegram/zarinpal/upload/rate-limiter/etc. — outside the session's scope.)
+- `npx tsc --noEmit` — **zero errors** (tests + config are strict-clean).
+- ESLint — **clean on all changed files** (config + tests, zero warnings).
+- Full sequential regression — **33/33 PASS, 0 skipped** (unchanged — zero `src/` impact).
+- **No model/schema/index/env changes → no dev-server restart needed.**
+
 ## Session 57 (August 2026) — Order Management v2 (Claim-Based Transitions + Shipping Metadata + Shared Components)
 
 ### Approved Rev 2 design (implemented as designed — no redesign)
