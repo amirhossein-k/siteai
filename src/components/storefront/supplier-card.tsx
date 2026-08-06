@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Store, Package } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, isAllowedImageSrc } from "@/lib/utils";
 import type { PublicSupplier } from "@/types";
 
 interface SupplierCardProps {
@@ -14,7 +15,10 @@ interface SupplierCardProps {
 
 export function SupplierCard({ supplier, className }: SupplierCardProps) {
   const [logoError, setLogoError] = useState(false);
-  const showLogo = !!supplier.logo && !logoError;
+  // Session 61 — skip <Image> for unconfigured hosts (next/image throws at
+  // render); the initials fallback matches the broken-image behaviour of the
+  // old native <img>.
+  const showLogo = !!supplier.logo && !logoError && isAllowedImageSrc(supplier.logo);
 
   return (
     <Link href={`/suppliers/${supplier._id}`}>
@@ -27,12 +31,15 @@ export function SupplierCard({ supplier, className }: SupplierCardProps) {
         <CardContent className="p-5">
           {/* Logo / Initial */}
           <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-muted to-muted/50">
+            <div className="relative flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-muted to-muted/50">
               {showLogo ? (
-                <img
+                <Image
                   src={supplier.logo}
                   alt={supplier.businessName}
-                  className="h-full w-full object-cover"
+                  fill
+                  sizes="56px"
+                  loading="eager"
+                  className="object-cover"
                   onError={() => setLogoError(true)}
                 />
               ) : (

@@ -2,6 +2,7 @@
 
 import { useState, use } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -29,7 +30,7 @@ import {
   Card,
   CardContent,
 } from "@/components/ui/card";
-import { cn, formatPrice } from "@/lib/utils";
+import { cn, formatPrice, isAllowedImageSrc } from "@/lib/utils";
 import { useCartStore } from "@/stores/cart-store";
 import { showToast } from "@/components/ui/toast";
 import { ImageLightbox } from "@/components/storefront/image-lightbox";
@@ -155,11 +156,17 @@ export default function ProductDetailPage({
     ? selectedVariant
     : null;
 
-  const displayImages = activeVariant
-    ? activeVariant.images?.length
-      ? activeVariant.images
+  // Session 61 — next/image throws at render on unconfigured hosts (native
+  // <img> degraded to a broken image). Filtering ONCE here protects the main
+  // gallery, the thumbnails AND the lightbox (its only caller); filtered-out
+  // URLs fall back to the existing placeholder UI.
+  const displayImages = (
+    activeVariant
+      ? activeVariant.images?.length
+        ? activeVariant.images
+        : product.images || []
       : product.images || []
-    : product.images || [];
+  ).filter(isAllowedImageSrc);
 
   const displayPrice = activeVariant ? activeVariant.price : product.price;
   const displayStock = activeVariant ? activeVariant.stock : product.stock;
@@ -192,9 +199,7 @@ export default function ProductDetailPage({
           <div
             className="relative aspect-square overflow-hidden rounded-xl bg-gradient-to-br from-muted to-muted/50 cursor-pointer group"
             onClick={() =>
-              product.images &&
-              product.images.length > 0 &&
-              setLightboxOpen(true)
+              displayImages.length > 0 && setLightboxOpen(true)
             }
           >
             {displayImages.length > 0 && !imageError[selectedImage] ? (
@@ -207,9 +212,12 @@ export default function ProductDetailPage({
                     </span>
                   </div>
                 )}
-                <img
+                <Image
                   src={displayImages[selectedImage]}
                   alt={product.name}
+                  fill
+                  sizes="(min-width: 1024px) 50vw, 100vw"
+                  loading="eager"
                   onLoad={() =>
                     setImageLoaded((prev) => ({ ...prev, [selectedImage]: true }))
                   }
@@ -217,11 +225,11 @@ export default function ProductDetailPage({
                     setImageError((prev) => ({ ...prev, [selectedImage]: true }))
                   }
                   className={cn(
-                    "h-full w-full object-cover transition-all duration-500",
+                    "object-cover transition-all duration-500",
                     imageLoaded[selectedImage]
                       ? "opacity-100"
                       : "opacity-0"
-                  )                  }
+                  )}
                 />
 
                 {/* Click to enlarge hint */}
@@ -319,10 +327,13 @@ export default function ProductDetailPage({
                       : "border-transparent opacity-60 hover:opacity-80"
                   )}
                 >
-                  <img
+                  <Image
                     src={img}
                     alt={`${product.name} - ${idx + 1}`}
-                    className="h-full w-full object-cover"
+                    fill
+                    sizes="80px"
+                    loading="eager"
+                    className="object-cover"
                   />
                 </button>
               ))}

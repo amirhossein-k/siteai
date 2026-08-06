@@ -2,6 +2,7 @@
 
 import { useState, use } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Store,
   Package,
@@ -17,6 +18,7 @@ import { PaginationControls } from "@/components/ui/pagination";
 import { ProductCard } from "@/components/storefront/product-card";
 import { usePublicSupplier } from "@/hooks/use-public-suppliers";
 import { usePublicProducts } from "@/hooks/use-public-products";
+import { isAllowedImageSrc } from "@/lib/utils";
 
 export default function SupplierDetailPage({
   params,
@@ -48,7 +50,9 @@ export default function SupplierDetailPage({
   const totalProducts = paged?.total || 0;
   const totalPages = paged?.totalPages || 1;
 
-  const showLogo = !!supplier?.logo;
+  // Session 61 — skip <Image> for unconfigured hosts (next/image throws at
+  // render); the ImageOff/Store fallback matches the old native <img>.
+  const showLogo = !!supplier?.logo && isAllowedImageSrc(supplier.logo);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -110,12 +114,15 @@ export default function SupplierDetailPage({
           <CardContent className="-mt-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div className="flex items-end gap-5">
               {/* Logo */}
-              <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-background shadow-sm">
+              <div className="relative flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border bg-background shadow-sm">
                 {showLogo ? (
-                  <img
+                  <Image
                     src={supplier.logo}
                     alt={supplier.businessName}
-                    className="h-full w-full object-cover"
+                    fill
+                    sizes="96px"
+                    loading="eager"
+                    className="object-cover"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-muted/50">

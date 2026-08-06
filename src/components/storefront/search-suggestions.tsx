@@ -95,6 +95,11 @@ export function SearchSuggestions({
             <li
               key={suggestion}
               role="option"
+              // Session 61 — WAI-ARIA: listbox options must expose aria-selected.
+              // No keyboard-activation model exists (pointer-only dropdown), so
+              // every option reports unselected; adding arrow-key navigation is
+              // explicitly OUT of scope (behavior change).
+              aria-selected={false}
               onMouseDown={(e) => {
                 // Use mouseDown not click to fire before the input blur
                 e.preventDefault();

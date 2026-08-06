@@ -4,6 +4,7 @@ import {
   formatDate,
   formatPrice,
   getBaseUrl,
+  isAllowedImageSrc,
   slugify,
   truncate,
 } from "@/lib/utils";
@@ -79,6 +80,45 @@ describe("truncate", () => {
 
   it("returns exact-length text unchanged", () => {
     expect(truncate("exactly", 7)).toBe("exactly");
+  });
+});
+
+describe("isAllowedImageSrc", () => {
+  // Session 61 — the storefront next/image migration guard. Mirrors the
+  // next.config.ts remotePatterns allowlist; an unknown host must be rejected
+  // (the caller then renders its placeholder instead of crashing).
+  it("accepts the known Liara S3 host", () => {
+    expect(isAllowedImageSrc("https://c589564.parspack.net/uploads/a.jpg")).toBe(
+      true
+    );
+  });
+
+  it("accepts localhost (dev) http + https", () => {
+    expect(isAllowedImageSrc("http://localhost:3000/x.jpg")).toBe(true);
+    expect(isAllowedImageSrc("https://localhost/x.jpg")).toBe(true);
+  });
+
+  it("accepts same-origin relative paths", () => {
+    expect(isAllowedImageSrc("/uploads/a.jpg")).toBe(true);
+  });
+
+  it("rejects protocol-relative URLs (//host is NOT same-origin)", () => {
+    // `new URL("//host/x")` without a base throws → rejected, never allowed
+    // through the startsWith("/") fast path.
+    expect(isAllowedImageSrc("//example.com/s.jpg")).toBe(false);
+  });
+
+  it("rejects unconfigured hosts (the example.com placeholder case)", () => {
+    expect(isAllowedImageSrc("https://example.com/s.jpg")).toBe(false);
+    expect(isAllowedImageSrc("https://cdn.other.dev/x.png")).toBe(false);
+  });
+
+  it("rejects empty / null / malformed / data: values", () => {
+    expect(isAllowedImageSrc("")).toBe(false);
+    expect(isAllowedImageSrc(undefined)).toBe(false);
+    expect(isAllowedImageSrc(null)).toBe(false);
+    expect(isAllowedImageSrc("not-a-url")).toBe(false);
+    expect(isAllowedImageSrc("data:image/png;base64,AAAA")).toBe(false);
   });
 });
 

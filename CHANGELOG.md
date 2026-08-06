@@ -1,5 +1,30 @@
 # Changelog
 
+## Session 61 (August 2026) — Performance & Accessibility: next/image Migration + axe-core E2E Gate
+
+### Scope (approved design — additive front-end + test infra; zero business-logic changes)
+- **Storefront `next/image` migration** — all **12 storefront image components / 17 `<Image>` instances** (product card, quick-categories, product detail gallery + thumbnails, image lightbox, cart, checkout, order invoice, hero carousel, campaign banner, gift collections, supplier card + detail logo) converted from native `<img>` to `next/image` with `fill` + `relative` aspect containers (no layout shift), explicit `sizes`, and `loading="eager"` only where above-the-fold (the rest inherit lazy). All `onError` placeholder fallbacks preserved — behavior unchanged. **Zero business-logic changes, no model/schema/index/database changes, no money-flow or API behavior changes.**
+- **`next.config.ts` `images.remotePatterns`** — additive allowlist derived from env at config-load time (never from user input): `LIARA_ENDPOINT` hostname (fallback to the project's known Liara host `c589564.parspack.net` so env-less builds still work), `NEXT_PUBLIC_APP_URL` when set, and `localhost` (http+https) for dev. Optimizer stays enabled (AVIF/WebP + responsive srcset).
+- **Migration-completion hardening (found during E2E validation, not in the original plan):** `next/image` throws a RENDER-TIME error on unconfigured hosts — where native `<img>` just degraded to a broken image/placeholder. A shared client-side guard **`isAllowedImageSrc`** (`src/lib/utils.ts`, mirroring the remotePatterns allowlist incl. same-origin relative paths) is applied across all 12 storefront image components, so any admin-entered/hotlinked URL outside the allowlist falls back to the existing placeholder instead of crashing a section. (The dev DB carried leftover `example.com` placeholder image URLs that crashed the homepage + catalog under the migration — the guard restores the old degrade-to-placeholder behavior.) Two further audit findings fixed: **`hero-carousel`** hidden slides gained `inert` (axe `aria-hidden-focus` — focusable CTA links inside `aria-hidden` slides) and the shared **`Badge`** success/warning variants moved from white-on-500 (2.2–2.5:1) to the -700 shades (≥4.5:1, WCAG AA) after the product-detail scan flagged `color-contrast`.
+- **Accessibility fixes from the audit** (in-scope files only): `search-suggestions.tsx` — `aria-selected={false}` on listbox options (WAI-ARIA contract; keyboard nav explicitly out of scope — no behavior change); `image-lightbox.tsx` — backdrop is now a labelled `<button>` (`aria-label="بستن"`, `tabIndex={-1}`, same tab order as the old click-only div) and the zoom container is a labelled `<button>`; `storefront-header.tsx` — Persian `aria-label`s on the icon-only wishlist/cart/profile links. `hero-carousel` + `mobile-drawer` were audit-verified already-compliant (no changes needed).
+- **`@axe-core/playwright` devDep** + **`tests/e2e/accessibility.spec.ts`** (Journey 11) — axe-core (wcag2a/2aa/21a/21aa) scans homepage, catalog, product detail, supplier detail, login, register (desktop chromium project only) and asserts **zero serious/critical violations**; all-impact violations are logged for debuggability; `OUT_OF_SCOPE_RULE_IDS` documents any future out-of-scope findings (empty when the scanned pages are clean). Runs as part of `npm run e2e` → automatically inside the Session 60 `ci.yml` e2e gate — no new CI wiring.
+- **`PERFORMANCE.md` (new)** — documents the image pipeline, remotePatterns allowlist, loading strategy, the remaining admin/supplier native `<img>` debt (deliberately NOT converted — out of approved scope), and the axe gate.
+
+### Files
+- **Converted (12):** `src/components/storefront/product-card.tsx` · `src/components/storefront/supplier-card.tsx` · `src/components/storefront/image-lightbox.tsx` · `src/components/storefront/home/{hero-carousel,campaign-banner,gift-collections,quick-categories}.tsx` · `src/app/(storefront)/products/[slug]/page.tsx` · `src/app/(storefront)/cart/page.tsx` · `src/app/(storefront)/checkout/page.tsx` · `src/app/(storefront)/suppliers/[id]/page.tsx` · `src/components/orders/order-invoice.tsx`
+- **Config/deps:** `next.config.ts` (remotePatterns) · `package.json` + `package-lock.json` (`@axe-core/playwright` ^4.12.1)
+- **Accessibility:** `src/components/storefront/search-suggestions.tsx` · `src/components/storefront/storefront-header.tsx` · `src/components/storefront/image-lightbox.tsx` (also in the conversion list — backdrop/zoom buttons) · `src/components/storefront/home/hero-carousel.tsx` (inert on hidden slides) · `src/components/ui/badge.tsx` (success/warning contrast → WCAG AA)
+- **Guard + tests:** `src/lib/utils.ts` (`isAllowedImageSrc`) · `tests/unit/utils.test.ts` (+5 tests) · **Test:** `tests/e2e/accessibility.spec.ts` (new, Journey 11) · **Docs:** `PERFORMANCE.md` (new) + `CHANGELOG.md`/`NEXT_SESSION.md`/`PROJECT_STATE.md`/`ROADMAP.md`/`TASKS.md`
+
+### Verification
+- `npx tsc --noEmit` zero errors; scoped ESLint 0 errors (4 pre-existing warnings — unchanged from Session 60); `npm run check` passes.
+- Vitest **158/158** (152 pre-existing + **6 new** `isAllowedImageSrc` unit tests; the money-critical helpers are byte-for-byte untouched).
+- Playwright **27/27 PASS** (chromium 22 incl. the 6 new axe scans + chromium-mobile 5, exit 0) — the axe spec scanned the live homepage/catalog/product-detail/supplier-detail/login/register pages and asserted **zero serious/critical violations** (the `color-contrast` finding on the shared success/warning Badge and the `aria-hidden-focus` finding on hero slides were both fixed; the register-page locator was corrected to the actual «ساخت حساب کاربری» heading).
+- Full regression (33 suites) unchanged by definition — zero API/server/model code touched; no dev-server restart needed.
+
+### Review fixes
+- All code-reviewer findings addressed (see NEXT_SESSION.md for the audit + spec-review details).
+
 ## Session 60 (August 2026) — Production Readiness: CI/CD Pipeline (GitHub Actions)
 
 ### Scope (approved design — infra-only, zero application-code changes)

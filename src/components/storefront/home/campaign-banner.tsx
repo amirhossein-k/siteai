@@ -1,6 +1,7 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowLeft, Megaphone } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, isAllowedImageSrc } from "@/lib/utils";
 import type { HomepageSectionRendererProps } from "@/types";
 
 /**
@@ -16,7 +17,16 @@ export function CampaignBanner({ section }: HomepageSectionRendererProps) {
   if (!banner) return null;
 
   const isGradient = banner.themeColor.startsWith("from-");
-  const hasImage = Boolean(banner.imageDesktop || banner.imageMobile);
+  // Session 61 — next/image throws on unconfigured hosts; skip such artwork
+  // and keep the gradient/decorative-ring fallback (native <img> degraded to
+  // a broken image before the migration).
+  const imageDesktop = isAllowedImageSrc(banner.imageDesktop)
+    ? banner.imageDesktop
+    : "";
+  const imageMobile = isAllowedImageSrc(banner.imageMobile)
+    ? banner.imageMobile
+    : "";
+  const hasImage = Boolean(imageDesktop || imageMobile);
 
   return (
     <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
@@ -31,20 +41,24 @@ export function CampaignBanner({ section }: HomepageSectionRendererProps) {
             : undefined
         }
       >
-        {banner.imageMobile && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={banner.imageMobile}
+        {imageMobile && (
+          <Image
+            src={imageMobile}
             alt=""
-            className="absolute inset-0 h-full w-full object-cover sm:hidden"
+            fill
+            sizes="100vw"
+            loading="eager"
+            className="object-cover sm:hidden"
           />
         )}
-        {banner.imageDesktop && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={banner.imageDesktop}
+        {imageDesktop && (
+          <Image
+            src={imageDesktop}
             alt=""
-            className="absolute inset-0 hidden h-full w-full object-cover sm:block"
+            fill
+            sizes="100vw"
+            loading="eager"
+            className="hidden object-cover sm:block"
           />
         )}
         {hasImage && (

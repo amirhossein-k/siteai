@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import {
@@ -16,7 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, isAllowedImageSrc } from "@/lib/utils";
 import { useCartStore } from "@/stores/cart-store";
 import { showToast } from "@/components/ui/toast";
 
@@ -83,11 +84,16 @@ export default function CartPage() {
                 <div className="flex items-start gap-4">
                   {/* Product image */}
                   <div className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
-                    {item.image && !imgErrors[item.key] ? (
-                      <img
+                    {item.image &&
+                    !imgErrors[item.key] &&
+                    isAllowedImageSrc(item.image) ? (
+                      <Image
                         src={item.image}
                         alt={item.name}
-                        className="h-full w-full object-cover"
+                        fill
+                        sizes="80px"
+                        loading="eager"
+                        className="object-cover"
                         onError={() =>
                           setImgErrors((prev) => ({ ...prev, [item.key]: true }))
                         }

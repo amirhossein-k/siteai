@@ -127,6 +127,7 @@ export function StorefrontHeader() {
             {session && (
               <Link
                 href="/wishlist"
+                aria-label="علاقه‌مندی‌ها"
                 className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
               >
                 <Heart className="h-5 w-5" />
@@ -140,6 +141,7 @@ export function StorefrontHeader() {
 
             <Link
               href="/cart"
+              aria-label="سبد خرید"
               className="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <ShoppingCart className="h-5 w-5" />
@@ -153,6 +155,7 @@ export function StorefrontHeader() {
             {session ? (
               <Link
                 href="/profile"
+                aria-label="پروفایل"
                 className={cn(
                   "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
                   pathname === "/profile" && "bg-accent text-accent-foreground"

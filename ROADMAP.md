@@ -2,6 +2,15 @@
 
 ## ✅ Completed Milestones
 
+### Performance & Accessibility — next/image + axe-core (Session 61)
+- [x] **Storefront `next/image` migration** — 12 image components / 17 `<Image>` instances (product card, quick-categories, product detail gallery + thumbs, lightbox, cart, checkout, order invoice, hero-carousel, campaign-banner, gift-collections, supplier card + detail logo); `fill` aspect containers, explicit `sizes`, critical-only `eager` loading; all `onError` fallbacks preserved — zero behavior change
+- [x] **`next.config.ts` `images.remotePatterns`** — additive allowlist from env at config-load (Liara endpoint host w/ known fallback, app URL, localhost dev); optimizer stays enabled (AVIF/WebP)
+- [x] **Accessibility audit fixes (in-scope)** — `search-suggestions` `aria-selected`, `image-lightbox` labelled backdrop/zoom buttons, `storefront-header` icon-link `aria-label`s, `hero-carousel` `inert` on hidden slides (axe `aria-hidden-focus`), `ui/badge` success/warning contrast → WCAG AA (-700 shades); `mobile-drawer` verified already-compliant
+- [x] **axe-core E2E gate** — `@axe-core/playwright` + `tests/e2e/accessibility.spec.ts` (Journey 11): wcag2a/2aa/21a/21aa scans of homepage/catalog/product-detail/supplier-detail/login/register, zero serious/critical asserted; runs inside `npm run e2e` → inside the Session 60 `ci.yml` e2e gate
+- [x] **`PERFORMANCE.md`** — pipeline/allowlist/loading-strategy docs + the out-of-scope admin/supplier native `<img>` debt backlog
+- [x] **Fail-safe image guard** — `isAllowedImageSrc` (`src/lib/utils.ts`, +5 unit tests) applied across all 12 image components: next/image throws at render on unconfigured hosts (native `<img>` degraded to a broken image), so unconfigured URLs now fall back to placeholders instead of crashing a section
+- [x] **Invariants** — zero `src/` business-logic changes, no model/schema/index/DB changes, no money-flow/API behavior changes; validated: tsc zero errors, `npm run check` passes (scoped eslint 0 errors, 4 pre-existing warnings), Vitest **158/158** (152 + 6 new), Playwright **27/27** (chromium 22 incl. 6 axe scans + mobile 5, zero serious/critical on all six scanned pages); no dev-server restart needed
+
 ### Playwright E2E — Production Readiness, Tranche 1 (Session 59)
 - [x] `@playwright/test` + bundled Chromium; `playwright.config.ts` — `chromium` full suite + `chromium-mobile` Pixel 5 smoke; `workers: 1` deterministic sequential against the shared dev DB; artifacts only-on-failure; `e2e` / `e2e:headed` / `e2e:install` scripts
 - [x] **Auth:** real credentials API logins in `global-setup` → per-role `storageState` (admin/supplier/customer) + one real UI login journey (valid + wrong-password)
@@ -408,9 +417,12 @@
 ### Session 60 ✅ — CI/CD Pipeline (GitHub Actions)
 > **Completed.** Merge-gating `ci.yml` (static + unit + hermetic-secretless e2e) + optional non-gating nightly `regression.yml` (33 real-API suites, secrets-driven, self-skipping). Zero `src/` changes. See the completed milestone above + CHANGELOG.
 
-### Session 61 — Candidate (pick one)
-> **Session 60 automated the test stack** (ci.yml green on push/PR). Candidates for the next session:
-- **Production Readiness (next tranche):** Core Web Vitals + accessibility audit (can fold Lighthouse into CI), Playwright journey expansion (admin product CRUD, supplier products, SSE/notifications — uploads stay API-level: browser file choosers aren't automatable), Deployment (Vercel/Docker), Monitoring (Sentry).
+### Session 61 ✅ — Performance & Accessibility (next/image + axe-core)
+> **Completed.** Storefront fully on `next/image` (12 components / 17 images + env-derived `images.remotePatterns`), accessibility audit fixes, and an axe-core E2E gate (Journey 11) running inside the existing CI e2e job. Zero business-logic changes. See the completed milestone above + CHANGELOG.
+
+### Session 62 — Candidate (pick one)
+> **Session 61 closed the perf/a11y tranche's front-end half.** Candidates for the next session:
+- **Production Readiness (next tranche):** Core Web Vitals + Lighthouse CI gate, Playwright journey expansion (admin product CRUD, supplier products, SSE/notifications — uploads stay API-level: browser file choosers aren't automatable), Deployment (Vercel/Docker), Monitoring (Sentry).
 - **Growth features:** SMS/OTP authentication (replaces the password login — touches NextAuth/middleware/RBAC + the E2E login journeys), admin real charts (recharts), customer email/SMS order notifications, customer segments → first-purchase / birthday / spending coupons via the Session 55 `eligibility` seam.
 
 ---
@@ -418,10 +430,10 @@
 ## 🚀 Future Milestones
 
 ### Milestone 15: Production Readiness
-- [ ] Performance optimization (Core Web Vitals)
-- [ ] Accessibility audit and fixes
+- [x] Performance optimization — storefront `next/image` migration + env-derived remotePatterns (Session 61); **Core Web Vitals tuning + Lighthouse CI gate remain**
+- [x] Accessibility audit and fixes — axe-core E2E gate over the 6 highest-traffic public pages (Session 61); admin-area native `<img>` conversion + the keyboard-nav listbox upgrade remain (see PERFORMANCE.md)
 - [x] Unit tests (Vitest — 152 hermetic tests, Session 58; Testing Library component tests remaining)
-- [x] E2E tests (Playwright — 21 tests / 10 journeys, Session 59)
+- [x] E2E tests (Playwright — 22 tests / 11 journeys incl. the axe accessibility journey, Session 59 + 61)
 - [x] CI/CD pipeline (GitHub Actions — `ci.yml` merge gates, Session 60; optional nightly `regression.yml` needs the real-sandbox secrets)
 - [ ] Deployment to production (Vercel, Docker)
 - [ ] Monitoring and error tracking (Sentry)

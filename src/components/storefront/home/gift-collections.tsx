@@ -1,6 +1,7 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Gift, ArrowLeft } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, isAllowedImageSrc } from "@/lib/utils";
 import { SectionHeader } from "@/components/storefront/home/section-header";
 import type { HomepageSectionRendererProps } from "@/types";
 
@@ -26,7 +27,16 @@ export function GiftCollections({ section }: HomepageSectionRendererProps) {
 
       <div className="grid gap-4 md:grid-cols-3">
         {collections.map((collection) => {
-          const hasImage = Boolean(collection.imageDesktop || collection.imageMobile);
+          // Session 61 — next/image throws on unconfigured hosts; skip such
+          // artwork and keep the gradient/decorative fallback (native <img>
+          // degraded to a broken image before the migration).
+          const imageDesktop = isAllowedImageSrc(collection.imageDesktop)
+            ? collection.imageDesktop
+            : "";
+          const imageMobile = isAllowedImageSrc(collection.imageMobile)
+            ? collection.imageMobile
+            : "";
+          const hasImage = Boolean(imageDesktop || imageMobile);
           return (
             <Link
               key={collection._id}
@@ -43,20 +53,24 @@ export function GiftCollections({ section }: HomepageSectionRendererProps) {
                   : undefined
               }
             >
-              {collection.imageMobile && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={collection.imageMobile}
+              {imageMobile && (
+                <Image
+                  src={imageMobile}
                   alt=""
-                  className="absolute inset-0 h-full w-full object-cover md:hidden"
+                  fill
+                  sizes="100vw"
+                  loading="eager"
+                  className="object-cover md:hidden"
                 />
               )}
-              {collection.imageDesktop && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={collection.imageDesktop}
+              {imageDesktop && (
+                <Image
+                  src={imageDesktop}
                   alt=""
-                  className="absolute inset-0 hidden h-full w-full object-cover md:block"
+                  fill
+                  sizes="100vw"
+                  loading="eager"
+                  className="hidden object-cover md:block"
                 />
               )}
               {hasImage && (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useCallback, useState } from "react";
+import Image from "next/image";
 import {
   X,
   ChevronLeft,
@@ -8,7 +9,7 @@ import {
   ImageOff,
   ZoomIn,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, isAllowedImageSrc } from "@/lib/utils";
 
 interface ImageLightboxProps {
   /** Array of image URLs to display */
@@ -89,7 +90,7 @@ export function ImageLightbox({
 
   // Track mouse position for zoom effect
   const handleMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
+    (e: React.MouseEvent<HTMLElement>) => {
       if (!isZoomed) return;
       const rect = e.currentTarget.getBoundingClientRect();
       const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -102,7 +103,11 @@ export function ImageLightbox({
   if (!isOpen) return null;
 
   const hasMultipleImages = images.length > 1;
-  const hasError = imageError[currentIndex];
+  // Session 61 — an unconfigured host would make next/image throw at render
+  // (the old native <img> showed the error state instead). Callers already
+  // filter, but the lightbox guards itself so it can never crash on bad data.
+  const isGuardBlocked = !isAllowedImageSrc(images[currentIndex]);
+  const hasError = imageError[currentIndex] || isGuardBlocked;
 
   return (
     <div
@@ -111,10 +116,16 @@ export function ImageLightbox({
       aria-modal="true"
       aria-label="نمایش تصویر"
     >
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/90 backdrop-blur-sm"
+      {/* Backdrop — rendered as a button so screen readers get a dismissal
+          affordance; tabIndex -1 keeps it out of the tab order exactly like
+          the old click-only backdrop (the dedicated close button handles
+          keyboard focus). */}
+      <button
+        type="button"
+        aria-label="بستن"
+        tabIndex={-1}
         onClick={onClose}
+        className="absolute inset-0 bg-black/90 backdrop-blur-sm"
       />
 
       {/* Close button */}
@@ -178,17 +189,24 @@ export function ImageLightbox({
           <div className="flex flex-col items-center gap-3 text-white/60">
             <ImageOff className="h-20 w-20" />
             <p className="text-sm">بارگذاری تصویر با خطا مواجه شد</p>
-            <button
-              onClick={() => setImageError((prev) => ({ ...prev, [currentIndex]: false }))}
-              className="rounded-lg bg-white/10 px-4 py-2 text-sm text-white transition-colors hover:bg-white/20"
-            >
-              تلاش مجدد
-            </button>
+            {/* Retry only makes sense for a transient network failure — a
+                guard-blocked URL (unconfigured host) can never succeed, so
+                the button is hidden for those. */}
+            {imageError[currentIndex] && (
+              <button
+                onClick={() => setImageError((prev) => ({ ...prev, [currentIndex]: false }))}
+                className="rounded-lg bg-white/10 px-4 py-2 text-sm text-white transition-colors hover:bg-white/20"
+              >
+                تلاش مجدد
+              </button>
+            )}
           </div>
         ) : (
-          <div
+          <button
+            type="button"
+            aria-label={isZoomed ? "کوچک‌نمایی تصویر" : "بزرگ‌نمایی تصویر"}
             className={cn(
-              "relative overflow-hidden rounded-lg transition-all duration-300",
+              "relative block overflow-hidden rounded-lg border-0 bg-transparent p-0 transition-all duration-300",
               isZoomed
                 ? "cursor-zoom-out"
                 : "cursor-zoom-in"
@@ -208,9 +226,13 @@ export function ImageLightbox({
               </div>
             )}
 
-            <img
+            <Image
               src={images[currentIndex]}
               alt={`تصویر ${currentIndex + 1}`}
+              width={1600}
+              height={1600}
+              sizes="85vw"
+              loading="eager"
               onLoad={() =>
                 setImageLoaded((prev) => ({ ...prev, [currentIndex]: true }))
               }
@@ -233,7 +255,7 @@ export function ImageLightbox({
               }
               draggable={false}
             />
-          </div>
+          </button>
         )}
       </div>
 
@@ -251,17 +273,24 @@ export function ImageLightbox({
                 }
               }}
               className={cn(
-                "h-12 w-12 flex-shrink-0 overflow-hidden rounded-md border-2 transition-all duration-200",
+                "relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-md border-2 transition-all duration-200",
                 currentIndex === idx
                   ? "border-white opacity-100 ring-1 ring-white/30"
                   : "border-transparent opacity-50 hover:opacity-80"
               )}
             >
-              <img
-                src={img}
-                alt={`تصویر ${idx + 1}`}
-                className="h-full w-full object-cover"
-              />
+              {isAllowedImageSrc(img) ? (
+                <Image
+                  src={img}
+                  alt={`تصویر ${idx + 1}`}
+                  fill
+                  sizes="48px"
+                  loading="eager"
+                  className="object-cover"
+                />
+              ) : (
+                <div className="h-full w-full bg-muted" />
+              )}
             </button>
           ))}
         </div>

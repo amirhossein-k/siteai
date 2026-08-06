@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import { Package } from "lucide-react";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, isAllowedImageSrc } from "@/lib/utils";
 import type { AdminOrder } from "@/types";
 
 /**
@@ -28,11 +29,13 @@ export function OrderInvoice({ order }: { order: AdminOrder }) {
             <tr key={idx} className="border-b last:border-0">
               <td className="px-4 py-3">
                 <div className="flex items-center gap-3">
-                  {item.image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                  {item.image && isAllowedImageSrc(item.image) ? (
+                    <Image
                       src={item.image}
                       alt={item.name}
+                      width={40}
+                      height={40}
+                      loading="eager"
                       className="h-10 w-10 shrink-0 rounded-md border object-cover"
                     />
                   ) : (

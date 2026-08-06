@@ -2,6 +2,48 @@
 
 ---
 
+## ✅ Session 61 — Performance & Accessibility: next/image Migration + axe-core E2E Gate
+
+### Scope + invariants
+- [x] Approved design frozen — additive front-end + test infra only; **zero `src/` business-logic changes**, no model/schema/database/index changes, no checkout/payment/order/coupon/inventory/auth changes, no API behavior changes beyond the approved additive a11y/perf work
+- [x] Audit-driven scope: 12 storefront image components / 17 `<Image>` instances (final count > the 15-image pre-audit estimate); remaining native `<img>` in admin/supplier/UI areas deliberately NOT converted (out of scope — documented in PERFORMANCE.md)
+
+### next/image migration
+- [x] `src/components/storefront/product-card.tsx` · `supplier-card.tsx` · `image-lightbox.tsx` (zoom + thumbs) · `home/{hero-carousel,campaign-banner,gift-collections,quick-categories}.tsx`
+- [x] `src/app/(storefront)/products/[slug]/page.tsx` (main + thumbs) · `cart/page.tsx` · `checkout/page.tsx` · `suppliers/[id]/page.tsx` · `src/components/orders/order-invoice.tsx`
+- [x] `fill` + `relative` aspect containers (no layout shift), explicit `sizes`, `loading="eager"` only above the fold; all `onError` placeholder fallbacks preserved
+- [x] `next.config.ts` `images.remotePatterns` — additive env-derived allowlist (Liara endpoint host w/ known fallback, app URL, localhost dev); optimizer stays enabled (AVIF/WebP + srcset)
+
+### Accessibility audit fixes (in-scope files)
+- [x] `search-suggestions.tsx` — `aria-selected={false}` on `role="option"` listbox items (WAI-ARIA contract; keyboard nav explicitly out of scope — pointer-only dropdown, no behavior change)
+- [x] `image-lightbox.tsx` — labelled backdrop `<button aria-label="بستن">` (`tabIndex={-1}`, tab order identical to the old click-only div) + labelled zoom `<button>`; retry button hidden when the block is the host guard (not a network error)
+- [x] `storefront-header.tsx` — Persian `aria-label`s on the icon-only wishlist/cart/profile links
+- [x] `hero-carousel.tsx` — `inert` on hidden slides (axe `aria-hidden-focus`: focusable CTA links inside `aria-hidden` slides)
+- [x] `ui/badge.tsx` — success/warning contrast → WCAG AA (white-on-500 measured 2.2–2.5:1; -700 shades pass ≈4.9–5.3:1), flagged by the product-detail scan
+- [x] Audit-verified already-compliant (no changes needed): `mobile-drawer.tsx` (`role="dialog"`, `aria-modal`, `aria-label`, `aria-hidden`/`inert`)
+
+### Fail-safe image guard (migration-completion hardening)
+- [x] `isAllowedImageSrc` in `src/lib/utils.ts` — mirrors the remotePatterns allowlist + same-origin relative paths; rejects protocol-relative `//host`, data:/blob:, malformed; applied across **all 12 storefront image components** so unconfigured hosts fall back to placeholders instead of next/image's render-time throw (dev DB's leftover `example.com` image URLs crashed homepage + catalog under the migration)
+- [x] +5 unit tests in `tests/unit/utils.test.ts` (Liara host / localhost / relative / protocol-relative rejection / example.com rejection / empty & malformed)
+
+### axe-core E2E gate
+- [x] `@axe-core/playwright` devDep installed
+- [x] `tests/e2e/accessibility.spec.ts` (Journey 11) — axe wcag2a/2aa/21a/21aa over homepage/catalog/product-detail/supplier-detail/login/register (desktop chromium project only); asserts **zero serious/critical**; all-impact violations logged; `OUT_OF_SCOPE_RULE_IDS` documents future out-of-scope findings (empty = clean)
+- [x] Runs inside `npm run e2e` → automatically inside the Session 60 `ci.yml` e2e gate (zero new CI wiring)
+
+### Docs
+- [x] `PERFORMANCE.md` (new) — image pipeline, remotePatterns allowlist, loading strategy, admin/supplier native-`<img>` debt, axe gate
+- [x] `CHANGELOG.md` / `NEXT_SESSION.md` / `PROJECT_STATE.md` / `ROADMAP.md` / `TASKS.md` updated
+
+### Verification
+- [x] `npx tsc --noEmit` zero errors; scoped ESLint clean on all changed files; `npm run check` passes
+- [x] `npm test` — **158/158 PASS** (152 pre-existing + 6 new `isAllowedImageSrc` tests; money-critical helpers untouched)
+- [x] `npm run e2e` — **27/27 PASS** (chromium 22 incl. the 6 new axe scans + chromium-mobile 5; **zero serious/critical axe violations** on the live homepage/catalog/product-detail/supplier-detail/login/register pages; register locator corrected to «ساخت حساب کاربری»)
+- [x] `npm run check` — passes (scoped ESLint 0 errors, 4 pre-existing warnings; `src/components` outside gate scope — `image-lightbox.tsx` carries 4 PRE-EXISTING react-hooks errors on untouched effect blocks, documented debt)
+- [x] No model/schema/index changes → no app restart; full regression (33 suites) unaffected by definition (zero API/server code touched)
+
+---
+
 ## ✅ Session 60 — Production Readiness: CI/CD Pipeline (GitHub Actions)
 
 ### Scope + invariants

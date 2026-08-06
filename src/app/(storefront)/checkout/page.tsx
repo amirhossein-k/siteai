@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useSession } from "next-auth/react";
 import {
   ShoppingCart,
@@ -19,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatPrice } from "@/lib/utils";
+import { formatPrice, isAllowedImageSrc } from "@/lib/utils";
 import { useCartStore } from "@/stores/cart-store";
 import { showToast } from "@/components/ui/toast";
 import axios from "axios";
@@ -393,11 +394,16 @@ export default function CheckoutPage() {
                     >
                       {/* Thumbnail */}
                       <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
-                        {item.image && !imgErrors[item.key] ? (
-                          <img
+                        {item.image &&
+                        !imgErrors[item.key] &&
+                        isAllowedImageSrc(item.image) ? (
+                          <Image
                             src={item.image}
                             alt={item.name}
-                            className="h-full w-full object-cover"
+                            fill
+                            sizes="48px"
+                            loading="eager"
+                            className="object-cover"
                             onError={() =>
                               setImgErrors((prev) => ({
                                 ...prev,

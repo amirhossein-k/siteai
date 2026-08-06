@@ -13,10 +13,14 @@ const badgeVariants = cva(
           "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
         destructive:
           "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
+        // Session 61 — axe color-contrast audit: white-on-500 (emerald-500 /
+        // amber-500) measured 2.2–2.5:1, below the WCAG AA 4.5:1 minimum for
+        // normal text. The -700 shades pass (≈4.9–5.3:1) with the same
+        // success/warning visual language app-wide.
         success:
-          "border-transparent bg-emerald-500 text-white hover:bg-emerald-600",
+          "border-transparent bg-emerald-700 text-white hover:bg-emerald-800",
         warning:
-          "border-transparent bg-amber-500 text-white hover:bg-amber-600",
+          "border-transparent bg-amber-700 text-white hover:bg-amber-800",
         outline: "text-foreground",
       },
     },

@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, isAllowedImageSrc } from "@/lib/utils";
 import type { HomepageSectionRendererProps } from "@/types";
 
 /**
@@ -68,7 +69,16 @@ export function HeroCarousel({ section }: HomepageSectionRendererProps) {
             const gradient = isGradient(slide.themeColor)
               ? `bg-gradient-to-l ${slide.themeColor}`
               : "bg-gradient-to-l from-zinc-900 via-zinc-800 to-zinc-700";
-            const hasImage = Boolean(slide.imageDesktop || slide.imageMobile);
+            // Session 61 — next/image throws on unconfigured hosts; skip such
+            // artwork and keep the gradient/theme-color fallback (native <img>
+            // degraded to a broken image before the migration).
+            const imageDesktop = isAllowedImageSrc(slide.imageDesktop)
+              ? slide.imageDesktop
+              : "";
+            const imageMobile = isAllowedImageSrc(slide.imageMobile)
+              ? slide.imageMobile
+              : "";
+            const hasImage = Boolean(imageDesktop || imageMobile);
             return (
               <div
                 key={slide._id}
@@ -83,22 +93,31 @@ export function HeroCarousel({ section }: HomepageSectionRendererProps) {
                     : undefined
                 }
                 aria-hidden={i !== index}
+                // Session 61 — axe `aria-hidden-focus`: a slide hidden with
+                // aria-hidden must not keep focusable content (its CTA link).
+                // `inert` removes it from tab order + a11y tree (React 19
+                // boolean prop — same pattern as the mobile drawer).
+                inert={i !== index}
               >
                 {/* Responsive artwork (mobile / desktop) */}
-                {slide.imageMobile && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={slide.imageMobile}
+                {imageMobile && (
+                  <Image
+                    src={imageMobile}
                     alt=""
-                    className="absolute inset-0 h-full w-full object-cover sm:hidden"
+                    fill
+                    sizes="100vw"
+                    loading="eager"
+                    className="object-cover sm:hidden"
                   />
                 )}
-                {slide.imageDesktop && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={slide.imageDesktop}
+                {imageDesktop && (
+                  <Image
+                    src={imageDesktop}
                     alt=""
-                    className="absolute inset-0 hidden h-full w-full object-cover sm:block"
+                    fill
+                    sizes="100vw"
+                    loading="eager"
+                    className="hidden object-cover sm:block"
                   />
                 )}
                 {hasImage && (

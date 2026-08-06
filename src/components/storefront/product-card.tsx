@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { ShoppingCart, ImageOff, Heart, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { cn, formatPrice } from "@/lib/utils";
+import { cn, formatPrice, isAllowedImageSrc } from "@/lib/utils";
 import { useCartStore } from "@/stores/cart-store";
 import { showToast } from "@/components/ui/toast";
 import { useWishlistIds, useToggleWishlist } from "@/hooks/use-wishlist";
@@ -54,7 +55,9 @@ export function ProductCard({ product, className }: ProductCardProps) {
   const hasLowStock = product.stock > 0 && product.stock <= 3;
 
   const firstImage = product.images?.[0];
-  const showImage = !!firstImage && !imageError;
+  // Session 61 — next/image throws on unconfigured hosts (native <img> just
+  // showed a broken image); fall back to the placeholder instead.
+  const showImage = !!firstImage && !imageError && isAllowedImageSrc(firstImage);
 
   return (
     <div
@@ -75,13 +78,16 @@ export function ProductCard({ product, className }: ProductCardProps) {
                 </span>
               </div>
             )}
-            <img
+            <Image
               src={firstImage}
               alt={product.name}
+              fill
+              sizes="(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+              loading="eager"
               onLoad={() => setImageLoaded(true)}
               onError={() => setImageError(true)}
               className={cn(
-                "h-full w-full object-cover transition-all duration-500 group-hover:scale-110",
+                "object-cover transition-all duration-500 group-hover:scale-110",
                 imageLoaded ? "opacity-100" : "opacity-0"
               )}
             />
