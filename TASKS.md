@@ -2,6 +2,45 @@
 
 ---
 
+## ✅ Session 60 — Production Readiness: CI/CD Pipeline (GitHub Actions)
+
+### Scope + invariants
+- [x] Approved design frozen — infra-only; **zero `src/` business-logic changes**, no model/schema/database/index changes, no runtime behavior changes, no architectural refactors
+- [x] Lint gate = **scoped** `eslint src/lib tests/unit tests/e2e` (0 errors) — project-wide `npm run lint` reports **174 PRE-EXISTING errors** (documented whole-repo debt; repo convention is "lint clean on changed files", never whole-project); `next build` not a gate (Google Fonts network constraint)
+
+### Merge-gating workflow (`.github/workflows/ci.yml`)
+- [x] Trigger: push to master + pull_request; concurrency group cancels superseded runs
+- [x] `static` job — npm ci → `npx tsc --noEmit` → scoped eslint (0 errors)
+- [x] `unit` job — `npm test` (Vitest 152/152, hermetic — no DB/network)
+- [x] `e2e` job — `mongo:7` **service container** → `MONGODB_URI` env → `npx playwright install --with-deps chromium` + browser cache → `npm run e2e` → Playwright report/test-results artifacts uploaded on failure only (7-day retention); CI-only `NEXTAUTH_SECRET`/`NEXTAUTH_URL`/`NEXT_PUBLIC_APP_URL` inlined; **zero CI secrets** (global-setup auto-seeds admin + per-run users on the fresh DB; `playwright.config.ts` CI switches already present)
+
+### Non-gating workflow (`.github/workflows/regression.yml`)
+- [x] Trigger: nightly 03:00 UTC + `workflow_dispatch`
+- [x] Full **33-suite real-sandbox regression** (`node scripts/run-regression.js`), `mongo:7` service, secrets-mapped (ZARINPAL_MERCHANT_ID / ZARINPAL_CALLBACK_URL / TELEGRAM_BOT_TOKEN / ADMIN_TELEGRAM_CHAT_ID / LIARA_*)
+- [x] Self-skipping until `ZARINPAL_MERCHANT_ID` configured — runtime `Check secrets configured` step (GitHub secrets can't be used in `if:` directly); dev-server log artifact on failure; `ZARINPAL_MOCK` intentionally NOT set (real sandbox verified)
+- [x] **Fresh-DB admin seed (reviewer fix):** idempotent `node scripts/seed-admin.js` step (env defaults match the suites' `09120000000`/`admin123456` constants) before the server starts — the 33 suites hardcode the seeded admin that only exists on the persistent dev DB; an empty CI container would 401 every login
+
+### Supporting config + cleanup
+- [x] `package.json` — `check` script (`tsc --noEmit && eslint src/lib tests/unit tests/e2e`) — green local equivalent of the CI static job
+- [x] `.env.example` (gitignored, local-only) — CI/CD secrets section for `regression.yml`
+- [x] `src/hooks/useOrders (1).js` **deleted** — verified dead (zero references anywhere; stray browser download artifact)
+
+### Verification
+- [x] Both workflows YAML-parse clean (js-yaml)
+- [x] `npx tsc --noEmit` — zero errors; scoped eslint — 0 errors (4 pre-existing warnings); `npm run check` passes
+- [x] `npm test` — **152/152 PASS** (unchanged)
+- [x] `npm run e2e` — **21/21 PASS** (chromium 16 + chromium-mobile 5, exit 0; server with `ZARINPAL_MOCK=1`)
+- [x] No model/schema/index changes → no app restart; dev server left running as found
+
+### Review fixes (code-reviewer findings all addressed)
+- [x] Lint gate scoped to the actually-green surface (project-wide lint is red by 174 pre-existing errors — documented, not silently gated)
+- [x] **Fresh-DB admin gap (MEDIUM-HIGH):** `regression.yml` boots an empty `mongo:7` container but every verify suite logs in as the seeded admin that only exists on the persistent local DB → idempotent `seed-admin.js` step added before the server starts
+- [x] **Playwright browser cache ordering (LOW):** `actions/cache` moved above `npx playwright install` (was after → could never restore before the download); e2e timeout 20→30 min
+- [x] `regression.yml` duplicate top-level `name` key removed (authoring-time catch, YAML re-validated)
+- [x] Secrets-in-`if:` limitation handled with the runtime check step pattern
+
+---
+
 ## ✅ Session 59 — Production Readiness: Playwright E2E
 
 ### Scope + invariants

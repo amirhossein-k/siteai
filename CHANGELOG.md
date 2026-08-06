@@ -1,5 +1,35 @@
 # Changelog
 
+## Session 60 (August 2026) — Production Readiness: CI/CD Pipeline (GitHub Actions)
+
+### Scope (approved design — infra-only, zero application-code changes)
+- **CI/CD** on top of the existing stack (Next.js 16 App Router + MongoDB `marlooai` + Vitest 152 + Playwright 21 + 33-suite real-API regression). The two test layers built in Sessions 58/59 finally get automated enforcement — the explicit remaining Production-Readiness gap. **Zero `src/` business-logic changes; no model/schema/database/index changes; no runtime behavior changes; no architectural refactors.** The only code-adjacent change is the deletion of the verified-dead `src/hooks/useOrders (1).js` (zero imports anywhere — a stray browser download artifact).
+- **Lint-gate decision (documented):** the merge-gating static job runs `npx eslint src/lib tests/unit tests/e2e` — the surface the project actually keeps lint-clean (money-critical helpers + both test layers; verified **0 errors**, 4 pre-existing warnings). Project-wide `npm run lint` currently reports **174 PRE-EXISTING errors** (the whole-repo ESLint debt — `no-require-imports` across `scripts/*`, `no-explicit-any`, `set-state-in-effect`, `react-hooks/purity`, etc.); the repo convention has always been "ESLint clean on changed files", never whole-project, so a whole-project lint gate would be permanently red and was deliberately excluded. `next build` is also NOT a gate (Turbopack fails when Google Fonts are unreachable — the documented network constraint).
+
+### Files
+- **`.github/workflows/ci.yml`** (new) — three independent merge-gating jobs on push/PR with a concurrency group (superseded runs cancelled): `static` (npm ci → `npx tsc --noEmit` → scoped eslint) · `unit` (`npm test` — hermetic, no DB/network) · `e2e` (MongoDB **service container** `mongo:7` → `MONGODB_URI` env → `npx playwright install --with-deps chromium` + browser cache → `npm run e2e` → Playwright report/test-results artifacts uploaded **on failure only**, 7-day retention). **The E2E job needs ZERO secrets:** on a fresh CI database `global-setup` auto-seeds the admin (idempotent) + creates per-run supplier/customer through the real APIs; `playwright.config.ts` already carries the CI switches (fresh `npm run dev` webServer with `ZARINPAL_MOCK=1`, `retries: 2`, `reuseExistingServer: !CI`); CI-only `NEXTAUTH_SECRET`/`NEXTAUTH_URL`/`NEXT_PUBLIC_APP_URL` are inlined in the job env.
+- **`.github/workflows/regression.yml`** (new, optional/non-gating) — the full **33-suite real-API regression** (`node scripts/run-regression.js`) on `schedule` (nightly 03:00 UTC) + `workflow_dispatch`. Needs the real sandbox/S3/Telegram values → mapped from **GitHub Secrets**; a runtime `Check secrets configured` step skips the run when `ZARINPAL_MERCHANT_ID` is unset (GitHub secrets cannot be referenced in `if:` directly — documented pattern). **Fresh-DB admin seed (reviewer fix):** the 33 suites hardcode the seeded admin (`09120000000`/`admin123456`) and assume it exists in the shared dev DB — on the empty service container the workflow runs `node scripts/seed-admin.js` (idempotent, env defaults match the suites' constants) BEFORE the server starts; without it every suite's first login would 401. ZARINPAL_MOCK is intentionally NOT set (the sandbox journey is what this workflow verifies). Dev-server boot via nohup + curl wait-loop; dev-server log uploaded on failure.
+- **`package.json`** — added `check` script (`tsc --noEmit && eslint src/lib tests/unit tests/e2e`) — a green local equivalent of the CI static job (the original `&& eslint` variant was caught by validation: project-wide lint is red, so the scoped form is what actually passes).
+- **`.env.example`** (gitignored, local-only) — added a CI/CD section documenting which secrets `regression.yml` needs.
+- **`src/hooks/useOrders (1).js`** — **DELETED** (verified dead: zero imports/references across the repo; git history shows it was never wired in).
+
+### Verification
+- **YAML:** both workflows parse cleanly (js-yaml: `name/on/concurrency/jobs` key-set for each).
+- **`npx tsc --noEmit`** — zero errors (unchanged).
+- **Scoped ESLint** `npx eslint src/lib tests/unit tests/e2e` — **0 errors** (4 pre-existing warnings, exit 0); the `npm run check` script passes.
+- **Vitest — 152/152 PASS** (9 files, unchanged).
+- **Playwright — 21/21 PASS** (chromium 16 + chromium-mobile 5, exit 0; server run with `ZARINPAL_MOCK=1` — the Session 59 hermetic procedure).
+- **No model/schema/index changes → no app restart; no runtime behavior change** (the dev server was restarted only as part of the E2E validation and left running as found).
+
+### Review fixes (code-reviewer findings all addressed)
+- Project-wide lint would fail CI — the static job and `check` script now use the scoped gate that actually passes, with the 174-error whole-repo debt documented (workflow header + CHANGELOG).
+- **Fresh-DB admin gap (MEDIUM-HIGH):** `regression.yml` boots an empty `mongo:7` container but every verify suite logs in as the seeded admin that only exists on the persistent local DB → added an idempotent `node scripts/seed-admin.js` step (env defaults match the suites' `09120000000`/`admin123456` constants) before the server starts.
+- **Ineffective Playwright browser cache (LOW):** the `actions/cache` step sat AFTER `npx playwright install` so it could never restore before the download — moved above the install step (+ comment).
+- E2E job timeout raised 20 → 30 min for cold-runner headroom (LOW).
+- `.env.example` CI section marks `ZARINPAL_CALLBACK_URL` as optional-only (NIT).
+- Duplicate top-level `name` key in `regression.yml` caught and removed during authoring (YAML re-validated).
+- Secrets-in-`if:` limitation handled via the runtime check step instead of a job-level `if` on a secret.
+
 ## Session 59 (August 2026) — Production Readiness: Playwright E2E (Tranche 1)
 
 ### Architecture (approved design — implemented as designed, no redesign)

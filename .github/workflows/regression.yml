@@ -1,0 +1,116 @@
+name: Regression (33 suites)
+
+# Session 60 — the full real-API regression (`scripts/run-regression.js`, 33
+# sequential suites) as a NON-gating nightly / on-demand workflow.
+#
+# Unlike `ci.yml` (hermetic, zero secrets), these suites exercise the REAL
+# Zarinpal sandbox, the real Liara S3 uploads, and the real Telegram bot — so
+# this job requires the full production-ish secret set. It is therefore:
+#   - gated: every step that needs secrets runs only when the secrets are
+#     configured (checked at runtime — GitHub secrets cannot be referenced in
+#     `if:` conditions directly);
+#   - non-gating: failures are surfaced via workflow status + logs only.
+#
+# Design (approved Session 60 design — frozen): keep merges green and
+# deterministic; the nightly regression catches cross-suite drift on the real
+# stack. ZARINPAL_MOCK is intentionally NOT set — the sandbox journey is part
+# of what this workflow verifies.
+
+on:
+  workflow_dispatch: # manual trigger — requires secrets configured
+  schedule:
+    - cron: "0 3 * * *" # nightly 03:00 UTC
+
+concurrency:
+  group: regression-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  regression:
+    name: Full sequential regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Fresh MongoDB (same marlooai shape as the shared dev DB).
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    env:
+      MONGODB_URI: mongodb://localhost:27017
+      # Local-only values — the dev server + NextAuth need them on the runner.
+      NEXTAUTH_SECRET: ci-regression-only-nextauth-secret
+      NEXTAUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      # Real-service secrets (from GitHub → repo → Actions → secrets).
+      ZARINPAL_MERCHANT_ID: ${{ secrets.ZARINPAL_MERCHANT_ID }}
+      ZARINPAL_CALLBACK_URL: ${{ secrets.ZARINPAL_CALLBACK_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      ADMIN_TELEGRAM_CHAT_ID: ${{ secrets.ADMIN_TELEGRAM_CHAT_ID }}
+      LIARA_ENDPOINT: ${{ secrets.LIARA_ENDPOINT }}
+      LIARA_BUCKET_NAME: ${{ secrets.LIARA_BUCKET_NAME }}
+      LIARA_ACCESS_KEY: ${{ secrets.LIARA_ACCESS_KEY }}
+      LIARA_SECRET_KEY: ${{ secrets.LIARA_SECRET_KEY }}
+      LIARA_REGION: ${{ secrets.LIARA_REGION }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check secrets configured
+        id: secrets
+        run: |
+          if [ -n "$ZARINPAL_MERCHANT_ID" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "ZARINPAL_MERCHANT_ID is set — running the regression."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "ZARINPAL_MERCHANT_ID is NOT set — skipping (non-gating workflow)."
+          fi
+
+      # The 33 verify suites authenticate as the seeded admin
+      # (ADMIN_PHONE=09120000000 / admin123456 — hardcoded in every script) and
+      # assume it already exists in the shared dev DB. On this fresh service
+      # container the `users` collection is EMPTY, so the admin must be seeded
+      # first (idempotent — safe to re-run; env defaults match the suites' own
+      # constants). This mirrors the E2E global-setup admin seed. seed-admin.js
+      # connects directly to MongoDB and does not need the web server.
+      - name: Seed the admin user (idempotent)
+        if: steps.secrets.outputs.configured == 'true'
+        run: node scripts/seed-admin.js
+
+      - name: Start dev server
+        if: steps.secrets.outputs.configured == 'true'
+        run: |
+          nohup npm run dev > /tmp/dev-server.log 2>&1 &
+          echo "dev server starting…"
+
+      - name: Wait for server
+        if: steps.secrets.outputs.configured == 'true'
+        run: |
+          for i in $(seq 1 90); do
+            if curl -sf http://localhost:3000/api/auth/csrf > /dev/null 2>&1; then
+              echo "server is up after ${i} attempts"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "server did not become ready"
+          tail -100 /tmp/dev-server.log
+          exit 1
+
+      - name: Run regression
+        if: steps.secrets.outputs.configured == 'true'
+        run: node scripts/run-regression.js
+
+      - name: Upload dev-server log on failure
+        if: failure() && steps.secrets.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-dev-server-log
+          path: /tmp/dev-server.log
+          retention-days: 7

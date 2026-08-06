@@ -10,6 +10,12 @@
 - [x] **10 journeys:** customer-login, product-search, product-detail (incl. variants), cart (incl. mobile smoke), checkout, coupon, payment (success + NOK), order-tracking, admin-order-workflow (lifecycle + shipping metadata), supplier-workflow
 - [x] **Playwright 21/21 PASS** (chromium 16 + mobile 5); `tsc` zero errors; ESLint clean; Vitest 152/152 unchanged; full regression **33/33 PASS**; code review approved (coupon hermeticity HIGH + supplier-locator MEDIUM fixes applied); no model/schema/index changes
 
+### CI/CD Pipeline — GitHub Actions (Session 60)
+- [x] **`.github/workflows/ci.yml`** — three merge-gating jobs on push/PR with a concurrency group (cancel superseded): `static` (`npm ci` → `npx tsc --noEmit` → **scoped eslint** `src/lib tests/unit tests/e2e` — 0 errors; the project-wide `npm run lint` reports **174 PRE-EXISTING errors** (whole-repo debt, Milestone 15) and is deliberately NOT a gate, matching the repo's "lint clean on changed files" convention; `next build` also not a gate — Google Fonts network constraint) · `unit` (Vitest **152/152**, hermetic) · `e2e` (fresh **`mongo:7` service container** → `npm run e2e` with `ZARINPAL_MOCK=1` → **zero CI secrets required** — `global-setup` auto-seeds the admin + per-run supplier/customer; `playwright.config.ts` CI switches already present (retries 2, webServer, `reuseExistingServer: !CI`); Playwright report/test-results artifacts on failure only)
+- [x] **`.github/workflows/regression.yml`** (optional, non-gating) — nightly 03:00 UTC + `workflow_dispatch`: the full **33-suite real-sandbox regression** (`node scripts/run-regression.js`), secrets-driven (Zarinpal sandbox merchant id, Liara S3, Telegram), self-skipping until `ZARINPAL_MERCHANT_ID` is configured (runtime check — secrets can't be used in `if:`); **idempotent `seed-admin.js` step on the fresh DB** (reviewer fix — the suites hardcode the seeded admin that only exists on the persistent dev DB); dev-server log artifact on failure
+- [x] `package.json` `check` script (`tsc --noEmit && eslint src/lib tests/unit tests/e2e`); `.env.example` CI-secrets section (gitignored); verified-dead `src/hooks/useOrders (1).js` deleted
+- [x] **Zero `src/` business-logic changes, no model/schema/index changes, no runtime behavior change**; validated: workflows YAML-parse clean, `tsc` zero errors, scoped eslint 0 errors, Vitest 152/152, **Playwright 21/21** (exit 0, `ZARINPAL_MOCK=1`); code review approved (lint-gate scope, regression.yml duplicate-key, fresh-DB admin seed + browser-cache ordering fixes)
+
 ### Vitest Unit-Test Foundation (Session 58)
 - [x] **Zero-application-change invariant** — no `src/` code modified, no behavior changed, no pure-function extraction needed; new devDeps `vitest` + `@vitest/coverage-v8` only
 - [x] `vitest.config.ts` — node env, explicit `@/` → `./src` alias, Windows-safe `forks` pool, report-only v8 coverage over `src/lib/**/*.ts`
@@ -399,10 +405,13 @@
 
 **Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅; **Session 53 = Homepage CMS ✅**; **Session 55 = Private / Targeted Coupons ✅**; **Session 56 = best-sellers rail ✅** — the ROADMAP's original plan ("client-side, reuse the newest pool") was rejected because the pool carried **no sales data** (would have been a fake ranking, violating the Session 50 no-fake-data invariant); the approved denormalized `Product.soldCount` approach delivers a real, paid-only ranking. Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
 
-### Session 60 — Candidate (pick one)
-> **Session 59 completed the Playwright E2E tranche** (21/21 — see the completed milestone above). Candidates for the next session:
-- **Production Readiness (next tranche):** CI/CD pipeline (GitHub Actions running Vitest + Playwright + regression on push/PR), Core Web Vitals + accessibility audit, Playwright journey expansion (admin product CRUD, supplier products, uploads, notifications/SSE).
-- **Growth features:** SMS/OTP authentication, admin real charts (recharts), customer email/SMS order notifications, customer segments → first-purchase / birthday / spending coupons via the Session 55 `targetingRules` seam.
+### Session 60 ✅ — CI/CD Pipeline (GitHub Actions)
+> **Completed.** Merge-gating `ci.yml` (static + unit + hermetic-secretless e2e) + optional non-gating nightly `regression.yml` (33 real-API suites, secrets-driven, self-skipping). Zero `src/` changes. See the completed milestone above + CHANGELOG.
+
+### Session 61 — Candidate (pick one)
+> **Session 60 automated the test stack** (ci.yml green on push/PR). Candidates for the next session:
+- **Production Readiness (next tranche):** Core Web Vitals + accessibility audit (can fold Lighthouse into CI), Playwright journey expansion (admin product CRUD, supplier products, SSE/notifications — uploads stay API-level: browser file choosers aren't automatable), Deployment (Vercel/Docker), Monitoring (Sentry).
+- **Growth features:** SMS/OTP authentication (replaces the password login — touches NextAuth/middleware/RBAC + the E2E login journeys), admin real charts (recharts), customer email/SMS order notifications, customer segments → first-purchase / birthday / spending coupons via the Session 55 `eligibility` seam.
 
 ---
 
@@ -412,10 +421,10 @@
 - [ ] Performance optimization (Core Web Vitals)
 - [ ] Accessibility audit and fixes
 - [x] Unit tests (Vitest — 152 hermetic tests, Session 58; Testing Library component tests remaining)
-- [x] E2E tests (Playwright — 21 tests / 10 journeys, Session 59; CI wiring remaining)
+- [x] E2E tests (Playwright — 21 tests / 10 journeys, Session 59)
+- [x] CI/CD pipeline (GitHub Actions — `ci.yml` merge gates, Session 60; optional nightly `regression.yml` needs the real-sandbox secrets)
 - [ ] Deployment to production (Vercel, Docker)
 - [ ] Monitoring and error tracking (Sentry)
-- [ ] CI/CD pipeline (GitHub Actions)
 
 ### Milestone 15: Growth Features
 - [ ] SMS/OTP authentication
