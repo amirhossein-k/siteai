@@ -58,7 +58,9 @@ export default defineConfig({
     {
       // RTL mobile smoke — the two highest-traffic customer journeys.
       name: "chromium-mobile",
-      testMatch: /customer-login.*\.spec\.ts|cart.*\.spec\.ts/,
+      // Session 63 — logout added: the customer flows (and the responsive
+      // dashboard logout) are mobile-safe and belong in the RTL smoke.
+      testMatch: /customer-login.*\.spec\.ts|cart.*\.spec\.ts|logout.*\.spec\.ts/,
       use: {
         ...devices["Pixel 5"],
         baseURL: BASE_URL,

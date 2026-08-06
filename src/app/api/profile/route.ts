@@ -11,9 +11,18 @@ export async function GET(req: NextRequest) {
   try {
     await dbConnect();
 
-    const user = await User.findById(token.id)
-      .select("name phone role address isActive createdAt")
-      .lean();
+    const user = (await User.findById(token.id)
+      .select("name phone role address isActive createdAt passwordHash")
+      .lean()) as {
+      _id: unknown;
+      name: string;
+      phone: string;
+      role: string;
+      address?: string;
+      isActive: boolean;
+      createdAt: string;
+      passwordHash?: string | null;
+    } | null;
 
     if (!user) {
       return NextResponse.json(
@@ -22,7 +31,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    return NextResponse.json(user);
+    // Session 64 — additive `hasPassword`: tells the client whether to show
+    // the "current password" field (password users) or the "set your first
+    // password" flow (OTP/passwordless users). The hash itself is never
+    // serialized.
+    const { passwordHash, ...safe } = user;
+    return NextResponse.json({ ...safe, hasPassword: !!passwordHash });
   } catch (error) {
     console.error("Error fetching profile:", error);
     return serverError();

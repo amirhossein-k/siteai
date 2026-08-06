@@ -1,8 +1,9 @@
-name: Regression (34 suites)
+name: Regression (36 suites)
 
 # Session 60 — the full real-API regression (`scripts/run-regression.js`, 33
 # sequential suites) as a NON-gating nightly / on-demand workflow. Session 62
-# added `verify-otp` → 34 suites.
+# added `verify-otp` → 34 suites; Session 63 added `verify-logout` → 35;
+# Session 64 added `verify-session-security` → 36.
 #
 # Unlike `ci.yml` (hermetic, zero secrets), these suites exercise the REAL
 # Zarinpal sandbox, the real Liara S3 uploads, and the real Telegram bot — so
@@ -78,7 +79,7 @@ jobs:
             echo "ZARINPAL_MERCHANT_ID is NOT set — skipping (non-gating workflow)."
           fi
 
-      # The 34 verify suites authenticate as the seeded admin
+      # The 36 verify suites authenticate as the seeded admin
       # (ADMIN_PHONE=09120000000 / admin123456 — hardcoded in every script) and
       # assume it already exists in the shared dev DB. On this fresh service
       # container the `users` collection is EMPTY, so the admin must be seeded

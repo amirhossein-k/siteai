@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 import {
   User,
   Phone,
@@ -14,6 +14,9 @@ import {
   Save,
   Calendar,
   Shield,
+  LogOut,
+  KeyRound,
+  MonitorSmartphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +25,33 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCustomerProfile, useUpdateCustomerProfile } from "@/hooks/use-customer-profile";
 import { showToast } from "@/components/ui/toast";
+
+/**
+ * Session 64 — account security API calls (client-side helpers).
+ * Both bump tokenVersion server-side, which revokes every existing JWT; the
+ * callers then signOut() so the (now-revoked) local session cookie is cleared
+ * and the user signs in again with fresh credentials.
+ */
+async function changePassword(body: {
+  currentPassword?: string;
+  newPassword: string;
+}): Promise<void> {
+  const res = await fetch("/api/auth/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) throw new Error(data.error || "خطا در تغییر رمز عبور");
+}
+
+async function logoutAllDevices(): Promise<void> {
+  const res = await fetch("/api/auth/logout-all", {
+    method: "POST",
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string };
+  if (!res.ok) throw new Error(data.error || "خطا در خروج از همه دستگاه‌ها");
+}
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -32,6 +62,13 @@ export default function ProfilePage() {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [isDirty, setIsDirty] = useState(false);
+
+  // Session 64 — security card state
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
 
   // Sync form fields when profile loads
   useEffect(() => {
@@ -68,6 +105,60 @@ export default function ProfilePage() {
               ?.error || "خطا در بروزرسانی پروفایل"
           : "خطا در بروزرسانی پروفایل";
       showToast.error(message);
+    }
+  };
+
+  // Session 64 — change password / set first password (passwordless users).
+  // The API bumps tokenVersion → ALL sessions (incl. the current one) are
+  // revoked within 60s, so we sign out and send the user to re-login with
+  // the new password.
+  const handleChangePassword = async () => {
+    if (newPassword.length < 6) {
+      showToast.error("رمز عبور جدید باید حداقل ۶ کاراکتر باشد");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      showToast.error("رمز عبور و تکرار آن یکسان نیستند");
+      return;
+    }
+    if (profile?.hasPassword && !currentPassword) {
+      showToast.error("رمز عبور فعلی الزامی است");
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await changePassword({
+        ...(profile?.hasPassword ? { currentPassword } : {}),
+        newPassword,
+      });
+      showToast.success(
+        profile?.hasPassword
+          ? "رمز عبور تغییر کرد. لطفاً دوباره وارد شوید."
+          : "رمز عبور ثبت شد. لطفاً دوباره وارد شوید."
+      );
+      // Session revoked server-side → clear the cookie and re-authenticate.
+      await signOut({ callbackUrl: "/login" });
+    } catch (err: unknown) {
+      showToast.error(
+        err instanceof Error ? err.message : "خطا در تغییر رمز عبور"
+      );
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  const handleLogoutAll = async () => {
+    setIsLoggingOutAll(true);
+    try {
+      await logoutAllDevices();
+      showToast.success("از همه دستگاه‌ها خارج شدید");
+      await signOut({ callbackUrl: "/" });
+    } catch (err: unknown) {
+      showToast.error(
+        err instanceof Error ? err.message : "خطا در خروج از همه دستگاه‌ها"
+      );
+      setIsLoggingOutAll(false);
     }
   };
 
@@ -278,6 +369,109 @@ export default function ProfilePage() {
                     day: "numeric",
                   })}
                 </span>
+              </div>
+
+              {/* Session 63 — logout (immediate, no confirmation — matches the
+                  admin/supplier sidebar behavior). */}
+              <div className="pt-2">
+                <Button
+                  variant="outline"
+                  className="w-full gap-2 text-destructive hover:text-destructive"
+                  onClick={() => signOut({ callbackUrl: "/" })}
+                >
+                  <LogOut className="h-4 w-4" />
+                  خروج از حساب
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Session 64 — Security: password change/set + logout all devices */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <KeyRound className="h-5 w-5 text-muted-foreground" />
+                امنیت حساب
+              </CardTitle>
+              <CardDescription>
+                {profile.hasPassword
+                  ? "رمز عبور خود را تغییر دهید. همه دستگاه‌ها از حساب خارج می‌شوند."
+                  : "رمز عبور خود را ثبت کنید. همه دستگاه‌ها از حساب خارج می‌شوند."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Current password — only for accounts that already have one
+                  (passwordless OTP-registered users set their FIRST password). */}
+              {profile.hasPassword && (
+                <div className="space-y-2">
+                  <label htmlFor="current-password" className="text-sm font-medium">رمز عبور فعلی</label>
+                  <Input
+                    id="current-password"
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="رمز عبور فعلی خود را وارد کنید"
+                    autoComplete="current-password"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label htmlFor="new-password" className="text-sm font-medium">
+                  {profile.hasPassword ? "رمز عبور جدید" : "رمز عبور"}
+                </label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="حداقل ۶ کاراکتر"
+                  autoComplete="new-password"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="confirm-password" className="text-sm font-medium">تکرار رمز عبور</label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="رمز عبور را دوباره وارد کنید"
+                  autoComplete="new-password"
+                />
+              </div>
+
+              <Button
+                onClick={handleChangePassword}
+                disabled={isChangingPassword || !newPassword}
+                loading={isChangingPassword}
+                className="gap-2"
+              >
+                <KeyRound className="h-4 w-4" />
+                {isChangingPassword
+                  ? "در حال ذخیره..."
+                  : profile.hasPassword
+                  ? "تغییر رمز عبور"
+                  : "ثبت رمز عبور"}
+              </Button>
+
+              <div className="border-t pt-4">
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={handleLogoutAll}
+                  disabled={isLoggingOutAll}
+                  loading={isLoggingOutAll}
+                >
+                  <MonitorSmartphone className="h-4 w-4" />
+                  {isLoggingOutAll
+                    ? "در حال خروج از همه دستگاه‌ها..."
+                    : "خروج از همه دستگاه‌ها"}
+                </Button>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  با این کار همه نشست‌های فعال (روی همه دستگاه‌ها) باطل می‌شود.
+                </p>
               </div>
             </CardContent>
           </Card>

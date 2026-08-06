@@ -2,6 +2,74 @@
 
 ---
 
+## ✅ Session 64 — Session Security (tokenVersion Enforcement + Password Change + Logout All + Admin Revoke)
+
+### Scope + invariants
+- [x] Approved design frozen — additive security layer; **zero changes to `auth.js` password/loginToken branches, `middleware.js`, RBAC role logic, OTP flow, checkout/payment/orders/coupons/inventory, models (no schema change — `tokenVersion` already existed)**, zero new packages
+
+### Enforcement (the gate)
+- [x] `src/lib/token-version.ts` (new) — pure `createTokenVersionChecker` factory (injectable `fetchUserVersion`/`now`/`cache`/`ttlMs`/`onError`; no mongoose imports → hermetic unit tests): per-user cache (default 60s, caller-held on globalThis), **asymmetric semantics** (equal → valid; cached NEWER than token → revoked; cached OLDER than token → stale-cache refetch so a fresh sign-in is never falsely revoked), deleted user → revoked, checker error → fail-open + logged
+- [x] `src/lib/auth-utils.ts` — `getServerToken` (behind `requireAuth`/`requireRoleOrError`) compares `token.tokenVersion` vs the User via the checker → revoked sessions get null (401); `invalidateTokenVersionCache(userId)` exported for the in-process bumping routes (immediate revocation, no cache wait)
+
+### Endpoints (all additive, rate-limited)
+- [x] `POST /api/auth/change-password` — 5/15min user-keyed: password users verify `currentPassword` (bcrypt, 400 «رمز عبور فعلی صحیح نیست»); passwordless OTP users set their FIRST password with no currentPassword; newPassword 6–100; success → hash swap + `tokenVersion` bump + cache evict (all sessions revoked, incl. current)
+- [x] `POST /api/auth/logout-all` — 10/15min: `tokenVersion` bump + cache evict → every device revoked; client clears the cookie via `signOut()`
+- [x] `POST /api/admin/users/[id]/revoke-session` — admin-only (403 non-admin), 30/15min actor-keyed: target `tokenVersion` bump + cache evict; malformed ObjectId → 400, unknown → 404; admin session unaffected
+- [x] `GET /api/profile` — additive `hasPassword` (hash never serialized) so the UI picks the change-vs-set flow
+
+### UI
+- [x] Profile page «امنیت حساب» card — current/new/confirm password fields (proper `htmlFor`/`id` label association — the missing association was caught by Journey 14's `getByLabel`), «تغییر رمز عبور»/«ثبت رمز عبور» (success → toast + `signOut({ callbackUrl: "/login" })`), «خروج از همه دستگاه‌ها» + hint
+
+### Tests
+- [x] `tests/unit/session-security.test.ts` — **16 hermetic tests** (cache hit/miss/TTL, per-user isolation, asymmetric stale-refetch + newer-revoke, eviction helper, deleted user, fail-open + re-enforcement)
+- [x] `tests/e2e/session-security.spec.ts` (Journey 14, desktop) — **4 tests**: UI change-password (wrong current → 400 + session survives; correct → old cookie 401 on a second context + login redirect; old password fails / new logs in), logout-all (second device revoked + local cookie cleared), admin revoke (customer session 401, admin unaffected), anonymous 401s; **one shared customer** (single `/api/register` call — stays under the shared per-IP register limiter)
+- [x] `scripts/verify-session-security.js` — **11/11 real-API** (unauth 401, wrong-current 400, correct change + DB hash/version asserts + pre-change cookie 401, old/new password, passwordless-first-password via OTP, logout-all both sessions revoked + fresh login OK, admin revoke customer-401/admin-OK, malformed 400, unknown 404, non-admin 403); wired into `run-regression.js` (**36 suites**, after `verify-logout`) + `regression.yml` 35 → 36
+
+### Verification
+- [x] `npx tsc --noEmit` zero errors; `npm run check` exit 0 (same 4 pre-existing warnings)
+- [x] Vitest **199/199** (183 + 16 new); Playwright **48/48 PASS** (chromium 36 incl. Journey 14 + mobile 12, exit 0); `verify-session-security` **11/11**; full regression **36/36 PASS**
+- [x] No model/schema/index changes → no dev-server restart strictly required (one was performed to load the new gate)
+
+## ✅ Session 63.1 — Wishlist & Coupons Header Entry-Point Gating (Targeted Fix)
+
+### Root cause (traced + reproduced)
+- [x] Wishlist is a **customer-only** feature — `wishlist/page.tsx` gates on `!session || role !== "customer"` (renders the sign-in prompt) and `/api/wishlist*` returns 403 for every other role — but Session 63's header (desktop nav link + heart icon) and account-menu item surfaced wishlist entries to **all** authenticated users. Live API probes proved customers (password + OTP) see their wishlist correctly; an authenticated **admin** hits the prompt → root cause confirmed, customers unaffected
+- [x] Orders page gates only on `!session` (all roles) — wishlist is the sole customer-only storefront surface, confirming the fix target precisely
+
+### Fix (UI-only, additive)
+- [x] `storefront-header.tsx` — wishlist nav link + heart icon render only for `role === "customer"`; «کدهای تخفیف» nav link renders only when `session` exists (hidden for anonymous visitors)
+- [x] `account-menu.tsx` — علاقه‌مندی‌ها item is customer-only (array filtered by role)
+- [x] `useWishlistIds` verified already role-gated (`enabled: authenticated && role === "customer"`) — no spurious 401/403 requests for other roles
+
+### Tests
+- [x] `logout.spec.ts` — new 7th test: authenticated admin sees NO wishlist entry (nav link + heart + account-menu item) but DOES see the coupons link; customer + anonymous journeys assert the session-gated coupons entry (hidden after logout / for anonymous); positive coupons assertion desktop-viewport-gated (`width >= 1024` — `hidden lg:flex` nav is absent from the mobile a11y tree); all negative `toHaveCount(0)` assertions hold on both projects
+
+### Verification
+- [x] tsc zero errors · `npm run check` exit 0 (4 pre-existing warnings) · Vitest **183/183** (unchanged) · Playwright **44/44 PASS** (chromium 32 incl. Journey 13 + mobile 12, exit 0) · `verify-logout` **6/6** · zero auth/API/model/middleware/RBAC/OTP/password changes · no dev-server restart
+
+## ✅ Session 63 — Logout / Sign-out (Additive UI, Zero Auth Changes)
+
+### Scope + invariants
+- [x] Approved design frozen — additive logout for authenticated users; **zero changes to `src/lib/auth.js`, `middleware.js`, `auth-utils`, models, RBAC, OTP, password login, or any API route**; admin/supplier sidebar logout left byte-identical; no new npm packages; no dev-server restart
+
+### Implementation
+- [x] **`src/components/storefront/account-menu.tsx`** (new) — accessible dropdown: trigger button (`aria-haspopup="menu"` / `aria-expanded` / aria-label «حساب کاربری») toggles a `role="menu"` panel — پروفایل / سفارشات / علاقه‌مندی‌ها / اعلان‌ها links (`role="menuitem"`, active-state highlight) + separator + «خروج» button (`role="menuitem"`, `text-destructive`) → `signOut({ callbackUrl: "/" })`; closes on outside `pointerdown`, Escape (focus returns to trigger), route change; focus moves into the panel on open; RTL `left-0` anchoring; desktop + mobile tap
+- [x] **`storefront-header.tsx`** — signed-in branch renders `<AccountMenu />` (plain profile link removed; unused `User` lucide import dropped); login/register branch untouched
+- [x] **`profile/page.tsx`** — «خروج از حساب» button (outline + destructive) in the Account Info card
+- [x] **Admin/supplier** — NOT modified (existing sidebar «خروج» already covers desktop + mobile drawer); covered by new E2E tests
+
+### Tests
+- [x] `tests/e2e/logout.spec.ts` — Journey 13, **6 tests** × both projects: customer header-menu logout (+ session cookie gone), customer profile-page logout, post-logout profile prompt, admin sidebar logout → `/admin` → `/login`, supplier sidebar logout → `/supplier` → `/login`, anonymous negative (no menu, ورود/ثبت‌نام shown); admin/supplier mobile path opens the drawer (< lg) and uses a settled-force click
+- [x] `playwright.config.ts` — chromium-mobile `testMatch` extended to include `logout.*`; `customer-login.spec.ts` — profile-link assertion updated to the account-menu trigger (UI change only)
+- [x] `scripts/verify-logout.js` — **6/6 real-API**: unauth GET `/api/auth/signout` 200 + no session, admin login → signout (csrf) → session null → re-login works, customer create→login→signout→session null; wired into `run-regression.js` (**35 suites**, after `verify-otp`) + `regression.yml` 34 → 35 suites
+
+### Verification
+- [x] `npx tsc --noEmit` zero errors; `npm run check` exit 0; Vitest **183/183** (unchanged)
+- [x] Playwright **42/42 PASS** (chromium 31 incl. Journey 13 + mobile 11, exit 0)
+- [x] `verify-logout` **6/6 PASS**; full regression **35/35 PASS**
+
+---
+
 ## ✅ Session 62 — SMS/OTP Authentication (Adapter-First, Backward Compatible)
 
 ### Scope + invariants

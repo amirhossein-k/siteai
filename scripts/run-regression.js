@@ -59,6 +59,8 @@ const suites = [
   "verify-order-management", // Session 57 — order lifecycle state machine, claim-based transitions, shipping metadata, actor audit, list sort (cleans its own PREFIX'd rows)
   "verify-homepage-cms", // Session 53 — admin CRUD + public composition + visibility rules
   "verify-otp", // Session 62 — SMS OTP auth (REQUIRES the dev server started with SMS_MOCK=1; hermetic otherwise — fails with a clear setup message)
+  "verify-logout", // Session 63 — logout/session termination (real API: signout redirect, session clear, re-login; creates + deletes one customer)
+  "verify-session-security", // Session 64 — tokenVersion enforcement (change-password / logout-all / admin revoke; requires SMS_MOCK=1 for the OTP-registered user)
   "verify-telegram-alerts",
 ];
 

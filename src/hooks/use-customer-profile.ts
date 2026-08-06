@@ -11,6 +11,10 @@ export interface CustomerProfile {
   address?: string;
   isActive: boolean;
   createdAt: string;
+  // Session 64 — additive: whether the account has a password (false for
+  // passwordless OTP-registered users → the security card shows the
+  // "set your first password" flow instead of "change password").
+  hasPassword: boolean;
 }
 
 export const customerProfileKeys = {

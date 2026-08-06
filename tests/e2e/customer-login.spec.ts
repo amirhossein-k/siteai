@@ -29,8 +29,11 @@ test.describe("Customer login", () => {
 
     // Customer role redirects to the storefront home.
     await page.waitForURL((url) => url.pathname === "/");
-    // Logged-in header: profile link only renders when a session exists.
-    await expect(page.locator('a[href="/profile"]')).toBeVisible();
+    // Logged-in header (Session 63): the account menu replaced the plain
+    // profile link — the menu trigger only renders when a session exists.
+    await expect(
+      page.getByRole("button", { name: "حساب کاربری" })
+    ).toBeVisible();
     await expect(page.locator('a[href="/notifications"]')).toBeVisible();
   });
 

@@ -178,12 +178,55 @@ This is implemented in `src/app/(storefront)/login/page.tsx` by fetching `/api/a
 
 ---
 
+## Logout & Session Termination (Session 63)
+
+Logout is **pure client-side cookie termination** — it rides the built-in NextAuth endpoint and touches no server session store:
+
+- **Mechanism:** `signOut({ callbackUrl: "/" })` from `next-auth/react` → `POST /api/auth/signout` (with the CSRF token) → the `next-auth.session-token` JWT cookie is cleared → the browser redirects to the `callbackUrl`. Because the strategy is JWT (no database session), nothing server-side needs to be invalidated for THIS user's own sign-out.
+- **Redirect:** all roles redirect to `/` (the storefront home) — the same target the admin/supplier sidebars already used.
+- **UI surfaces (all three roles):**
+  - **Customer — storefront header account menu** `src/components/storefront/account-menu.tsx` (Session 63): the signed-in header renders an account-menu trigger instead of the old plain profile link; the menu lists پروفایل / سفارشات / علاقه‌مندی‌ها / اعلان‌ها + a destructive «خروج» action. Desktop + mobile (tap); closes on outside pointer-down, Escape (focus returns to the trigger), and route changes.
+  - **Customer — profile page:** a «خروج از حساب» button in the Account Info card.
+  - **Admin / supplier — dashboards:** the sidebar «خروج» button (desktop + the mobile drawer via `MobileDrawer`) — **unchanged** (Session 63 only verified it).
+- **Immediate, no confirmation** — matches the admin/supplier behavior.
+- **Post-logout behavior:** `useSession()` re-renders the header to the logged-out state (ورود / ثبت‌نام); `/profile` shows its existing sign-in prompt; the middleware still guards `/admin/*` and `/supplier/*`, bouncing signed-out visitors to `/login`.
+- **`GET /api/auth/signout`** serves NextAuth's built-in signout page (200) when no custom `pages.signOut` is configured; the actual termination always goes through POST.
+- **Session 64:** `tokenVersion`-based server-side revocation is now ENFORCED (see below) — the current session dies with the cookie, and the `change-password` / `logout-all` flows go one step further by revoking every issued JWT.
+
+---
+
+## Session Security — tokenVersion Enforcement + Revocation (Session 64)
+
+### The mechanism
+- Every JWT carries the `tokenVersion` captured at sign-in (Session 62). **`src/lib/token-version.ts`** provides a pure `createTokenVersionChecker` factory: it resolves the user's CURRENT `tokenVersion` (DB read, cached per-user for **60s** on `globalThis`) and compares it against the token's claim.
+- **Asymmetric comparison** (deliberate): equal → valid; cached version NEWER than the token → **revoked** (the token predates a bump); cached version OLDER than the token → the cache is stale (a fresh sign-in issued a newer token) → refetch from the DB instead of falsely revoking a legitimate session. A deleted user is treated as revoked. A checker error **fails open** (logs) — a transient DB blip must never break authentication, and the route's own DB work would fail anyway.
+- **Enforcement point:** `auth-utils.getServerToken` (the single gate behind `requireAuth` / `requireRoleOrError`) runs the check after JWT extraction and returns `null` → 401 for revoked sessions. **Every protected API route inherits this with zero per-route changes.** (Page-level `middleware.js` intentionally stays claim-only — it runs on the edge without DB access.)
+- **Immediate in-process revocation:** the three bumping endpoints call `invalidateTokenVersionCache(userId)` right after the `$inc`, so the same server enforces the bump instantly; only OTHER processes (e.g. a second instance) wait out the 60s cache TTL.
+
+### Endpoints
+| Endpoint | Who | Effect | Rate limit |
+|---|---|---|---|
+| `POST /api/auth/change-password` | any authenticated user | Verifies `currentPassword` (bcrypt) for password accounts; **passwordless OTP users set their first password** with no `currentPassword`; sets the new hash + bumps `tokenVersion` → **all sessions (incl. the current one) revoked**. The profile UI signs the user out and they re-login with the new password. | 5 / 15 min (user) |
+| `POST /api/auth/logout-all` | any authenticated user | Bumps the caller's `tokenVersion` → every device's session is revoked; the client then clears the local cookie via `signOut()`. | 10 / 15 min (user) |
+| `POST /api/admin/users/[id]/revoke-session` | admin only | Bumps the TARGET user's `tokenVersion` → their sessions die (they must sign in again); the admin's own session is unaffected. Malformed ObjectId → 400, unknown user → 404. | 30 / 15 min (actor) |
+
+### UI
+- Profile page **«امنیت حساب»** card: password change (current/new/confirm) or first-password set (passwordless), plus **«خروج از همه دستگاه‌ها»**.
+- `GET /api/profile` returns an additive **`hasPassword`** boolean (the hash is never serialized) so the card picks the right flow.
+
+### Security properties
+- A leaked JWT can now be killed in ≤60s (same-process: instantly) by any of: the owner changing their password, the owner using logout-all, or an admin revoking.
+- Revocation cannot be bypassed by replaying the old cookie — the gate rejects it at the API layer.
+- OTP users are no longer permanently locked to SMS: they can set a password as an extra sign-in path (SMS remains usable).
+
+---
+
 ## Password Security
 
 - Passwords are hashed with **bcryptjs** (10 salt rounds)
 - The `passwordHash` field is never returned to the client; OTP-only accounts store `null`
 - Admin can reset any user's password via the admin panel
-- Users can only update their name and address, **not** their phone or role
+- **Users can change their own password** (Session 64, `POST /api/auth/change-password`) — current password verified for existing accounts; passwordless accounts set their first one; both flows revoke all sessions
 
 ---
 

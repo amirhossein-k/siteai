@@ -2,6 +2,29 @@
 
 ## ✅ Completed Milestones
 
+### Session Security — tokenVersion enforcement + password change + logout all + admin revoke (Session 64)
+- [x] **`tokenVersion` now ENFORCED** — `src/lib/token-version.ts` (pure checker factory: per-user 60s cache, **asymmetric semantics** — equal → valid, cached-newer → revoked, cached-older → stale-cache refetch, deleted user → revoked, error → fail-open) wired into `auth-utils.getServerToken` → every protected API route 401s revoked JWTs with zero per-route changes; `invalidateTokenVersionCache()` makes bumps immediate in-process
+- [x] **`POST /api/auth/change-password`** — bcrypt current-password verification for password users (400 on mismatch); **passwordless OTP users set their first password** (no currentPassword needed); bumps `tokenVersion` → all sessions (incl. current) revoked; rate-limited 5/15min
+- [x] **`POST /api/auth/logout-all`** — bumps the caller's `tokenVersion` → every device signed out (client then clears the local cookie); 10/15min
+- [x] **`POST /api/admin/users/[id]/revoke-session`** — admin-only, target's `tokenVersion` bumped → their sessions die; malformed id → 400, unknown → 404; 30/15min actor-keyed
+- [x] **Profile UI** — «امنیت حساب» card: change/set password (proper `htmlFor`/`id` label association) + «خروج از همه دستگاه‌ها»; `GET /api/profile` exposes additive `hasPassword`
+- [x] **Invariants** — zero `auth.js` branch / middleware / RBAC / OTP / model / business-logic changes; zero new packages; no schema change
+- [x] **Verified** — tsc 0 · check exit 0 · Vitest **199/199** (183 + 16 new) · Playwright **48/48** (chromium 36 incl. **Journey 14** + mobile 12) · `verify-session-security.js` **11/11** · full regression **36/36 PASS** (36 suites)
+
+### Wishlist & Coupons header entry-point gating (Session 63.1)
+- [x] **Root cause fixed** — the wishlist **page** (`!session || role !== "customer"` → sign-in prompt) and **API** (403 for non-customers) are customer-only, but Session 63's header (desktop nav link + heart icon) and account-menu item were surfaced to **all** authenticated roles → an authenticated admin landed on the «وارد حساب شوید» prompt. Live probes proved customers (password + OTP) see their wishlist correctly; the regression only hit non-customer roles
+- [x] **Header/account-menu now role-aware** — `storefront-header.tsx` renders wishlist entries (nav link + heart icon) only for `role === "customer"`; `account-menu.tsx` omits علاقه‌مندی‌ها for other roles; `useWishlistIds` already role-gated → no spurious requests
+- [x] **Coupons nav entry session-gated** — «کدهای تخفیف» header link hidden for anonymous visitors, shown only when a session exists (kept layout/responsive behavior)
+- [x] **Tests** — Journey 13 grew to **7 tests** (new: authenticated admin sees NO wishlist entry but still sees the coupons link); customer + anonymous journeys assert the session-gated coupons entry; positive coupons assertion desktop-viewport-gated (`width >= 1024` — the `hidden lg:flex` nav is absent from the mobile a11y tree)
+- [x] **Verified** — tsc zero errors · `npm run check` exit 0 · Vitest **183/183** (unchanged) · Playwright **44/44 PASS** (chromium 32 incl. Journey 13 + mobile 12, exit 0) · `verify-logout` **6/6** · zero auth/API/model/middleware/RBAC/OTP/password changes · no dev-server restart
+
+### Logout / Sign-out for authenticated users (Session 63)
+- [x] **Storefront account menu** `src/components/storefront/account-menu.tsx` — replaces the header's profile `<Link>` when signed in: پروفایل / سفارشات / علاقه‌مندی‌ها / اعلان‌ها + separator + «خروج» (`signOut({ callbackUrl: "/" })`, immediate — no confirmation, matching the dashboards). A11y: `aria-haspopup`/`aria-expanded` trigger, `role="menu"`/`menuitem`, Escape + outside-click + route-change close, focus return; desktop + mobile tap; RTL `left-0` anchoring
+- [x] **Profile-page logout** — «خروج از حساب» button (outline + destructive) in the Account Info card; **admin/supplier dashboards unchanged** (existing sidebar logout verified working on desktop + mobile drawer)
+- [x] **Session termination** — built-in NextAuth `POST /api/auth/signout` clears the JWT cookie and redirects to `/` for all roles; **zero auth/API/model/middleware/RBAC/OTP/password changes**; no new packages
+- [x] **Tests** — Journey 13 E2E `tests/e2e/logout.spec.ts` (6 tests × desktop + mobile: customer menu/profile logout + cookie-gone, post-logout profile prompt, admin + supplier logout → `/admin`+`/supplier` guarded, anonymous negative) · `scripts/verify-logout.js` **6/6** real-API wired into `run-regression.js` (**35 suites**) · `customer-login` profile-link assertion updated to the menu trigger
+- [x] **Verified** — tsc zero errors, check exit 0, Vitest **183/183**, Playwright **42/42** (chromium 31 + mobile 11), `verify-logout` **6/6**, full regression **35/35 PASS**
+
 ### SMS/OTP Authentication — adapter-first, backward compatible (Session 62)
 - [x] **`OtpCode` model** — SHA-256 `codeHash` only (plaintext never stored in production), `codeConsumedAt` + `consumedAt` split (code and login-token each single-use), `loginTokenHash`/`loginTokenExpiresAt` (TTL-aligned), TTL index; **`User.passwordHash` optional** (OTP accounts are passwordless) + **`tokenVersion`** (session-revocation foundation; enforcement future)
 - [x] **Adapter-first SMS layer** `src/lib/sms.ts` — mock (`SMS_MOCK=1`, dev/CI hermetic) · **sms.ir** production provider (disabled until `SMS_IR_API_KEY` + `SMS_IR_TEMPLATE_ID` are both configured — `.env.example` only) · none → controlled 503; **no sms.ir account/plan/credentials needed for development**

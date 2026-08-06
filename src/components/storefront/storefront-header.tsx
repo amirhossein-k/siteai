@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Search, ShoppingCart, User, Heart, X } from "lucide-react";
+import { Search, ShoppingCart, Heart, X } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/lib/constants";
@@ -11,6 +11,7 @@ import { useCartStore } from "@/stores/cart-store";
 import { useWishlistIds } from "@/hooks/use-wishlist";
 import { NotificationBell } from "@/components/storefront/notification-bell";
 import { SearchSuggestions } from "@/components/storefront/search-suggestions";
+import { AccountMenu } from "@/components/storefront/account-menu";
 
 /**
  * Shared storefront header (Session 50).
@@ -22,6 +23,12 @@ import { SearchSuggestions } from "@/components/storefront/search-suggestions";
 export function StorefrontHeader() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  // Session 63.1 — wishlist is a CUSTOMER-only feature (the page gate renders
+  // the sign-in prompt and the API 403s for every other role), so its header
+  // entry points (desktop nav link, heart icon, account-menu item) must only
+  // appear for authenticated customers. Other roles must never see a link
+  // that lands on the "please sign in" prompt.
+  const isCustomer = session?.user?.role === "customer";
   const itemCount = useCartStore((s) =>
     s.items.reduce((sum, i) => sum + i.quantity, 0)
   );
@@ -63,42 +70,44 @@ export function StorefrontHeader() {
             >
               محصولات
             </Link>
-            <Link
-              href="/coupons"
-              className={cn(
-                "text-sm font-medium transition-colors",
-                pathname.startsWith("/coupons")
-                  ? "text-foreground border-b-2 border-foreground pb-0.5"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              کدهای تخفیف
-            </Link>
             {session && (
-              <>
-                <Link
-                  href="/orders"
-                  className={cn(
-                    "text-sm font-medium transition-colors",
-                    pathname.startsWith("/orders")
-                      ? "text-foreground border-b-2 border-foreground pb-0.5"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  سفارشات
-                </Link>
-                <Link
-                  href="/wishlist"
-                  className={cn(
-                    "text-sm font-medium transition-colors",
-                    pathname.startsWith("/wishlist")
-                      ? "text-foreground border-b-2 border-foreground pb-0.5"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  علاقه‌مندی‌ها
-                </Link>
-              </>
+              <Link
+                href="/coupons"
+                className={cn(
+                  "text-sm font-medium transition-colors",
+                  pathname.startsWith("/coupons")
+                    ? "text-foreground border-b-2 border-foreground pb-0.5"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                کدهای تخفیف
+              </Link>
+            )}
+            {session && (
+              <Link
+                href="/orders"
+                className={cn(
+                  "text-sm font-medium transition-colors",
+                  pathname.startsWith("/orders")
+                    ? "text-foreground border-b-2 border-foreground pb-0.5"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                سفارشات
+              </Link>
+            )}
+            {isCustomer && (
+              <Link
+                href="/wishlist"
+                className={cn(
+                  "text-sm font-medium transition-colors",
+                  pathname.startsWith("/wishlist")
+                    ? "text-foreground border-b-2 border-foreground pb-0.5"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                علاقه‌مندی‌ها
+              </Link>
             )}
           </nav>
 
@@ -124,7 +133,7 @@ export function StorefrontHeader() {
 
             {session && <NotificationBell href="/notifications" />}
 
-            {session && (
+            {isCustomer && (
               <Link
                 href="/wishlist"
                 aria-label="علاقه‌مندی‌ها"
@@ -153,17 +162,7 @@ export function StorefrontHeader() {
             </Link>
 
             {session ? (
-              <Link
-                href="/profile"
-                aria-label="پروفایل"
-                className={cn(
-                  "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
-                  pathname === "/profile" && "bg-accent text-accent-foreground"
-                )}
-                title="پروفایل"
-              >
-                <User className="h-5 w-5" />
-              </Link>
+              <AccountMenu />
             ) : (
               <>
                 <Link href="/login">

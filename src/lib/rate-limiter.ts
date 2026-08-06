@@ -101,6 +101,24 @@ export const OTP_VERIFY_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/** Password change: 5 attempts per user per 15 minutes (Session 64). */
+export const CHANGE_PASSWORD_LIMIT: RateLimitConfig = {
+  max: 5,
+  windowMs: 15 * 60 * 1000,
+};
+
+/** Logout-all: 10 per user per 15 minutes — deliberate action (Session 64). */
+export const LOGOUT_ALL_LIMIT: RateLimitConfig = {
+  max: 10,
+  windowMs: 15 * 60 * 1000,
+};
+
+/** Admin session revoke: 30 per admin actor per 15 minutes (Session 64). */
+export const REVOKE_SESSION_LIMIT: RateLimitConfig = {
+  max: 30,
+  windowMs: 15 * 60 * 1000,
+};
+
 // ============================================================
 // Core
 // ============================================================

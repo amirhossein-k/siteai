@@ -20,6 +20,12 @@
 
 import { NextResponse, NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import {
+  createTokenVersionChecker,
+  evictTokenVersionCacheEntry,
+} from "@/lib/token-version";
+import { dbConnect } from "@/lib/dbConnect";
+import User from "@/models/User";
 
 // ============================================================
 // Types
@@ -36,6 +42,7 @@ export interface ServerToken {
   name: string;
   phone: string;
   role: UserRole;
+  tokenVersion?: number;
   email?: string;
   picture?: string;
   sub?: string;
@@ -50,9 +57,48 @@ export interface ServerToken {
 
 const SECRET = process.env.NEXTAUTH_SECRET;
 
+// ============================================================
+// Session 64 — tokenVersion revocation enforcement
+// ============================================================
+// The checker is created once per module load and its per-user cache lives
+// on globalThis so dev-server HMR does not reset it (mirrors the
+// notification-stream pattern). Default TTL = 60s: a tokenVersion bump
+// (change-password / logout-all / admin revoke) invalidates all previously
+// issued JWTs within that window. Fail-open on checker errors (see the
+// token-version module docs) — never break authentication on a DB blip.
+const g = globalThis as unknown as {
+  __tokenVersionCache?: Map<string, { version: number; checkedAt: number }>;
+};
+const tokenVersionCache =
+  g.__tokenVersionCache ?? (g.__tokenVersionCache = new Map());
+
+const isTokenVersionCurrent = createTokenVersionChecker({
+  cache: tokenVersionCache,
+  fetchUserVersion: async (userId: string): Promise<number | null> => {
+    await dbConnect();
+    const user = (await User.findById(userId)
+      .select("tokenVersion")
+      .lean()) as { tokenVersion?: number } | null;
+    return user ? (user.tokenVersion ?? 0) : null;
+  },
+  onError: (err) =>
+    console.error("[token-version] check failed (fail-open):", err),
+});
+
+/**
+ * Session 64 — evict a user's tokenVersion cache entry. Called by the
+ * in-process bumping routes (change-password / logout-all / admin revoke)
+ * right after the $inc, so the revocation is IMMEDIATE in the same server
+ * instead of waiting out the 60s cache TTL.
+ */
+export function invalidateTokenVersionCache(userId: string | undefined): void {
+  evictTokenVersionCacheEntry(tokenVersionCache, userId);
+}
+
 /**
  * Extract and validate the JWT token from a request.
- * Returns null if the user is not authenticated.
+ * Returns null if the user is not authenticated — INCLUDING a revoked
+ * session (token.tokenVersion is stale vs the User's current tokenVersion).
  */
 export async function getServerToken(
   req: NextRequest
@@ -60,7 +106,12 @@ export async function getServerToken(
   try {
     const token = await getToken({ req, secret: SECRET });
     if (!token) return null;
-    return token as unknown as ServerToken;
+    const serverToken = token as unknown as ServerToken;
+    // Session 64 — revocation gate: a bumped tokenVersion invalidates the JWT.
+    if (!(await isTokenVersionCurrent(serverToken.id, serverToken.tokenVersion))) {
+      return null;
+    }
+    return serverToken;
   } catch {
     return null;
   }
