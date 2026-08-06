@@ -1,7 +1,8 @@
-name: Regression (33 suites)
+name: Regression (34 suites)
 
 # Session 60 — the full real-API regression (`scripts/run-regression.js`, 33
-# sequential suites) as a NON-gating nightly / on-demand workflow.
+# sequential suites) as a NON-gating nightly / on-demand workflow. Session 62
+# added `verify-otp` → 34 suites.
 #
 # Unlike `ci.yml` (hermetic, zero secrets), these suites exercise the REAL
 # Zarinpal sandbox, the real Liara S3 uploads, and the real Telegram bot — so
@@ -14,7 +15,9 @@ name: Regression (33 suites)
 # Design (approved Session 60 design — frozen): keep merges green and
 # deterministic; the nightly regression catches cross-suite drift on the real
 # stack. ZARINPAL_MOCK is intentionally NOT set — the sandbox journey is part
-# of what this workflow verifies.
+# of what this workflow verifies. SMS_MOCK IS set (Session 62): it only gates
+# OTP delivery (`verify-otp` reads codes via the dev-last seam) and cannot
+# affect the Zarinpal/sandbox suites.
 
 on:
   workflow_dispatch: # manual trigger — requires secrets configured
@@ -42,6 +45,9 @@ jobs:
       NEXTAUTH_SECRET: ci-regression-only-nextauth-secret
       NEXTAUTH_URL: http://localhost:3000
       NEXT_PUBLIC_APP_URL: http://localhost:3000
+      # Session 62 — the OTP suite (`verify-otp`) requires the dev-only SMS
+      # seam. Harmless to the real-sandbox suites (SMS delivery only).
+      SMS_MOCK: "1"
       # Real-service secrets (from GitHub → repo → Actions → secrets).
       ZARINPAL_MERCHANT_ID: ${{ secrets.ZARINPAL_MERCHANT_ID }}
       ZARINPAL_CALLBACK_URL: ${{ secrets.ZARINPAL_CALLBACK_URL }}
@@ -72,7 +78,7 @@ jobs:
             echo "ZARINPAL_MERCHANT_ID is NOT set — skipping (non-gating workflow)."
           fi
 
-      # The 33 verify suites authenticate as the seeded admin
+      # The 34 verify suites authenticate as the seeded admin
       # (ADMIN_PHONE=09120000000 / admin123456 — hardcoded in every script) and
       # assume it already exists in the shared dev DB. On this fresh service
       # container the `users` collection is EMPTY, so the admin must be seeded

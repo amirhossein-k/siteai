@@ -2,7 +2,9 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { dbConnect } from "@/lib/dbConnect";
 import User from "@/models/User";
+import OtpCode from "@/models/OtpCode";
 import { rateLimit, LOGIN_LIMIT } from "@/lib/rate-limiter";
+import { hashLoginToken } from "@/lib/otp";
 
 export const authOptions = {
   session: { strategy: "jwt" },
@@ -13,6 +15,9 @@ export const authOptions = {
       credentials: {
         phone: { label: "شماره موبایل", type: "text" },
         password: { label: "رمز عبور", type: "password" },
+        // Session 62 — OTP one-time login token (optional; password path
+        // is untouched when absent).
+        loginToken: { label: "توکن ورود یکبارمصرف", type: "password" },
       },
       async authorize(credentials, req) {
         // Rate limit by phone (targeted) and IP (global)
@@ -37,6 +42,45 @@ export const authOptions = {
 
         await dbConnect();
 
+        // --- Session 62 — OTP one-time login-token branch (additive) ---
+        // The token is issued by POST /api/auth/otp/verify and exchanged
+        // exactly once: authorize() claims the row atomically, so a replayed
+        // token loses the update and returns null (replay-proof).
+        const loginToken = credentials?.loginToken;
+        if (loginToken) {
+          const otpDoc = await OtpCode.findOne({
+            loginTokenHash: hashLoginToken(loginToken),
+          });
+          if (!otpDoc) return null;
+          if (otpDoc.phone !== phone) return null;
+          if (otpDoc.consumedAt) return null;
+          if (
+            !otpDoc.loginTokenExpiresAt ||
+            new Date(otpDoc.loginTokenExpiresAt).getTime() <= Date.now()
+          ) {
+            return null;
+          }
+
+          // Atomic claim — a concurrent replay loses the update.
+          const claimed = await OtpCode.updateOne(
+            { _id: otpDoc._id, consumedAt: null },
+            { $set: { consumedAt: new Date() } }
+          );
+          if (claimed.modifiedCount !== 1) return null;
+
+          const otpUser = await User.findOne({ phone });
+          if (!otpUser) return null;
+
+          return {
+            id: otpUser._id.toString(),
+            name: otpUser.name,
+            phone: otpUser.phone,
+            role: otpUser.role, // "customer" | "supplier" | "admin"
+            tokenVersion: otpUser.tokenVersion ?? 0,
+          };
+        }
+
+        // --- Password branch (unchanged) ---
         const user = await User.findOne({ phone });
         if (!user || !user.passwordHash) return null;
 
@@ -52,6 +96,7 @@ export const authOptions = {
           name: user.name,
           phone: user.phone,
           role: user.role, // "customer" | "supplier" | "admin"
+          tokenVersion: user.tokenVersion ?? 0,
         };
       },
     }),
@@ -63,6 +108,12 @@ export const authOptions = {
       if (user) {
         token.role = user.role;
         token.id = user.id;
+        // Session 62 — phone was declared on Session.user but never copied;
+        // completing the contract (additive — password path unchanged).
+        token.phone = user.phone;
+        // Session 62 — session-revocation foundation: stored at sign-in so a
+        // future tokenVersion bump invalidates old JWTs.
+        token.tokenVersion = user.tokenVersion ?? 0;
       }
       return token;
     },
@@ -71,6 +122,8 @@ export const authOptions = {
       if (session.user) {
         session.user.role = token.role;
         session.user.id = token.id;
+        session.user.phone = token.phone;
+        session.user.tokenVersion = token.tokenVersion ?? 0;
       }
       return session;
     },

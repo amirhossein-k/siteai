@@ -58,6 +58,7 @@ const suites = [
   "verify-best-sellers", // Session 56 — Product.soldCount ranking, leak scans, refund reversal, CMS block (cleans its own PREFIX'd rows)
   "verify-order-management", // Session 57 — order lifecycle state machine, claim-based transitions, shipping metadata, actor audit, list sort (cleans its own PREFIX'd rows)
   "verify-homepage-cms", // Session 53 — admin CRUD + public composition + visibility rules
+  "verify-otp", // Session 62 — SMS OTP auth (REQUIRES the dev server started with SMS_MOCK=1; hermetic otherwise — fails with a clear setup message)
   "verify-telegram-alerts",
 ];
 
@@ -84,10 +85,14 @@ if (fs.existsSync(envPath)) {
 async function clearLoginRateLimits() {
   try {
     await mongoose.connect(process.env.MONGODB_URI, { dbName: "marlooai" });
+    // Session 52 keys + Session 62 OTP keys (verify-otp burns the per-IP OTP
+    // budget inside its own suite, so later suites must start clean).
     const res = await mongoose.connection.db
       .collection("ratelimits")
-      .deleteMany({ _id: { $regex: "^rl:(login|login_ip):" } });
-    console.log(`  [clean] login rate-limit state cleared (${res.deletedCount} docs)`);
+      .deleteMany({
+        _id: { $regex: "^rl:(login|login_ip|otp_request|otp_request_ip|otp_verify):" },
+      });
+    console.log(`  [clean] login/OTP rate-limit state cleared (${res.deletedCount} docs)`);
     await mongoose.disconnect();
   } catch (err) {
     console.warn(`  [clean] WARNING: could not clear login rate-limit state — ${err.message}`);

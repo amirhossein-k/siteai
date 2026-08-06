@@ -83,6 +83,24 @@ export const REGISTER_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/** OTP request: 5 per phone per 15 minutes (Session 62 — SMS code requests). */
+export const OTP_REQUEST_LIMIT: RateLimitConfig = {
+  max: 5,
+  windowMs: 15 * 60 * 1000,
+};
+
+/** OTP request: 15 per IP per 15 minutes — SMS-bombing guard. */
+export const OTP_REQUEST_IP_LIMIT: RateLimitConfig = {
+  max: 15,
+  windowMs: 15 * 60 * 1000,
+};
+
+/** OTP verify: 5 attempts per phone per 15 minutes — brute-force guard. */
+export const OTP_VERIFY_LIMIT: RateLimitConfig = {
+  max: 5,
+  windowMs: 15 * 60 * 1000,
+};
+
 // ============================================================
 // Core
 // ============================================================

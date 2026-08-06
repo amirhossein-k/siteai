@@ -13,9 +13,19 @@ const UserSchema = new mongoose.Schema(
       unique: true, // با این ستون توی auth.js لاگین می‌شه
       trim: true,
     },
+    // Session 62 — optional: OTP-registered customers have no password
+    // (they sign in exclusively via SMS OTP). Password users keep their hash;
+    // the login path treats a missing hash as "cannot password-login".
     passwordHash: {
       type: String,
-      required: true,
+      default: null,
+    },
+    // Session 62 — session-revocation foundation: bumping this number
+    // invalidates all previously-issued JWTs for the user (checked by a
+    // FUTURE session; stored in the token at sign-in). Defaults to 0.
+    tokenVersion: {
+      type: Number,
+      default: 0,
     },
     role: {
       type: String,

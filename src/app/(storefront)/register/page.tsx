@@ -26,10 +26,14 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { showToast } from "@/components/ui/toast";
+import { OtpPanel } from "@/components/auth/otp-panel";
+import { cn } from "@/lib/utils";
 import { ArrowLeftIcon } from "lucide-react";
 
 export default function RegisterPage() {
   const router = useRouter();
+  // Session 62 — OTP registration is an additional option; password stays default.
+  const [mode, setMode] = useState<"password" | "otp">("password");
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState("");
 
@@ -99,6 +103,43 @@ export default function RegisterPage() {
         </CardHeader>
 
         <CardContent>
+          {/* Session 62 — registration method toggle (password default) */}
+          <div
+            role="group"
+            aria-label="روش ثبت‌نام"
+            className="mb-5 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1"
+          >
+            <button
+              type="button"
+              aria-pressed={mode === "password"}
+              onClick={() => setMode("password")}
+              className={cn(
+                "rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                mode === "password"
+                  ? "bg-background text-foreground shadow-sm"
+                  // Session 62 — muted-foreground on muted measures 4.39:1
+                  // (axe color-contrast); zinc-600 is 7+:1 and dark-mode safe.
+                  : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              )}
+            >
+              ثبت‌نام با رمز عبور
+            </button>
+            <button
+              type="button"
+              aria-pressed={mode === "otp"}
+              onClick={() => setMode("otp")}
+              className={cn(
+                "rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                mode === "otp"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              )}
+            >
+              ثبت‌نام با کد یک‌بارمصرف
+            </button>
+          </div>
+
+          {mode === "password" ? (
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
               <FormField
@@ -198,6 +239,16 @@ export default function RegisterPage() {
               </Button>
             </form>
           </Form>
+          ) : (
+            <OtpPanel
+              purpose="register"
+              onAuthenticated={() => {
+                // OTP registration always creates a customer.
+                router.push("/");
+                router.refresh();
+              }}
+            />
+          )}
 
           <div className="mt-6 text-center text-sm text-muted-foreground">
             قبلاً ثبت‌نام کرده‌اید؟{" "}

@@ -2,6 +2,15 @@
 
 ## ✅ Completed Milestones
 
+### SMS/OTP Authentication — adapter-first, backward compatible (Session 62)
+- [x] **`OtpCode` model** — SHA-256 `codeHash` only (plaintext never stored in production), `codeConsumedAt` + `consumedAt` split (code and login-token each single-use), `loginTokenHash`/`loginTokenExpiresAt` (TTL-aligned), TTL index; **`User.passwordHash` optional** (OTP accounts are passwordless) + **`tokenVersion`** (session-revocation foundation; enforcement future)
+- [x] **Adapter-first SMS layer** `src/lib/sms.ts` — mock (`SMS_MOCK=1`, dev/CI hermetic) · **sms.ir** production provider (disabled until `SMS_IR_API_KEY` + `SMS_IR_TEMPLATE_ID` are both configured — `.env.example` only) · none → controlled 503; **no sms.ir account/plan/credentials needed for development**
+- [x] **`/api/auth/otp/{request,verify,dev-last}`** — validation-before-limiter, per-phone 5/15min + per-IP 15/15min, 60s resend cooldown, 5-attempt code lock, **login anti-enumeration** (unknown phones → same 200, nothing created/sent), one-time `loginToken` issuance, dev-only code reader
+- [x] **Replay-proof NextAuth integration** — `loginToken` branch in `authorize` (atomic single-use claim); password branch byte-for-byte unchanged; `tokenVersion` + `phone` carried in the JWT/session (declared contract now real)
+- [x] **UI** — login/register method toggles (password default), shared `OtpPanel` + `OtpCodeInput`, axe-clean toggle contrast
+- [x] **Tests** — 25 new unit tests (otp/sms) · Journey 12 E2E (3 tests) · `scripts/verify-otp.js` **11/11** (incl. replay rejection, anti-enumeration, per-IP cap, password compat) wired into `run-regression.js` (**34 suites**) · `playwright.config.ts` CI env gains `SMS_MOCK=1`
+- [x] **Verified** — tsc zero errors, `npm run check` passes, Vitest **183/183**, Playwright **30/30** (login/register axe scans stay clean), regression **34/34 PASS**; model change ⇒ dev-server restart done
+
 ### Performance & Accessibility — next/image + axe-core (Session 61)
 - [x] **Storefront `next/image` migration** — 12 image components / 17 `<Image>` instances (product card, quick-categories, product detail gallery + thumbs, lightbox, cart, checkout, order invoice, hero-carousel, campaign-banner, gift-collections, supplier card + detail logo); `fill` aspect containers, explicit `sizes`, critical-only `eager` loading; all `onError` fallbacks preserved — zero behavior change
 - [x] **`next.config.ts` `images.remotePatterns`** — additive allowlist from env at config-load (Liara endpoint host w/ known fallback, app URL, localhost dev); optimizer stays enabled (AVIF/WebP)

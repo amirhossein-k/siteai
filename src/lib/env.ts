@@ -21,6 +21,8 @@ const optionalEnvVars = [
   "LIARA_ACCESS_KEY",
   "LIARA_SECRET_KEY",
   "LIARA_REGION",
+  "SMS_IR_API_KEY",
+  "SMS_IR_TEMPLATE_ID",
 ] as const;
 
 type RequiredEnvVar = (typeof requiredEnvVars)[number];

@@ -40,7 +40,7 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: process.env.CI
-      ? { ...process.env, ZARINPAL_MOCK: "1" }
+      ? { ...process.env, ZARINPAL_MOCK: "1", SMS_MOCK: "1" }
       : undefined,
   },
   projects: [

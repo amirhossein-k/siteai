@@ -1,5 +1,30 @@
 # Changelog
 
+## Session 62 (August 2026) — SMS/OTP Authentication (Adapter-First, Backward Compatible)
+
+### Scope (approved design — additive auth layer; zero changes to existing password auth)
+- **Model:** `OtpCode` (new) — SHA-256 `codeHash` only (plaintext never stored in production), `attempts`, `codeConsumedAt` (code single-use) + `consumedAt` (login-token single-use — kept separate so verify and exchange are each single-use), `loginTokenHash`/`loginTokenExpiresAt` (TTL-aligned with the row), `devPlaintextCode` (mock-only), TTL index (2-min lifetime). `User` — `passwordHash` now **optional** (`default: null` — OTP-registered customers are passwordless) + additive **`tokenVersion`** (Number, default 0; stored in the JWT at sign-in — the session-revocation foundation; enforcement is future work). **Model change ⇒ dev-server restart required** (done).
+- **OTP layer** `src/lib/otp.ts` — `crypto.randomInt` 6-digit codes, SHA-256 hashing for codes + login tokens, phone normalization (+98/0098 → 09), constants (2-min TTL, 60s cooldown, 5-attempt lock, 2-min token TTL).
+- **SMS abstraction** `src/lib/sms.ts` — **adapter-first**: mock (`NODE_ENV=development` AND `SMS_MOCK=1` — code logged + stored as `devPlaintextCode`), **sms.ir** production provider (disabled until BOTH `SMS_IR_API_KEY` + `SMS_IR_TEMPLATE_ID` are configured; `POST /api/sms.ir/v1/send/verify` with `x-api-key`, `{ mobile, templateId, parameters:[{name:"Code",value}] }`), or **none** → controlled `SMS_NOT_CONFIGURED` → request API returns 503; local dev/CI never need an sms.ir account. `.env.example` documents the future vars only.
+- **API routes** (all under `/api/auth/otp/`): `request` (validation **before** the rate limiter; per-phone 5/15min + per-IP 15/15min; 60s resend cooldown → 429 + Retry-After; register purpose 409 on existing phone; **login purpose anti-enumeration** — unknown phones get the same `200 {sent:true}` and nothing is created/sent) · `verify` (per-phone 5/15min brute-force guard; wrong code → attempts++ with 5-attempt lock; correct code → creates the passwordless customer for register / requires the account for login; issues a one-time `loginToken` — hash stored, TTL ≤ remaining row life) · `dev-last` (mock-only code reader for E2E/verify suites; 404 everywhere else — no plaintext exists).
+- **NextAuth `CredentialsProvider`** — additive `loginToken` branch in `authorize()`: rate-limited exactly like password login, then the one-time token is claimed **atomically** (`updateOne({ _id, consumedAt: null })`) so replay is impossible; password branch byte-for-byte unchanged. `jwt`/`session` callbacks now carry `tokenVersion` **and** `phone` (completing the long-declared `session.user.phone` contract — additive). `src/types/next-auth.d.ts` augmented (`phone`, `tokenVersion` on Session/JWT).
+- **UI** — login/register pages gained a method toggle («ورود با رمز عبور» / «ورود با کد یک‌بارمصرف»; «ثبت‌نام با رمز عبور» / «ثبت‌نام با کد یک‌بارمصرف»), **password stays the default tab** and is untouched. Shared `OtpPanel` (request → verify → `signIn(loginToken)`) + `OtpCodeInput` (labelled, `inputMode=numeric`, `autocomplete=one-time-code`). Toggle inactive-tab text uses zinc-600/zinc-400 (the muted-on-muted combo measured 4.39:1 — axe `color-contrast`).
+- **Tests:** unit `otp.test.ts` (normalization/generation/hashing/expiry/constants) + `sms.test.ts` (provider resolution + sms.ir adapter with injected fetch — mock never touches the network; controlled errors never throw) · **Journey 12** `tests/e2e/otp-login.spec.ts` (OTP registration, OTP login for an existing password user, wrong-code rejection — reads the code via the dev-last seam exactly like an SMS inbox) · **`scripts/verify-otp.js`** (11/11 real-API: mock seam, request/cooldown/anti-enumeration, wrong+correct code, token exchange + replay rejection, OTP-for-password-user, passwordless-can't-password-login + password user still can, per-IP cap 429) — wired into `run-regression.js` (**34 suites**) whose pre-suite rate-limit sweep now also clears the OTP keys. `playwright.config.ts` CI webServer env gains `SMS_MOCK=1`; the E2E teardown + runner clear `otp_request/otp_request_ip/otp_verify` keys.
+
+### Invariants
+- **Zero changes to the password auth path** (rate limits, bcrypt, redirects — untouched); RBAC architecture, middleware, auth-utils contracts, checkout/payment/order/coupon/inventory — untouched. `session.user.phone` completion + `tokenVersion` are additive. No new npm dependencies (`crypto` is builtin).
+
+### Verification
+- `npx tsc --noEmit` **zero errors**; `npm run check` passes (scoped ESLint 0 errors, 4 pre-existing warnings).
+- Vitest **183/183** (158 pre-existing + **25 new** OTP/SMS unit tests).
+- Playwright **30/30 PASS** (chromium 25 — prior 22 incl. the 6 axe scans + 3 new OTP journeys — + mobile 5, exit 0); the login/register axe scans stay clean (toggle contrast fixed) and the existing `customer-login` spec was updated with `exact: true` on its «ورود» locator (the new tab labels contain «ورود» as a substring — behavior identical).
+- **`scripts/verify-otp.js` 11/11 PASS**; full sequential regression **34/34 PASS** (all prior suites green — password auth fully compatible).
+
+### Review fixes / found during validation
+- **Single-use split bug (caught by E2E):** verify originally consumed the row (`consumedAt`) when issuing the login token — which `authorize()` also required to be null → the token could never be exchanged. Fixed by splitting `codeConsumedAt` (code) from `consumedAt` (token); both are single-use, independently.
+- `sms.test.ts` env literals typed as `SmsEnv` (`Record<string, string | undefined>`) — `NodeJS.ProcessEnv` demands a literal `NODE_ENV` key.
+- `verify-otp` `uniquePhone()` was 12 digits (09+8+2) — corrected to 11; the mock-seam check now issues a real request first (dev-last alone 404s when no code exists).
+
 ## Session 61 (August 2026) — Performance & Accessibility: next/image Migration + axe-core E2E Gate
 
 ### Scope (approved design — additive front-end + test infra; zero business-logic changes)

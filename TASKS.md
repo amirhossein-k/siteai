@@ -2,6 +2,54 @@
 
 ---
 
+## ✅ Session 62 — SMS/OTP Authentication (Adapter-First, Backward Compatible)
+
+### Scope + invariants
+- [x] Approved design frozen — additive auth layer; **existing password authentication fully compatible** (rate limits, bcrypt, redirects untouched); zero RBAC/middleware/auth-utils/checkout/payment/order/coupon/inventory changes; no new npm dependencies (`crypto` builtin)
+- [x] sms.ir is the future production provider but the implementation depends on **NO** active account/API key/plan — mock powers dev + CI (`SMS_MOCK=1`), sms.ir stays disabled until both env vars exist (`.env.example` only), absence → controlled 503
+
+### Model
+- [x] `src/models/OtpCode.js` (new) — `phone`, `purpose` (login/register), SHA-256 `codeHash`, `attempts`, `codeConsumedAt` (code single-use), `consumedAt` (login-token single-use — split keeps each independently single-use), `loginTokenHash`/`loginTokenExpiresAt`, `devPlaintextCode` (mock-only), `expiresAt` TTL index
+- [x] `src/models/User.js` — `passwordHash` optional (default null; OTP accounts passwordless) + `tokenVersion` (Number, default 0 — session-revocation foundation, no revocation UI in this session)
+- [x] `src/lib/dbConnect.js` — OtpCode registered
+
+### OTP + SMS layers
+- [x] `src/lib/otp.ts` — normalizePhone, generateOtpCode (crypto.randomInt), hashOtpCode/hashLoginToken, isOtpExpired/isOtpConsumed, smsIrMobile, TTL/cooldown/attempt constants
+- [x] `src/lib/sms.ts` — adapter-first `sendOtp`: mock / smsir / none; injectable env + fetchImpl; never throws
+- [x] `src/lib/rate-limiter.ts` — `OTP_REQUEST_LIMIT` (5/15min), `OTP_REQUEST_IP_LIMIT` (15/15min), `OTP_VERIFY_LIMIT` (5/15min)
+- [x] `src/lib/validations/auth.ts` — `otpRequestSchema` + `otpVerifySchema` (zod)
+- [x] `src/lib/env.ts` — `SMS_IR_API_KEY`, `SMS_IR_TEMPLATE_ID` optional vars
+
+### API + NextAuth
+- [x] `POST /api/auth/otp/request` — validation-before-limiter, per-phone + per-IP limits, 60s cooldown (429 + Retry-After), register 409 on existing phone, **login anti-enumeration** (unknown phone → same 200, nothing created/sent)
+- [x] `POST /api/auth/otp/verify` — 5/15min brute-force guard, wrong code attempts++ (5-attempt lock), correct code → passwordless customer (register) / account required (login), one-time `loginToken` (hash stored, TTL ≤ remaining row life)
+- [x] `GET /api/auth/otp/dev-last` — dev/mock-only code reader (404 elsewhere; no plaintext exists in production)
+- [x] `src/lib/auth.js` — `loginToken` branch in `authorize` (atomic claim `updateOne({_id, consumedAt:null})` → replay-proof); password branch unchanged; `jwt`/`session` callbacks carry `tokenVersion` + `phone` (declared contract now real)
+- [x] `src/types/next-auth.d.ts` — `phone` + `tokenVersion` on Session/JWT
+
+### UI
+- [x] `src/components/auth/otp-code-input.tsx` + `src/components/auth/otp-panel.tsx` (shared request → verify → signIn)
+- [x] Login page — «ورود با رمز عبور» (default) / «ورود با کد یک‌بارمصرف» toggle; Register page — «ثبت‌نام با رمز عبور» (default) / «ثبت‌نام با کد یک‌بارمصرف» toggle; password forms untouched
+- [x] Toggle inactive-tab contrast → zinc-600/zinc-400 (axe `color-contrast` 4.39 → ≥7:1)
+
+### Tests
+- [x] `tests/unit/otp.test.ts` + `tests/unit/sms.test.ts` — **25 new hermetic tests** (normalization/generation/hashing/expiry; provider resolution + sms.ir adapter with injected fetch, mock never touches network, controlled errors never throw)
+- [x] `tests/e2e/otp-login.spec.ts` (Journey 12) — OTP registration, OTP login for an existing password user, wrong-code rejection (session stays null); reads codes via the dev-last seam
+- [x] `tests/e2e/customer-login.spec.ts` — «ورود» locator pinned with `exact: true` (new tab labels contain the substring; behavior identical)
+- [x] `tests/e2e/helpers/db.ts` + `scripts/run-regression.js` — rate-limit sweep extended to `otp_request|otp_request_ip|otp_verify`; `verify-otp` added → **34 suites**; `playwright.config.ts` CI webServer env gains `SMS_MOCK=1`
+- [x] `scripts/verify-otp.js` — **11/11** (mock seam, request/cooldown/anti-enumeration, wrong+correct code, token exchange + replay rejection, OTP-for-password-user, passwordless-can't-password-login + password user still logs in, per-IP cap 429)
+
+### Docs
+- [x] `AUTHENTICATION.md` (OTP flow, provider, security properties) · `.env.example` (SMS vars) · `CHANGELOG.md` · `NEXT_SESSION.md` · `PROJECT_STATE.md` (collections + regression 34) · `ROADMAP.md` · `TASKS.md`
+
+### Verification
+- [x] `npx tsc --noEmit` zero errors; `npm run check` passes (scoped ESLint 0 errors, 4 pre-existing warnings)
+- [x] Vitest **183/183**; Playwright **30/30** (chromium 25 incl. 6 axe scans + Journey 12 OTP + mobile 5, exit 0; login/register axe scans zero serious/critical)
+- [x] `verify-otp` **11/11**; full regression **34/34 PASS** (password auth fully compatible)
+- [x] Model change ⇒ dev-server restart required (done; server left running with `SMS_MOCK=1` only — mock unset so regression suites hit the real Zarinpal sandbox; use both mocks for `npm run e2e`)
+
+---
+
 ## ✅ Session 61 — Performance & Accessibility: next/image Migration + axe-core E2E Gate
 
 ### Scope + invariants

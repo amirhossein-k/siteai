@@ -186,8 +186,13 @@ export async function clearRateLimiterKeys(): Promise<void> {
   const db = mongoose.connection.db;
   if (!db) return;
   // The limiter stores its keys in `_id` as plain strings — type the
-  // collection accordingly so the `$regex` filter type-checks.
+  // collection accordingly so the `$regex` filter type-checks. Session 62
+  // extends the sweep with the OTP request/verify keys so the OTP journey
+  // (and the nightly verify-otp suite) always starts with clean counters.
   await db.collection<{ _id: string }>("ratelimits").deleteMany({
-    _id: { $regex: "^rl:(login|login_ip|register):" },
+    _id: {
+      $regex:
+        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify):",
+    },
   });
 }

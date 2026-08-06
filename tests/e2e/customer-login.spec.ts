@@ -22,7 +22,10 @@ test.describe("Customer login", () => {
 
     await page.locator('input[name="phone"]').fill(state.customerPhone);
     await page.locator('input[name="password"]').fill(E2E_PASSWORD);
-    await page.getByRole("button", { name: "ورود" }).click();
+    // Session 62 — the login page gained method tabs («ورود با رمز عبور» /
+    // «ورود با کد یک‌بارمصرف») that contain «ورود» as a substring; `exact`
+    // pins this to the password submit button.
+    await page.getByRole("button", { name: "ورود", exact: true }).click();
 
     // Customer role redirects to the storefront home.
     await page.waitForURL((url) => url.pathname === "/");
@@ -37,7 +40,7 @@ test.describe("Customer login", () => {
     await page.goto("/login");
     await page.locator('input[name="phone"]').fill(state.customerPhone);
     await page.locator('input[name="password"]').fill("wrong-password-123");
-    await page.getByRole("button", { name: "ورود" }).click();
+    await page.getByRole("button", { name: "ورود", exact: true }).click();
 
     await expect(page.getByRole("alert")).toBeVisible();
     // Still on the login page — no redirect.

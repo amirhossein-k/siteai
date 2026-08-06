@@ -29,6 +29,7 @@ import "@/models/File";
 import "@/models/Wishlist";
 import "@/models/Coupon";
 import "@/models/CouponUsage";
+import "@/models/OtpCode";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
