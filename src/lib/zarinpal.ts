@@ -7,6 +7,28 @@
 
 const isDev = process.env.NODE_ENV === "development";
 
+/**
+ * Session 59 — E2E mock seam (dev-only, fail-safe).
+ *
+ * When `ZARINPAL_MOCK=1` AND `NODE_ENV=development`, the interactive Zarinpal
+ * sandbox gateway is replaced with a hermetic same-origin stub:
+ *   - requestPayment returns a deterministic authority + a redirectUrl that
+ *     points straight at our own /api/payment/verify with Status=OK — the
+ *     browser completes the payment journey without touching sandbox.zarinpal.com
+ *   - verifyPayment returns a fixed success (refId/cardPan)
+ *
+ * Production can never activate the seam (NODE_ENV gate). Without the env var
+ * the module is byte-for-byte identical to the real gateway flow.
+ */
+function isZarinpalMock(): boolean {
+  return isDev && process.env.ZARINPAL_MOCK === "1";
+}
+
+/** Deterministic mock authority derived from the order id (callback cross-check passes). */
+function mockAuthority(orderId: string): string {
+  return `E2E_MOCK_${orderId}`;
+}
+
 // Use sandbox in development mode for safe testing
 const ZARINPAL_API_BASE = isDev
   ? "https://sandbox.zarinpal.com/pg/v4"
@@ -54,6 +76,15 @@ export async function requestPayment(
   orderId: string,
   mobile?: string
 ): Promise<{ authority: string; redirectUrl: string } | null> {
+  // Session 59 — hermetic E2E stub: no merchant id required, no network call.
+  if (isZarinpalMock()) {
+    const authority = mockAuthority(orderId);
+    // Point the browser at our own verify route with Status=OK so the whole
+    // payment journey (checkout → redirect → verify → paid) runs locally.
+    const redirectUrl = `${getCallbackUrl()}?orderId=${orderId}&Authority=${authority}&Status=OK`;
+    return { authority, redirectUrl };
+  }
+
   const merchantId = getMerchantId();
   if (!merchantId) {
     console.warn("[Zarinpal] ZARINPAL_MERCHANT_ID not set — skipping payment request");
@@ -116,6 +147,15 @@ export async function verifyPayment(
   amount: number,
   authority: string
 ): Promise<{ refId: number; cardPan: string; message: string } | null> {
+  // Session 59 — hermetic E2E stub: deterministic success, no network call.
+  if (isZarinpalMock()) {
+    return {
+      refId: 100_000_000 + (authority.length % 1000),
+      cardPan: "5022********0000",
+      message: "پرداخت با موفقیت انجام شد",
+    };
+  }
+
   const merchantId = getMerchantId();
   if (!merchantId) {
     console.warn("[Zarinpal] ZARINPAL_MERCHANT_ID not set — skipping verification");

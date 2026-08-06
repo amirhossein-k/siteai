@@ -2,6 +2,47 @@
 
 ---
 
+## ✅ Session 59 — Production Readiness: Playwright E2E
+
+### Scope + invariants
+- [x] Approved design frozen — no redesign; **only `src/` change = the fail-safe dev-gated `ZARINPAL_MOCK` seam** in `src/lib/zarinpal.ts` (zero production behavior change in any other environment)
+
+### Config + scripts
+- [x] `@playwright/test` devDep + `e2e` / `e2e:headed` / `e2e:install` scripts
+- [x] `playwright.config.ts` — `chromium` (full suite) + `chromium-mobile` (Pixel 5, customer-login + cart); `workers: 1`, `fullyParallel: false`; timeout 60s; artifacts only-on-failure; `webServer` reuse locally / fresh with `ZARINPAL_MOCK=1` on CI
+- [x] `.gitignore` — `test-results/`, `playwright-report/`, `tests/e2e/.auth/`; `.env.example` — `ZARINPAL_MOCK` documented (local-only file)
+
+### E2E infrastructure
+- [x] `global-setup.ts` — rl-key reset, idempotent admin seed, per-run supplier + customer via real APIs, real credentials logins → `admin/supplier/customer.json` storageStates + `state.json`
+- [x] `global-teardown.ts` — `cleanupByPrefix` (string-field id resolution → `_id: { $in }` deletes incl. referential rows + anchored slug catalogs) + rate-limiter reset
+- [x] Helpers — `auth.ts` (CSRF → callback login), `db.ts` (env/connect/cleanup), `fixtures.ts` (admin-API seeding + `placeOrder`), `money.ts` (formatPrice + couponDiscount mirrors)
+
+### Journeys (10)
+- [x] customer-login (real UI form: valid → `/` + logged-in header; wrong password → alert, no redirect)
+- [x] product-search (header suggestions listbox → catalog; catalog search input filter)
+- [x] product-detail (simple + 2-variant: SKU badge, resolved price, add-to-cart toast)
+- [x] cart (qty ±, totals, remove → empty state, checkout nav; mobile smoke)
+- [x] checkout (manual order end-to-end → success page + server `pending_payment`/`pending`)
+- [x] coupon (10% percent: chip + discount rows + server `discount.amount`)
+- [x] payment (mock gateway success → `paid`/`processing`/refId via result-URL orderId; NOK → `pending_payment`/`canceled`)
+- [x] order-tracking (list → detail badges/timeline/totals)
+- [x] admin-order-workflow (pending_payment → processing → confirmed → shipped with provider+trackingCode → «اطلاعات ارسال» card + server state)
+- [x] supplier-workflow (pending → confirmed → shipped + server state)
+
+### Review fixes (code-reviewer findings all addressed)
+- [x] HIGH — coupon code derived from the run prefix (`E2E_<ts>_COUPON`) so teardown removes it (the previous `Date.now()` code leaked rows)
+- [x] MEDIUM — supplier detail link anchored `a[href^="/supplier/orders/"]` (old `*=` matched the nav link)
+- [x] LOW — dead `registerCustomer` / `productKey` helpers removed
+- [x] Bring-up: phone field (not postal-code) filled on checkout/coupon/payment; `.first()` on repeated status texts; per-project cart slugs; orderId from the result URL (response body consumed by the page navigation)
+
+### Verification
+- [x] Playwright **21/21 PASS** (chromium 16 + mobile 5, exit 0) with `ZARINPAL_MOCK=1` server
+- [x] `npx tsc --noEmit` zero errors; ESLint clean on all changed files
+- [x] Vitest **152/152 PASS** (unchanged); full sequential regression **33/33 PASS, 0 skipped** (server without the mock — real sandbox preserved)
+- [x] No model/schema/index changes → no app restart; payment journey requires the dev server started with `ZARINPAL_MOCK=1`
+
+---
+
 ## ✅ Session 58 — Vitest Unit-Test Foundation
 
 ### Scope + invariants

@@ -2,6 +2,14 @@
 
 ## ✅ Completed Milestones
 
+### Playwright E2E — Production Readiness, Tranche 1 (Session 59)
+- [x] `@playwright/test` + bundled Chromium; `playwright.config.ts` — `chromium` full suite + `chromium-mobile` Pixel 5 smoke; `workers: 1` deterministic sequential against the shared dev DB; artifacts only-on-failure; `e2e` / `e2e:headed` / `e2e:install` scripts
+- [x] **Auth:** real credentials API logins in `global-setup` → per-role `storageState` (admin/supplier/customer) + one real UI login journey (valid + wrong-password)
+- [x] **Test data:** per-run PREFIX (`e2e_<ts>_`) supplier/customer/catalog seeded through the real APIs; `global-teardown` removes exactly the run's rows (id sets + anchored slug regex) + resets login/register rate-limiter keys
+- [x] **ZARINPAL_MOCK seam** (only `src/` change, fail-safe dev-gated) — hermetic payment journey; regression suites still run against the real sandbox
+- [x] **10 journeys:** customer-login, product-search, product-detail (incl. variants), cart (incl. mobile smoke), checkout, coupon, payment (success + NOK), order-tracking, admin-order-workflow (lifecycle + shipping metadata), supplier-workflow
+- [x] **Playwright 21/21 PASS** (chromium 16 + mobile 5); `tsc` zero errors; ESLint clean; Vitest 152/152 unchanged; full regression **33/33 PASS**; code review approved (coupon hermeticity HIGH + supplier-locator MEDIUM fixes applied); no model/schema/index changes
+
 ### Vitest Unit-Test Foundation (Session 58)
 - [x] **Zero-application-change invariant** — no `src/` code modified, no behavior changed, no pure-function extraction needed; new devDeps `vitest` + `@vitest/coverage-v8` only
 - [x] `vitest.config.ts` — node env, explicit `@/` → `./src` alias, Windows-safe `forks` pool, report-only v8 coverage over `src/lib/**/*.ts`
@@ -391,9 +399,9 @@
 
 **Approved milestone order (user decision):** Session 52 = mobile dashboard nav fix ✅; **Session 53 = Homepage CMS ✅**; **Session 55 = Private / Targeted Coupons ✅**; **Session 56 = best-sellers rail ✅** — the ROADMAP's original plan ("client-side, reuse the newest pool") was rejected because the pool carried **no sales data** (would have been a fake ranking, violating the Session 50 no-fake-data invariant); the approved denormalized `Product.soldCount` approach delivers a real, paid-only ranking. Deferred: scoped/free-shipping coupons (touch the hardened checkout price path; no shipping-fee model).
 
-### Session 59 — Candidate (pick one)
-> **Session 58 was completed as the Vitest unit-test foundation** (152 hermetic tests over the src/lib helpers — see the completed milestone above). The candidates below remain for the next session.
-- **Production Readiness (first tranche):** performance (Core Web Vitals) + accessibility audit, then unit tests (Vitest + Testing Library) and E2E (Playwright) on the highest-risk paths (inventory concurrency, payment claims, coupon claim/release).
+### Session 60 — Candidate (pick one)
+> **Session 59 completed the Playwright E2E tranche** (21/21 — see the completed milestone above). Candidates for the next session:
+- **Production Readiness (next tranche):** CI/CD pipeline (GitHub Actions running Vitest + Playwright + regression on push/PR), Core Web Vitals + accessibility audit, Playwright journey expansion (admin product CRUD, supplier products, uploads, notifications/SSE).
 - **Growth features:** SMS/OTP authentication, admin real charts (recharts), customer email/SMS order notifications, customer segments → first-purchase / birthday / spending coupons via the Session 55 `targetingRules` seam.
 
 ---
@@ -403,8 +411,8 @@
 ### Milestone 15: Production Readiness
 - [ ] Performance optimization (Core Web Vitals)
 - [ ] Accessibility audit and fixes
-- [ ] Unit tests (Vitest + Testing Library)
-- [ ] E2E tests (Playwright)
+- [x] Unit tests (Vitest — 152 hermetic tests, Session 58; Testing Library component tests remaining)
+- [x] E2E tests (Playwright — 21 tests / 10 journeys, Session 59; CI wiring remaining)
 - [ ] Deployment to production (Vercel, Docker)
 - [ ] Monitoring and error tracking (Sentry)
 - [ ] CI/CD pipeline (GitHub Actions)

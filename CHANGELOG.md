@@ -1,5 +1,33 @@
 # Changelog
 
+## Session 59 (August 2026) — Production Readiness: Playwright E2E (Tranche 1)
+
+### Architecture (approved design — implemented as designed, no redesign)
+- **Playwright E2E** on top of the existing stack (Next.js 16 App Router + MongoDB `marlooai` + NextAuth JWT). One bundled Chromium engine, two projects: `chromium` (full 10-journey suite) + `chromium-mobile` (Pixel 5 RTL smoke — the two highest-traffic customer journeys). `workers: 1`, `fullyParallel: false` — deterministic sequential execution against the shared dev DB (mirrors the 33-suite regression runner); per-run PREFIX isolation (`e2e_<ts>_`) makes scaling workers a config-only change later.
+- **Auth strategy:** real credentials login via `GET /api/auth/csrf` → `POST /api/auth/callback/credentials` in `global-setup`; per-role `storageState` files (`tests/e2e/.auth/{admin,supplier,customer}.json`) consumed by the journeys; `customer-login` ALSO drives the real UI form (no storageState) proving the browser flow incl. wrong-password rejection.
+- **Test data strategy:** per-run supplier (admin users API — auto Supplier doc) + customer (`/api/register`) with per-run phones; catalog fixtures (categories/products/variant-products/coupons) through the admin APIs; per-run PREFIX on phones/slugs/names + `E2E_<ts>_` coupon codes. `global-teardown` removes exactly the run's rows (id sets resolved from string fields → `_id: { $in }` deletes; referential rows through customer/supplier/coupon ids; slug-prefixed catalogs by anchored regex) + clears the login/register rate-limiter keys (Session 52 convention).
+- **ZARINPAL_MOCK seam** — the session's ONLY `src/` change: `src/lib/zarinpal.ts` gains a fail-safe dev-only branch (`NODE_ENV=development` AND `ZARINPAL_MOCK=1`) replacing the interactive Zarinpal sandbox with a same-origin stub (`/api/payment/verify?Status=OK…`) so the payment journey is hermetic. Zero production behavior change (any other env → real sandbox; the regression suites run against the real sandbox with the env unset).
+- **Flake prevention:** strict-mode-safe locators (`.first()` where badges + timelines repeat text), per-project unique slugs for the dual-project cart spec (beforeAll re-runs per project), orderId derived from the payment-result URL (the checkout response body is consumed by the page's own navigation), coupon codes derived from the run prefix (teardown match), `retries: 2` on CI.
+- **Artifacts:** screenshot `only-on-failure`, video `retain-on-failure`, trace `on-first-retry`; `test-results/`, `playwright-report/`, `tests/e2e/.auth/` gitignored.
+
+### Files
+- **Config/scripts:** `playwright.config.ts` (new); `package.json` — `@playwright/test` devDep + `e2e` / `e2e:headed` / `e2e:install` scripts; `.gitignore` (artifact dirs); `.env.example` (`ZARINPAL_MOCK` documented — local-only; the file is gitignored by the pre-existing `.env*` rule).
+- **Infra:** `tests/e2e/global-setup.ts` (rate-limit reset, idempotent admin seed, per-run supplier + customer + 3 storageStates + state.json), `tests/e2e/global-teardown.ts` (prefix cleanup + rl-key reset), `tests/e2e/helpers/{auth,db,fixtures,money}.ts` (API login, PREFIX cleanup, API-seeded fixtures incl. `createVariantProduct`/`createCoupon`/`placeOrder`, money/coupon math mirrors).
+- **Journeys (10):** `customer-login`, `product-search`, `product-detail` (simple + 2-variant), `cart` (also mobile smoke), `checkout`, `coupon` (10% percent, UI + server math), `payment` (mock success + NOK cancel), `order-tracking`, `admin-order-workflow` (lifecycle + shipping metadata), `supplier-workflow` (confirm → ship).
+
+### Review fixes (code-reviewer findings all addressed)
+- **Coupon hermeticity (HIGH):** the coupon code is derived from the run prefix (`E2E_<ts>_COUPON`) so teardown's `^e2e_<ts>_` (case-insensitive) matcher removes it — the previous `E2E_<Date.now()>` leaked coupon rows permanently.
+- **Supplier detail link (MEDIUM):** anchored `a[href^="/supplier/orders/"]` — the old `*=` also matched the bare `/supplier/orders` nav link.
+- **Dead code (LOW):** unused `registerCustomer` + `productKey` helpers removed from `fixtures.ts`.
+- Resolved during bring-up: the checkout/coupon/payment specs were filling the **postal-code** field instead of the **phone** field (empty phone → disabled submit → waitForResponse timeouts); strict-mode violations on repeated status texts; the dual-project cart slug collision; the response-body-unavailable-after-navigation issue on the payment success path.
+
+### Verification
+- **Playwright — 21/21 PASS** (chromium 16 + chromium-mobile 5; exit 0; dev server run with `ZARINPAL_MOCK=1`).
+- `npx tsc --noEmit` — **zero errors**; ESLint — **clean on all changed files**.
+- **Vitest — 152/152 PASS** (9 files, unchanged).
+- Full sequential regression — **33/33 PASS, 0 skipped** (server run WITHOUT the mock — real sandbox behavior preserved; the seam is opt-in dev-only).
+- **No model/schema/index changes** — no app restart required; the payment journey needs the dev server (re)started with `ZARINPAL_MOCK=1` (documented in the config + seam comment).
+
 ## Session 58 (August 2026) — Vitest Unit-Test Foundation
 
 ### Scope (approved design — no app changes, no redesign)
