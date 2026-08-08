@@ -42,7 +42,18 @@ interface VariantBuilderProps {
 }
 
 let keyCounter = 0;
-const nextKey = () => `v${Date.now()}_${keyCounter++}`;
+
+/**
+ * Stable, unique local key for a variant row in React lists.
+ *
+ * Server-persisted variants carry a DB `_id`, NOT a `key` — forms that
+ * hydrate drafts from the server must assign one per variant (the edit pages
+ * do this via this helper). Without it every loaded variant row would render
+ * with `key={undefined}`, producing the React duplicate-key warning AND
+ * breaking update/remove identity inside the builder (all rows would match).
+ * The `key` is a local UI concern only — it is never sent to the server.
+ */
+export const createVariantKey = () => `v${Date.now()}_${keyCounter++}`;
 
 /** Generate a human-readable label for a variant from its attributes */
 export function variantLabel(attrs: VariantDraftAttribute[]): string {
@@ -75,11 +86,23 @@ export function VariantBuilder({
     Record<string, string[]>
   >({});
 
+  // Self-healing key normalization: drafts hydrated from the server carry a
+  // DB `_id`, not a `key`. Assign a stable local key to any draft that lacks
+  // one so rendering, update and remove never see `key === undefined` (which
+  // previously produced the React duplicate-key warning AND made update/remove
+  // match EVERY unkeyed row at once). The parent's onChange receives the
+  // keyed drafts back, so the keys become stable from the first interaction.
+  const keyedVariants = useMemo(
+    () =>
+      variants.map((v) => (v.key ? v : { ...v, key: createVariantKey() })),
+    [variants]
+  );
+
   // Client-side duplicate detection
   const duplicates = useMemo(() => {
     const skuMap = new Map<string, number>();
     const comboMap = new Map<string, number>();
-    variants.forEach((v) => {
+    keyedVariants.forEach((v) => {
       const sku = v.sku.trim().toUpperCase();
       if (sku) skuMap.set(sku, (skuMap.get(sku) || 0) + 1);
       const combo = [...v.attributes]
@@ -97,14 +120,14 @@ export function VariantBuilder({
       if (count > 1) dupCombos.add(combo);
     });
     return { dupSkus, dupCombos };
-  }, [variants]);
+  }, [keyedVariants]);
 
   const addEmptyVariant = () => {
-    if (variants.length >= maxVariants) return;
+    if (keyedVariants.length >= maxVariants) return;
     onChange([
-      ...variants,
+      ...keyedVariants,
       {
-        key: nextKey(),
+        key: createVariantKey(),
         sku: "",
         attributes: [],
         price: 0,
@@ -118,12 +141,12 @@ export function VariantBuilder({
 
   const updateVariant = (key: string, patch: Partial<VariantDraft>) => {
     onChange(
-      variants.map((v) => (v.key === key ? { ...v, ...patch } : v))
+      keyedVariants.map((v) => (v.key === key ? { ...v, ...patch } : v))
     );
   };
 
   const removeVariant = (key: string) => {
-    onChange(variants.filter((v) => v.key !== key));
+    onChange(keyedVariants.filter((v) => v.key !== key));
   };
 
   // --- Combination generator ---
@@ -170,7 +193,7 @@ export function VariantBuilder({
     );
 
     const existingCombos = new Set(
-      variants.map((v) =>
+      keyedVariants.map((v) =>
         [...v.attributes]
           .map((a) => `${a.attributeId}:${a.value.toLowerCase()}`)
           .sort()
@@ -190,9 +213,9 @@ export function VariantBuilder({
         .sort()
         .join("|");
       if (existingCombos.has(comboKey)) continue;
-      const firstVariant = variants[0];
+      const firstVariant = keyedVariants[0];
       newVariants.push({
-        key: nextKey(),
+        key: createVariantKey(),
         sku: generateSku(productSlug || "", attrs),
         attributes: attrs,
         price: firstVariant?.price || 0,
@@ -204,7 +227,7 @@ export function VariantBuilder({
     }
 
     if (newVariants.length > 0) {
-      onChange([...variants, ...newVariants]);
+      onChange([...keyedVariants, ...newVariants]);
     }
   };
 
@@ -221,7 +244,7 @@ export function VariantBuilder({
               <CardTitle className="text-lg">تنوع‌های محصول</CardTitle>
             </div>
             <Badge variant="secondary">
-              {variants.length} / {maxVariants}
+              {keyedVariants.length} / {maxVariants}
             </Badge>
           </div>
           <CardDescription>
@@ -346,14 +369,14 @@ export function VariantBuilder({
           )}
 
           {/* Variant rows */}
-          {variants.length === 0 ? (
+          {keyedVariants.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               هنوز تنوعی تعریف نشده است. از «تولید خودکار ترکیب‌ها» یا
               «افزودن تنوع» استفاده کنید.
             </p>
           ) : (
             <div className="space-y-4">
-              {variants.map((variant, idx) => {
+              {keyedVariants.map((variant, idx) => {
                 const skuDup = duplicates.dupSkus.has(
                   variant.sku.trim().toUpperCase()
                 );

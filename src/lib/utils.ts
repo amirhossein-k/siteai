@@ -55,6 +55,34 @@ export function truncate(text: string, length: number): string {
 }
 
 /**
+ * Session 65 — normalize a (possibly populated) Mongo relation into its id
+ * string. Product edit pages receive relations from populated API responses
+ * where a deleted ref surfaces as `null` (and legacy/edge payloads may carry
+ * the raw ObjectId string):
+ *   - populated doc     → its `_id` string
+ *   - raw ObjectId instance → its hex string (via its custom toString)
+ *   - ObjectId string   → itself
+ *   - null / undefined  → "" (safe fallback — the forms treat "" as unset)
+ * The previous `typeof x === "object" ? x._id : x` pattern crashed on null
+ * because `typeof null === "object"` then dereferences `null._id`.
+ */
+export function relationId(value: unknown): string {
+  if (value && typeof value === "object") {
+    const id = (value as { _id?: unknown })._id;
+    if (id != null) return String(id);
+    // Raw ObjectId instance (e.g. server-side with live Mongoose docs) has no
+    // `_id` property but a custom toString yielding the hex string. Guard with
+    // the toString check so plain objects ({name}) never produce "[object Object]".
+    const toString = (value as { toString?: () => string }).toString;
+    if (typeof toString === "function" && toString !== Object.prototype.toString) {
+      return toString.call(value);
+    }
+    return "";
+  }
+  return typeof value === "string" ? value : "";
+}
+
+/**
  * Get base URL for API calls
  */
 export function getBaseUrl(): string {

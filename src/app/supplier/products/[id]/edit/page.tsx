@@ -8,6 +8,10 @@ import {
   useUpdateSupplierProduct,
 } from "@/hooks/use-supplier-products";
 import { SupplierProductForm } from "@/components/supplier/supplier-product-form";
+import {
+  createVariantKey,
+  type VariantDraft,
+} from "@/components/admin/variant-builder";
 import { showToast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,6 +21,7 @@ import {
   RefreshCw,
   Loader2,
 } from "lucide-react";
+import { relationId } from "@/lib/utils";
 import type { SupplierProductFormData } from "@/lib/validations/product";
 
 export default function EditSupplierProductPage({
@@ -41,34 +46,39 @@ export default function EditSupplierProductPage({
       name: product.name,
       slug: product.slug,
       description: product.description || "",
-      category:
-        typeof product.category === "object"
-          ? product.category._id
-          : product.category,
-      supplier:
-        typeof product.supplier === "object"
-          ? product.supplier._id
-          : product.supplier || "",
+      // Session 65 — populated relations may be null (deleted ref) or a raw
+      // id string at runtime; relationId normalizes all shapes safely. brand/
+      // tags are mapped so the full-replacement PUT does not wipe them.
+      brand: relationId(product.brand),
+      tags: (product.tags || []).map(relationId).filter(Boolean),
+      category: relationId(product.category),
+      supplier: relationId(product.supplier),
       price: product.price,
       supplierPrice: product.supplierPrice,
       stock: product.stock,
       isActive: product.isActive,
       images: product.images || [],
       hasVariants: product.hasVariants,
-      // Map DB variants -> form draft shape (attributes keep name for display)
-      variants: (product.variants || []).map((v) => ({
-        sku: v.sku,
-        attributes: v.attributes.map((a) => ({
-          attributeId: a.attributeId,
-          name: a.name,
-          value: a.value,
-        })),
-        price: v.price,
-        supplierPrice: v.supplierPrice,
-        stock: v.stock,
-        images: v.images || [],
-        isActive: v.isActive,
-      })),
+      // Map DB variants -> form draft shape (attributes keep name for display).
+      // Every draft gets a unique local `key` (server variants only carry a DB
+      // `_id`) — without it VariantBuilder renders all rows with key=undefined
+      // (React duplicate-key warning) and update/remove hit every row at once.
+      variants: (product.variants || []).map(
+        (v): VariantDraft => ({
+          key: createVariantKey(),
+          sku: v.sku,
+          attributes: v.attributes.map((a) => ({
+            attributeId: a.attributeId,
+            name: a.name,
+            value: a.value,
+          })),
+          price: v.price,
+          supplierPrice: v.supplierPrice,
+          stock: v.stock,
+          images: v.images || [],
+          isActive: v.isActive,
+        })
+      ),
     };
   }, [product]);
 

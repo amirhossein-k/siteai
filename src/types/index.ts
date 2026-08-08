@@ -518,10 +518,14 @@ export interface AdminProduct {
   slug: string;
   description?: string;
   images?: string[];
-  brand?: { _id: string; name: string } | null;
-  tags?: { _id: string; name: string; slug: string }[];
-  category: { _id: string; name: string };
-  supplier: { _id: string; businessName: string };
+  brand?: { _id: string; name: string } | string | null;
+  tags?: Array<{ _id: string; name: string; slug: string } | string | null>;
+  // Session 65 — populated relations can be `null` at RUNTIME when the
+  // referenced Category/Supplier doc was deleted (Mongoose populate → null)
+  // and a raw ObjectId string on legacy/edge payloads. Consumers must
+  // normalize (see lib/utils.ts relationId), never assume a populated doc.
+  category: { _id: string; name: string } | string | null;
+  supplier: { _id: string; businessName: string } | string | null;
   supplierPrice: number;
   price: number;
   stock: number;

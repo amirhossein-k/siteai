@@ -177,7 +177,10 @@ export async function PUT(req: NextRequest) {
         slug: body.slug,
         description: sanitizePlainText(body.description || ""),
         images: body.images,
-        brand: body.brand,
+        // Normalize the empty-string "no brand" value (the edit form's "بدون
+        // برند" option submits "") — casting "" to ObjectId throws a CastError
+        // 500. Mirrors the POST normalization below.
+        brand: body.brand || null,
         tags: body.tags || [],
         category: body.category,
         supplierPrice: prepared.hasVariants ? 0 : body.supplierPrice,

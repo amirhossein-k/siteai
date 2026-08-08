@@ -5,6 +5,7 @@ import {
   formatPrice,
   getBaseUrl,
   isAllowedImageSrc,
+  relationId,
   slugify,
   truncate,
 } from "@/lib/utils";
@@ -119,6 +120,43 @@ describe("isAllowedImageSrc", () => {
     expect(isAllowedImageSrc(null)).toBe(false);
     expect(isAllowedImageSrc("not-a-url")).toBe(false);
     expect(isAllowedImageSrc("data:image/png;base64,AAAA")).toBe(false);
+  });
+});
+
+describe("relationId", () => {
+  // Session 65 — edit pages normalize populated relations that can be null
+  // (deleted Category/Supplier/Brand) or a raw id string at runtime.
+  it("extracts _id from a populated relation doc", () => {
+    expect(relationId({ _id: "64eabc123", name: "دسته" })).toBe("64eabc123");
+    expect(relationId({ _id: "64eabc456", businessName: "فروشنده" })).toBe(
+      "64eabc456"
+    );
+  });
+
+  it("passes through a raw ObjectId string", () => {
+    expect(relationId("64eabc789")).toBe("64eabc789");
+  });
+
+  it("reads the hex string from a raw ObjectId instance (custom toString)", () => {
+    const objectIdLike = {
+      toString: () => "64eabc012",
+      toHexString: () => "64eabc012",
+    };
+    expect(relationId(objectIdLike)).toBe("64eabc012");
+    // Plain objects without an _id must NOT collapse to "[object Object]"
+    expect(relationId({ name: "بدون شناسه" })).toBe("");
+  });
+
+  it("returns an empty string for null / undefined (deleted refs)", () => {
+    expect(relationId(null)).toBe("");
+    expect(relationId(undefined)).toBe("");
+  });
+
+  it("returns an empty string for other values", () => {
+    expect(relationId("")).toBe("");
+    expect(relationId(123)).toBe("");
+    expect(relationId({ _id: null })).toBe("");
+    expect(relationId({ _id: undefined })).toBe("");
   });
 });
 
