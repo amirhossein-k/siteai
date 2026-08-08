@@ -51,6 +51,7 @@ const suites = [
   "verify-payouts",
   "verify-analytics",
   "verify-suppliers",
+  "verify-suppliers-onboarding", // Session 66 — admin supplier management (create/promote/deactivate + session revocation + public-surface hiding)
   "verify-variant-wishlist",
   "verify-product-import-export", // Session 51 (before coupons-marketing: creates users/suppliers/products, cleans its own PREFIX'd rows)
   "verify-coupons-marketing",

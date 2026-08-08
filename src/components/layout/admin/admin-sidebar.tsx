@@ -84,6 +84,13 @@ const navItems = [
     icon: Users,
   },
   {
+    // Session 66 — dedicated supplier-management page (create / promote /
+    // deactivate / view status / link to payouts).
+    title: "فروشندگان",
+    href: "/admin/suppliers",
+    icon: Store,
+  },
+  {
     title: "دیدگاه‌ها",
     href: "/admin/reviews",
     icon: Star,

@@ -633,6 +633,32 @@ export interface AdminUser {
 // Supplier-specific Types
 // ============================================================
 
+/**
+ * Admin supplier-management row (Session 66) — GET /api/admin/suppliers?all=true.
+ * ADMIN-ONLY shape: includes wallet/contact figures + the linked user. These
+ * fields must NEVER appear on the PUBLIC supplier endpoints (see PublicSupplier).
+ * `user` is null only when the User ref was deleted (Mongoose populate → null).
+ */
+export interface AdminSupplier {
+  _id: string;
+  businessName: string;
+  logo?: string;
+  description?: string;
+  contactPhone?: string;
+  balance: number;
+  pendingReserve: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt?: string;
+  user: {
+    _id: string;
+    name: string;
+    phone: string;
+    isActive: boolean;
+    role: UserRole;
+  } | null;
+}
+
 // --- Supplier Storefront (Session 42) ---
 
 /**

@@ -2,6 +2,16 @@
 
 ## ✅ Completed Milestones
 
+### Supplier Onboarding v1 — Admin Supplier Management + Deactivation Enforcement (Session 66)
+- [x] **Dedicated `/admin/suppliers` page** — the discoverable home for Supplier onboarding: management list (active + inactive, wallet + populated user), «ایجاد فروشنده جدید» (shared CreateUserModal, role defaults to supplier), «ارتقای کاربر به فروشنده» (searchable customer picker → change-role), per-row deactivate/reactivate, «تسویه» link to `/admin/payouts`; sidebar «فروشندگان»
+- [x] **Zero duplicate supplier API** — creation/promotion reuse the existing `POST`/`PATCH /api/admin/users` (auto Supplier doc provisioning preserved); `GET /api/admin/suppliers?all=true` is the only additive endpoint change (default dropdown shape untouched)
+- [x] **Deactivation enforcement** — `toggle-active` on a supplier now flips the linked `Supplier.isActive` (public storefront surfaces hide them) **and** bumps `tokenVersion` + evicts cache → sessions revoked immediately; reactivation restores both
+- [x] **Role-change session revocation** — any `change-role` bumps `tokenVersion` + evicts cache → old-role sessions die instantly
+- [x] **Shared CreateUserModal** extracted to `src/components/admin/create-user-modal.tsx` (users + suppliers pages)
+- [x] **No public registration / no application queue** (out of scope by design — admin-only onboarding preserved)
+- [x] `scripts/verify-suppliers-onboarding.js` **14/14 real-API** (401/403, create+auto-provision, promote+session-revoke, deactivate/reactivate, public hiding, dropdown-shape regression guard) wired into `run-regression.js` (**37 suites**); Journey 15 E2E (2 tests)
+- [x] **Verified** — tsc 0 · check exit 0 · Vitest **211/211** · Playwright **50/50** · `verify-suppliers-onboarding` **14/14** · full regression **37/37 PASS**
+
 ### Session Security — tokenVersion enforcement + password change + logout all + admin revoke (Session 64)
 - [x] **`tokenVersion` now ENFORCED** — `src/lib/token-version.ts` (pure checker factory: per-user 60s cache, **asymmetric semantics** — equal → valid, cached-newer → revoked, cached-older → stale-cache refetch, deleted user → revoked, error → fail-open) wired into `auth-utils.getServerToken` → every protected API route 401s revoked JWTs with zero per-route changes; `invalidateTokenVersionCache()` makes bumps immediate in-process
 - [x] **`POST /api/auth/change-password`** — bcrypt current-password verification for password users (400 on mismatch); **passwordless OTP users set their first password** (no currentPassword needed); bumps `tokenVersion` → all sessions (incl. current) revoked; rate-limited 5/15min
@@ -78,7 +88,7 @@
 - [x] Additive `sort=best_selling` on `GET /api/products` (`{ soldCount:-1, createdAt:-1 }`); product write routes whitelist-only (clients can never set soldCount)
 - [x] CMS block `best-sellers` (registry + renderer into ProductRail + `DEFAULT_SECTIONS` after `special-picks`); **seed upgraded to insert-missing defaults** (soft-delete-aware, never resurrects, doesn't disturb admin edits)
 - [x] «پرفروشترین» catalog sort option + `useCatalogFilters` whitelist; `AdminProduct.soldCount?` type; pre-existing `set-state-in-effect` lint debt fixed via render-phase adjustment
-- [x] `scripts/verify-best-sellers.js` — **13/13 PASS** (ranking + tie-break, list/detail leak scans, refund + admin-cancel reversals, legacy 0 floor, double-refund 400, pending-never-counts, cash checkout never increments, CMS block); `scripts/backfill-sold-count.js` OPTIONAL re-runnable backfill; regression runner now **32 suites**, full **32/32 PASS**; tsc/lint/build green; code review approved (admin-cancel reversal gap fixed); dev-server restart required (model change)
+- [x] `scripts/verify-best-sellers.js` — **14/14 PASS** (ranking + tie-break, list/detail leak scans, refund + admin-cancel reversals, legacy 0 floor, double-refund 400, pending-never-counts, cash checkout never increments, CMS block); `scripts/backfill-sold-count.js` OPTIONAL re-runnable backfill; regression runner now **32 suites**, full **32/32 PASS**; tsc/lint/build green; code review approved (admin-cancel reversal gap fixed); dev-server restart required (model change)
 - [x] **Variant-level sales aggregation = FUTURE SCOPE** — the counter is the product-level sum across all variants
 
 ### Private / Targeted Coupons — Coupon Eligibility (Session 55)
@@ -320,13 +330,13 @@
 - [x] `src/lib/payment-cleanup.ts` — abandoned `pending_payment` (>24h `updatedAt`) → auto-cancel + `restoreOrderStock()` exactly once
 - [x] `GET /api/payment/cleanup` trigger — admin-only + optional `CRON_SECRET` (Vercel Cron style)
 - [x] Fixed latent Zarinpal v4 bug — `errors: []` (truthy empty array) on success made `requestPayment`/`verifyPayment` always fail
-- [x] 13/13 verification tests passing (incl. concurrent-retry serialization); zero TypeScript errors; all regressions green
+- [x] 14/14 verification tests passing (incl. concurrent-retry serialization); zero TypeScript errors; all regressions green
 
 ### Variant Polish (Session 31)
 - [x] Variant-aware order display — immutable `image` snapshot on Order/SupplierOrder items + thumbnails on admin/supplier/storefront order pages (old orders render fine)
 - [x] Status management verified variant-safe — supplier status changes never touch inventory; admin only restores on cancel via shared helper
 - [x] Supplier variant stock quick-edit — `setVariantStock()` in shared `src/lib/inventory.ts` (atomic, stockVersion lock, summary sync, never negative) + `POST /api/supplier/products/stock` (ownership + validation) + inline «ویرایش سریع» editor on supplier products page
-- [x] 13/13 verification tests passing; zero TypeScript errors; all regressions green
+- [x] 14/14 verification tests passing; zero TypeScript errors; all regressions green
 
 ### Admin Refund Flow (Session 32)
 - [x] `POST /api/admin/orders/refund` — admin-only; atomic claim `payment.status: paid → refunded` (double-refund impossible); refund metadata (reason/refundedAt/refundedBy); immutable `refunded` statusHistory event; reason required + sanitized
@@ -438,7 +448,7 @@
 - [x] **Storefront** — `src/app/page.tsx` thin async server component rendering through the registry; all 9 Session 50 renderers take `HomepageSectionRendererProps` (content-bearing read `section.content`, data-driven read `presentation.behavior`); lazy-mount preserved
 - [x] **Admin UI** `/admin/homepage` — tabs (sections + 4 content editors), section-scope picker, S3 image upload via existing `/api/upload`, «صفحه اصلی» sidebar entry; hooks `use-admin-homepage.ts` + types
 - [x] **Invariants** — zero existing-API/schema/index changes, zero new dependencies, `homepage-config.ts` retained as seed/fallback source
-- [x] `scripts/verify-homepage-cms.js` — **13/13 PASS** (real API + real DB; incl. malformed ObjectId → 400); `npx tsc --noEmit` zero errors; build passes; code review approved; regression runner → **30 suites**; dev server restarted (fresh boot, `/api/homepage` live)
+- [x] `scripts/verify-homepage-cms.js` — **14/14 PASS** (real API + real DB; incl. malformed ObjectId → 400); `npx tsc --noEmit` zero errors; build passes; code review approved; regression runner → **30 suites**; dev server restarted (fresh boot, `/api/homepage` live)
 
 ## 🚀 Next Milestone
 

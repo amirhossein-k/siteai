@@ -101,9 +101,11 @@ Telegram (fire-and-forget):
 | Route | Methods | Auth | Description |
 |-------|---------|------|-------------|
 | `/api/admin/stats` | GET | admin | Revenue, counts, growth from MongoDB aggregation |
+| `/api/admin/suppliers` | GET | admin | Supplier list — default: active-only dropdown shape; `?all=true`: full management shape (wallet + populated user) for `/admin/suppliers` (Session 66) |
 | `/api/admin/products` | GET, POST, PUT, DELETE | admin | Full CRUD. GET supports `?id=` for single fetch |
 | `/api/admin/orders` | GET, PUT | admin | List + single. PUT validates status transitions + sends admin Telegram |
 | `/api/admin/users` | GET | admin | List with optional `?role=` filter, excludes passwordHash |
+| `/api/admin/users` | POST, PATCH | admin | Create admin/supplier (auto Supplier doc) · toggle-active / change-role / reset-password. **Session 66:** deactivation flips linked Supplier.isActive + bumps tokenVersion; role change bumps tokenVersion (sessions revoked immediately) |
 | `/api/admin/categories` | GET | admin, supplier | Simple list for dropdowns |
 | `/api/admin/suppliers` | GET | admin | Active suppliers list for dropdowns |
 
@@ -231,6 +233,7 @@ pending → failed (on cancel)
 - `/admin/orders` — Orders list
 - `/admin/orders/[id]` — Order detail
 - `/admin/users` — User management
+- `/admin/suppliers` — Supplier management (create / promote / deactivate / status / payouts link) — Session 66
 - `/admin/settings` — Settings (placeholder)
 
 ### Supplier Panel

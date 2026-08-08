@@ -1,5 +1,23 @@
 # Changelog
 
+## Session 66 (August 2026) — Supplier Onboarding v1: Admin Supplier Management + Deactivation Enforcement
+
+### The approved scope (architect-recommended Session 66 — design-first audit approved)
+- **Dedicated `/admin/suppliers` page** (new) — the discoverable home for Supplier onboarding: list (management shape, active + inactive), create via the shared `CreateUserModal` (role defaults to supplier), promote an existing customer via a searchable modal, deactivate/reactivate per row, and a «تسویه» link into `/admin/payouts`. Sidebar gains «فروشندگان».
+- **No duplicate supplier-creation API.** Creation and promotion reuse the EXISTING `POST /api/admin/users` (role=supplier) and `PATCH /api/admin/users` (change-role) flows — the auto-provisioning of the Supplier document (businessName=name, contactPhone=phone, user back-link) is preserved byte-for-byte.
+- **`GET /api/admin/suppliers?all=true`** — additive management branch (wallet figures + populated user + isActive). The default no-param response stays the active-only dropdown shape used by product forms (`useSuppliers`) — unchanged.
+- **Deactivation enforcement (the audit gap):** `PATCH toggle-active` on a supplier now ALSO flips the linked `Supplier.isActive` (previously only `User.isActive` flipped, so the storefront kept showing deactivated suppliers) **and** bumps `tokenVersion` + evicts the cache → the supplier's live sessions die immediately. Reactivation restores both flags (public storefront reappears).
+- **Role-change session revocation:** any `change-role` bumps `tokenVersion` + evicts the cache → the user's old-role sessions are revoked instantly (they must log in again to obtain the new role claim).
+- **Shared component:** the «ایجاد کاربر جدید» modal was extracted from `/admin/users` into `src/components/admin/create-user-modal.tsx` and reused by both pages (identical UI/flow; the users page is byte-equivalent behaviorally).
+- **Out of scope (per the approved audit):** NO public Supplier registration, NO application/approval queue. Supplier accounts remain admin-created only (RBAC design preserved). Zero changes to auth.js / OTP / password login / middleware / Supplier ownership rules / payout logic.
+- **Types/hooks:** `AdminSupplier` type + `use-admin-suppliers.ts` (`useAdminSuppliers`, `useToggleSupplierActive`, `usePromoteToSupplier` — the mutations wrap the existing users PATCH, no new endpoints).
+
+### Tests & verification
+- **`scripts/verify-suppliers-onboarding.js`** — **14/14 real-API**: unauth 401, customer 403, admin creates supplier (201 + auto-provisioned Supplier doc + back-link + defaults), management-shape GET, dropdown-shape unchanged, customer→supplier promotion (Supplier auto-created + old customer session 401), promoted supplier login + panel access, deactivation (User + Supplier isActive=false), public-surface hiding (list exclusion + detail 404), deactivation session revocation (401), reactivation (flags restored + public visibility back).
+- **`tests/e2e/admin-suppliers.spec.ts`** (Journey 15, desktop) — 2 tests: admin sees the seeded supplier and creates one through the UI modal (row appears + management API confirms the provisioned user); admin deactivates (UI toggle + public list hiding) then reactivates (public visibility restored).
+- **`scripts/run-regression.js`** — `verify-suppliers-onboarding` added after `verify-suppliers` → **37 suites**.
+- **Verified:** tsc 0 · `npm run check` exit 0 · Vitest **211/211** (unchanged — no pure-lib change) · `verify-suppliers-onboarding` **14/14** · Playwright **50/50 PASS** (chromium 38 incl. Journey 15 + mobile 12) · full regression **37/37 PASS**.
+
 ## Session 64 (August 2026) — Session Security: tokenVersion Enforcement + Password Change + Logout All + Admin Revoke
 
 ### The approved scope (architect-recommended Session 64)
@@ -230,7 +248,7 @@
 - `use-catalog-filters.ts` — the `setPage(1)`-in-effect and debounce-empty synchronous setState were converted to the React-documented **"adjust state during render"** pattern (guarded, SSR-safe, behavior-preserving); the intentional one-time post-hydration URL seed effect keeps an effect but is block-disabled with a justification comment (any render-time alternative would cause hydration mismatches).
 
 ### Verification
-- **`scripts/verify-best-sellers.js` — 13/13 PASS** (real API + real DB): sort ranking + newest tie-break, **leak scans** (list + detail — soldCount never appears), refund reversal by exact item quantities (simple + variant product-level sum), double-refund → 400 no double decrement, legacy 0 floor never negative, pending order can't refund + never counted, **admin cancel of a PAID order reverses soldCount / pending cancel untouched** (reviewer-fix test), cash checkout → pending order never increments (paid-only rule; the payment-verify increment is gated by the same atomic claim verify-payment-retry already exercises — sandbox verify requires the interactive payment page and can't be driven headlessly, documented), CMS block seeded + present in public composition positioned at/after special-picks. Self-cleaning (PREFIX'd fixtures incl. orders/supplierorders).
+- **`scripts/verify-best-sellers.js` — 14/14 PASS** (real API + real DB): sort ranking + newest tie-break, **leak scans** (list + detail — soldCount never appears), refund reversal by exact item quantities (simple + variant product-level sum), double-refund → 400 no double decrement, legacy 0 floor never negative, pending order can't refund + never counted, **admin cancel of a PAID order reverses soldCount / pending cancel untouched** (reviewer-fix test), cash checkout → pending order never increments (paid-only rule; the payment-verify increment is gated by the same atomic claim verify-payment-retry already exercises — sandbox verify requires the interactive payment page and can't be driven headlessly, documented), CMS block seeded + present in public composition positioned at/after special-picks. Self-cleaning (PREFIX'd fixtures incl. orders/supplierorders).
 - **`scripts/backfill-sold-count.js`** — OPTIONAL one-time re-runnable backfill: aggregates paid + non-cancelled orders → `$set soldCount` (authoritative recompute, safe to re-run). Not part of the regression runner.
 - Regression runner now **32 suites** (`verify-best-sellers` after `verify-coupon-eligibility`). Full regression **32/32 PASS, 0 skipped**; `npx tsc --noEmit` zero errors; lint clean on all changed files; production build passes; code review approved (Medium-High admin-cancel reversal gap fixed + test added; product-write whitelist confirmed; backfill zero-sale + crash-window documented below).
 - **Known/accepted:** (1) crash-window between the `paid` claim and the counter write undercounts a paid order — recoverable via the optional backfill; (2) **variant-level sales aggregation is future scope** — `soldCount` is the product-level sum across all variants.
@@ -279,7 +297,7 @@
 - **`src/hooks/use-admin-homepage.ts`** — React Query hooks (sections + per-type content CRUD with key-factory invalidation); **types** added in `src/types/index.ts` (`HomepagePresentation`, `PublicHomepageSection`, `PublicHomepageContent`, `HomepageSectionRendererProps`, `AdminHomepageSection`).
 
 ### Verification
-- **`scripts/verify-homepage-cms.js` — 13/13 PASS** (admin authz 401/403; idempotent sections bootstrap + static-config seed; public composition ordering + projection leak scan; unknown component skipped and `GET /` still 200; multiple sections sharing one renderer keep their own content; slug/component immutability → 400; `enabled=false` hides publicly; soft-deleted content hidden; draft content hidden; `publishedAt` stamping draft→null→now; per-type CRUD + validation errors; **malformed ObjectId → 400 on content + section PUT/DELETE — never a CastError 500**).
+- **`scripts/verify-homepage-cms.js` — 14/14 PASS** (admin authz 401/403; idempotent sections bootstrap + static-config seed; public composition ordering + projection leak scan; unknown component skipped and `GET /` still 200; multiple sections sharing one renderer keep their own content; slug/component immutability → 400; `enabled=false` hides publicly; soft-deleted content hidden; draft content hidden; `publishedAt` stamping draft→null→now; per-type CRUD + validation errors; **malformed ObjectId → 400 on content + section PUT/DELETE — never a CastError 500**).
 - Code-review fixes applied: `mongoose.isValidObjectId` guards (→ 400) added to the content factory + sections PUT/DELETE (project convention); seed made E11000-race-tolerant (concurrent first boot no longer 500s); unused `str()` length arg + unused constants/imports removed (lint clean on all new files).
 - Regression runner now **30 suites** (`verify-homepage-cms` after `verify-coupons-marketing`). `npx tsc --noEmit` zero errors; production build passes; code review approved.
 - **Ops note:** model changes ⇒ dev-server restart required (done — booted fresh after the system restart; `/api/homepage` confirmed returning live DB content).
@@ -296,7 +314,7 @@
 ### Regression runner hermeticity (this verification step)
 - **Root cause of intermittent full-regression failures:** the shared login rate-limiter keys (`login:<phone>` max 10/15min and `login_ip:<ip>` max 30/15min, stored in the shared `ratelimits` collection as `_id: "rl:<key>"`) accumulate across suites — every suite performs real NextAuth logins against the same localhost IP, so after ~30 cumulative logins within a 15-minute window the `login_ip` limiter rejects all later logins (401s) even though each suite passes standalone. This is **expected security behavior** (brute-force protection) colliding with shared test-state accumulation — not an app bug and not a runner logic bug.
 - **Modified** `scripts/run-regression.js` — before EACH suite it now clears the shared login keys (`deleteMany({ _id: { $regex: "^rl:(login|login_ip):" } })`) using the same `.env.local`-parsing + `dbName: "marlooai"` convention as the verify suites. Fail-safe: if the DB is unreachable it only warns — the hermetic `verify-db-reconnect` suite still runs and the HTTP suites report their own connectivity errors. **Production limiter logic untouched** — this only resets test state between isolated runs.
-- **Verification:** `npx tsc --noEmit` zero errors; `node --check` clean; code review approved; **full sequential regression → 29/29 PASS** (previously 24/29 with 401-cascade failures). Standalone suites confirmed unaffected (verify-upload-repro 15/15, verify-upload-formats 9/9, verify-variants-e2e 32/32, verify-variant-polish 13/13, verify-payment-retry 13/13).
+- **Verification:** `npx tsc --noEmit` zero errors; `node --check` clean; code review approved; **full sequential regression → 29/29 PASS** (previously 24/29 with 401-cascade failures). Standalone suites confirmed unaffected (verify-upload-repro 15/15, verify-upload-formats 9/9, verify-variants-e2e 32/32, verify-variant-polish 14/14, verify-payment-retry 14/14).
 - **Browser QA (desktop + mobile viewport 390px):** admin dashboard renders without error, hamburger opens the drawer, nav link closes it + navigates; console errors only the pre-existing favicon 404s. Browser QA caught a real bug that static checks missed — the first MobileDrawer used a **render-prop** `children: (close) => …`; the admin/supplier layouts are Server Components, so a function crossed the RSC→client boundary and the page crashed with «Functions are not valid as a child of Client Components». Fixed to plain `ReactNode` children + store-driven close (sidebars close themselves via `setSidebarOpen(false)`). Re-verified: tsc clean + browser QA green.
 - **Ops note updated:** the historical Session 36 note («clear the `ratelimits` collection if logins start 401ing») is now automated — the runner clears the login keys itself before every suite; a manual clear is only needed for standalone suite runs that 401.
 
@@ -491,7 +509,7 @@
 - **Created** `scripts/verify-telegram-alerts.js` — **16/16 PASS** against the real HTTP API (real NextAuth login, real routes, real MongoDB): unauth approve 401, supplier 403, request → reserve, approve → supplier `payout_approved` (category `payout`, link `/supplier/wallet`, dedupe key), re-approve 400 + count stays 1, reject-without-reason 400, reject-with-reason → `payout_rejected` (message includes sanitized reason), **Telegram fail-silent** (`sentToTelegram` false + payout committed despite callback failure), cross-user isolation (customer sees no payout), customer review → supplier `new_review` (category `system`, link `/supplier/reviews`, message mentions product), duplicate review 409 + count stays 1, cross-supplier isolation.
 - **Updated** `scripts/run-regression.js` — `verify-telegram-alerts` added as the final suite (**23 suites**; `verify-coupons-marketing` now second-to-last — verify-telegram-alerts is last; `verify-db-reconnect` stays first/hermetic).
 - `npx tsc --noEmit` → **zero errors**; code review approved (2 rounds; follow-ups applied: recipient-scoped notification cleanup in the suite, sanitized reject reason, post-commit try/catch wraps in both routes).
-- Full sequential regression → **23/23 PASS** (verify-payment-retry flaked once mid-run but passed standalone 13/13 and on the re-run — unrelated to Session 45, which touches no payment flow).
+- Full sequential regression → **23/23 PASS** (verify-payment-retry flaked once mid-run but passed standalone 14/14 and on the re-run — unrelated to Session 45, which touches no payment flow).
 
 ---
 
@@ -614,7 +632,7 @@
 
 ### Ops notes
 - **Model change ⇒ dev-server restart REQUIRED.** `src/models/Supplier.js` gained fields, but Mongoose caches models by name on `mongoose.models`, so the running process kept the OLD schema — `$set` silently stripped `logo`/`description` and `select` returned `undefined` (3 verify failures: logo not trimmed, profile not updated, isolation "changed"). Force-killed the stale server by PID (`taskkill //F //PID`) and booted fresh — all 20 passed. Any future model edit needs the same restart (this is why Session 41, with no schema changes, needed none).
-- **Verify scripts MUST run sequentially** — they share the dev DB. The full sequential regression had one transient failure: `verify-payment-retry` 11/13 with `502 "درگاه پرداخت موقتاً در دسترس نیست"` (Zarinpal sandbox gateway briefly unreachable right after the dev-server restart); the isolated re-run passed **13/13** — environmental, no Session 42 code involved.
+- **Verify scripts MUST run sequentially** — they share the dev DB. The full sequential regression had one transient failure: `verify-payment-retry` 11/13 with `502 "درگاه پرداخت موقتاً در دسترس نیست"` (Zarinpal sandbox gateway briefly unreachable right after the dev-server restart); the isolated re-run passed **14/14** — environmental, no Session 42 code involved.
 
 ---
 
@@ -640,11 +658,11 @@
 ### Verification
 - **Created** `scripts/verify-analytics.js` — **16 tests against the real HTTP API** with a **baseline → seed → delta** design (robust to any pre-existing shared-DB data): unauth 401, customer 403, supplier 403, admin 200 + full shape, invalid range 400, valid range=7 accepted, **read-only guarantee** (collection counts unchanged across repeated calls), time-series deltas (today +1 order/+100M cancelled-excluded, day-5 +1/+36M, 60-day-old order invisible in the 30-day window, zero-fill length 30), top products/categories exact aggregates (deliberately dominant seeded revenue so rows stay in top-10), coupon deltas (+2 coupons, +4 usedCount, +1 discounted order, +4M in-window discount, top-coupon row), supplier deltas (earnings +800K, paidOut +300K count 1, pending +100K count 1, balance +500K, reserve +100K).
 - **16/16 PASS**; `npx tsc --noEmit` zero errors; full regression green (all 16 suites, run sequentially — see ops note).
-- Code-reviewer approved (4 rounds). Bugs found & fixed during verification: (1) coupon `discountedOrders`/`totalDiscount` were derived from the top-5 list → now a separate unbounded aggregation; (2) **critical** Promise.all/destructure misalignment (a duplicate `discountSummary` in the array vs one name in the destructure) 500'd every request — route rewritten with exactly 13/13 aligned bindings; (3) test-fixture bugs: users created *after* login attempts, item snapshot name ≠ product name (topProducts lookup missed), absolute global aggregates → delta design; unused `Badge` import removed from the page.
+- Code-reviewer approved (4 rounds). Bugs found & fixed during verification: (1) coupon `discountedOrders`/`totalDiscount` were derived from the top-5 list → now a separate unbounded aggregation; (2) **critical** Promise.all/destructure misalignment (a duplicate `discountSummary` in the array vs one name in the destructure) 500'd every request — route rewritten with exactly 14/14 aligned bindings; (3) test-fixture bugs: users created *after* login attempts, item snapshot name ≠ product name (topProducts lookup missed), absolute global aggregates → delta design; unused `Badge` import removed from the page.
 
 ### Ops notes
 - **Read-only by construction:** no model changes, no dev-server restart needed.
-- **Verify scripts MUST run sequentially** — they share the dev DB; one parallel batch flaked (supplier-replies 3/21, refund 1/12, sse 7/11, wishlist-cart 16/18, variant-polish 8/13) and **every one passed 100% when re-run alone** (21/21, 12/12, 11/11, 18/18, 13/13).
+- **Verify scripts MUST run sequentially** — they share the dev DB; one parallel batch flaked (supplier-replies 3/21, refund 1/12, sse 7/11, wishlist-cart 16/18, variant-polish 8/13) and **every one passed 100% when re-run alone** (21/21, 12/12, 11/11, 18/18, 14/14).
 
 ---
 
@@ -663,7 +681,7 @@
 
 ### Verification
 - **Created** `scripts/verify-sse.js` — **11 tests against the real HTTP API** (real NextAuth login, real routes, real MongoDB): unauth stream → 401; authenticated connect → 200 + `text/event-stream` + `: connected`; **live delivery after real notification creation** (admin confirm → `order_confirmed` event with matching `relatedOrder`/`link` on A's stream); **customer isolation** (B's open stream receives nothing while A's is delivered); **supplier isolation** (real checkout → supplier stream gets `new_order`, B's stream gets nothing); **disconnect/reconnect** (closing unregisters; a fresh connection keeps receiving events); **heartbeat** (`: ping` within HEARTBEAT + slack). SSE parsed in-process via `fetch` + `getReader()` + frame splitting.
-- **11/11 PASS**; `npx tsc --noEmit` zero errors; regressions green: notifications 18/18, supplier-replies 21/21, coupons 27/27, wishlist-cart 18/18, payouts 17/17, reviews 20/20, wishlist 14/14, refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15, variants-e2e 32/32, upload-formats 9/9, concurrency 10/10.
+- **11/11 PASS**; `npx tsc --noEmit` zero errors; regressions green: notifications 18/18, supplier-replies 21/21, coupons 27/27, wishlist-cart 18/18, payouts 17/17, reviews 20/20, wishlist 14/14, refund 12/12, payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15, variants-e2e 32/32, upload-formats 9/9, concurrency 10/10.
 - Code-reviewer approved (3 rounds). Follow-ups applied: unified `cleanup()` to fix the heartbeat-interval leak on `cancel()`; tracked reconnect timer + 10-failure cap; `onopen` failure-counter reset; removed the now-redundant `onmessage` counter reset.
 
 ### Ops notes
@@ -689,7 +707,7 @@
 
 ### Verification
 - **Created** `scripts/verify-wishlist-cart.js` — **18 tests against the real HTTP API** (real NextAuth login, real routes, real MongoDB): unauth 401, supplier 403, empty wishlist → 0, simple product resolves with FRESH price/stock/maxQuantity, **resolver never decrements stock**, variant → first ACTIVE variant (A) with sku/label/price, disabling A → falls back to B, inactive → `inactive`, deleted → `deleted`, OOS simple → `out_of_stock`, OOS variant → `no_available_variant`, mixed → partial `{ addedCount: 2, skippedCount: 4 }`, **productIds subset — foreign ids ignored (no IDOR)**, dedicated rate limiter → 429 after threshold, plus **REAL zustand cart-store merge tests** (the store is transpiled to CommonJS in-process via `typescript.transpileModule` and loaded from an in-project temp file so `require("zustand")` resolves): existing cart item + wishlist add → merged to quantity 2 with no duplicate key, quantity increment + **maxQuantity cap** (4 adds capped at 2), simple vs variant composite keys stay distinct (`id`, `id:variantId`) with variant quantity incremented.
-- **18/18 PASS**; `npx tsc --noEmit` zero errors; regressions green: wishlist 14/14, reviews 20/20, notifications 18/18, supplier-replies 21/21, refund 12/12, payouts 17/17, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15.
+- **18/18 PASS**; `npx tsc --noEmit` zero errors; regressions green: wishlist 14/14, reviews 20/20, notifications 18/18, supplier-replies 21/21, refund 12/12, payouts 17/17, payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15.
 - Code-reviewer approved (no critical feedback). Follow-ups applied from review: removed a dead resolver call in TEST 10 (keeps customer1 at 9/10 rate-limit calls), removed the unreachable toast branch, loaded the real cart store ONCE before the merge tests with clean assert guards.
 
 ### Bugs found & fixed during verification
@@ -697,7 +715,7 @@
 2. **Verify-script bug:** rate-limit cleanup/reset used `{ key: ... }` but `src/lib/rate-limiter.ts` stores docs as `{ _id: "rl:<key>" }` — the deletes were silent no-ops. Fixed to target `_id: /^rl:wishlist-cart:/` and exact `_id: "rl:wishlist-cart:<id>"`.
 
 ### Ops notes
-- The payment-retry suite initially showed 4 gateway 502 failures — the documented stale-dev-server network issue (connect-timeouts to `sandbox.zarinpal.com` after long sessions), unrelated to Session 38. Force-killed the dev server by PID and booted fresh («Ready in 502ms») → payment-retry 13/13.
+- The payment-retry suite initially showed 4 gateway 502 failures — the documented stale-dev-server network issue (connect-timeouts to `sandbox.zarinpal.com` after long sessions), unrelated to Session 38. Force-killed the dev server by PID and booted fresh («Ready in 502ms») → payment-retry 14/14.
 
 ---
 
@@ -723,7 +741,7 @@
 
 ### Verification
 - **Created** `scripts/verify-supplier-replies.js` — **21 tests against the real HTTP API**: unauth 401, customer 403, admin 403, fresh queue empty, create + admin-approve via real API, reply → 200 + saved, **double-reply blocked 400 (atomic claim)**, pending/rejected → 400, **cross-supplier 404**, customer reply 403, empty / >1000-char 400, **HTML/script sanitized in DB**, public GET includes reply, `review_replied` notification to the author, queue status filter + pagination shape
-- **21/21 PASS**; `npx tsc --noEmit` zero errors; regressions green: reviews 20/20, notifications 18/18, wishlist 14/14, refund 12/12, payouts 17/17, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15
+- **21/21 PASS**; `npx tsc --noEmit` zero errors; regressions green: reviews 20/20, notifications 18/18, wishlist 14/14, refund 12/12, payouts 17/17, payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15
 - Code-reviewer approved (no critical feedback); minor non-blocking notes: denormalized `Review.supplier` drift if a product is ever reassigned to another supplier (documented invariant covers creation-time; queue + reply-route use different scoping so the old supplier sees it but can't reply — acceptable today), rate limiter fires after the review-load + ownership queries (matches the established convention)
 
 ### Ops notes
@@ -762,7 +780,7 @@
 
 ### Verification
 - **Created** `scripts/verify-notifications.js` — **18 tests against the real HTTP API** (real NextAuth login, real routes, real MongoDB): unauth 401 ×3 (inbox/unread-count/read-all), fresh inbox empty, admin confirm → customer `order_confirmed` (link + key + unread), **dedupe** (pre-seeded key blocks duplicate, count stays 1), single read → `readAt` + idempotent repeat, read-all → unread 0 + idempotent, **cross-user isolation** (other customer / supplier → 404), pagination + category + unreadOnly filters, real checkout → supplier in-app `new_order` (no telegram chat id needed — in-app is source of truth), supplier confirm → supplier `order_confirmed`, admin refund → `order_refunded` + stock restored once, payment NOK → `payment_cancelled` + stock restored once
-- **18/18 PASS**; `npx tsc --noEmit` zero errors; regressions green: wishlist 14/14, reviews 20/20, payouts 17/17, refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15
+- **18/18 PASS**; `npx tsc --noEmit` zero errors; regressions green: wishlist 14/14, reviews 20/20, payouts 17/17, refund 12/12, payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15
 
 ### Code-review follow-ups (applied)
 1. **Removed** the unused exported `orderNotificationKey()` helper from `src/lib/notifications.ts` (callers already inline the key strings).
@@ -806,7 +824,7 @@
 
 ### Verification
 - **Created** `scripts/verify-wishlist.js` — **14 tests against the real HTTP API** (real NextAuth login, real routes, real MongoDB): unauth 401, supplier 403, add → 201 + `added:true` + in ids, **duplicate add → 200 `{added:false}` + DB count stays 1**, invalid id 400 / nonexistent 404, remove → `removed:true` + gone / remove-not-present `removed:false`, **cross-user isolation** (B can't see/remove A's), pagination shape + populated fields, **deleted product → kept as `product:null` placeholder with productId**, **inactive product stays listed with `isActive:false`**, ids `{ ids, count }` matches DB
-- **14/14 PASS**; `npx tsc --noEmit` zero errors; regressions green: reviews **20/20**, payouts **17/17**, refund **12/12**, payment-retry **13/13**, variant-polish **13/13**, pagination **24/24**, variants **16/16**, upload-repro **15/15**
+- **14/14 PASS**; `npx tsc --noEmit` zero errors; regressions green: reviews **20/20**, payouts **17/17**, refund **12/12**, payment-retry **14/14**, variant-polish **14/14**, pagination **24/24**, variants **16/16**, upload-repro **15/15**
 - **Ops note:** dev server restarted after the new Wishlist model (stale Mongoose model would have failed on the new collection)
 
 ---
@@ -849,7 +867,7 @@
 
 ### Verification
 - **Created** `scripts/verify-reviews.js` — **20 tests against the real HTTP API** (real NextAuth login, real routes, real MongoDB): 401 unauth, supplier 403, paid-but-not-delivered 403, delivered order → 201 + pending + itemSnapshot, duplicate (same order-item) 409 + count stays 1, rating 0/6 → 400, empty/1001-char text → 400, HTML/script sanitized in DB, pending invisible publicly, admin approve → public + ratingSummary updated, approve-again 400 (atomic claim), reject-no-reason 400 / reject-with-reason → rejected + reason + not public, customer moderate 403, products `ratingSummary` (approved only), different product review works, **second delivered order for the same product → review again (per order-item)**, `/api/reviews/mine` eligible orders + my reviews
-- **20/20 PASS**; `npx tsc --noEmit` zero errors; regressions green: payouts **17/17**, refund **12/12**, payment-retry **13/13**, variant-polish **13/13**, pagination **24/24**, variants **16/16**, upload-repro **15/15**
+- **20/20 PASS**; `npx tsc --noEmit` zero errors; regressions green: payouts **17/17**, refund **12/12**, payment-retry **14/14**, variant-polish **14/14**, pagination **24/24**, variants **16/16**, upload-repro **15/15**
 - **Ops note:** dev server restarted after the new Review model (stale Mongoose model would have failed on the new collection)
 
 ---
@@ -885,7 +903,7 @@
 
 ### Verification
 - **Created** `scripts/verify-payouts.js` — **17 tests against the real HTTP API** (two independent suppliers): request reserves (balance unchanged), over-available 400, **concurrent over-reservation prevented (atomic $expr)**, customer 403, unauth 401, supplier cannot approve 403, admin lists pending, approve → balance debited + reserve released + approved + reviewedAt, re-approve 400, **concurrent double-approve → exactly one 200 + one 400 (no double debit)**, reject-without-reason 400, reject → rejected + reason + balance untouched, wallet GET totals (approved-only paidOut + availableBalance)
-- **17/17 PASS**; `npx tsc --noEmit` zero errors; regressions re-run green: refund **12/12**, payment-retry **13/13**, variant-polish **13/13**, pagination **24/24**, variants **16/16**, upload-repro **15/15**
+- **17/17 PASS**; `npx tsc --noEmit` zero errors; regressions re-run green: refund **12/12**, payment-retry **14/14**, variant-polish **14/14**, pagination **24/24**, variants **16/16**, upload-repro **15/15**
 - **Ops note:** dev server restarted after the Transaction/Supplier model changes (stale Mongoose model would strip the new fields)
 
 ---
@@ -919,7 +937,7 @@
 
 ### Verification
 - **Created** `scripts/verify-refund.js` — **12 tests against the real HTTP API** (real NextAuth login for admin/customer/supplier, real routes, real MongoDB): 401 unauthenticated, customer 403, supplier 403, admin refunds paid order → 200 + `payment.status=refunded` + metadata, stock restored once (8→10), pending order 400, refunded order cannot refund twice 400 + stock stays 10, variant refund restores variant stock + summary (red 8→10, blue 5, summary 15), simple product refund (6→10), refund event in statusHistory with reason
-- **12/12 PASS**; `npx tsc --noEmit` zero errors; regressions re-run green: payment-retry **13/13**, variant-polish **13/13**, pagination **24/24**, variants **16/16**, upload-repro **15/15**
+- **12/12 PASS**; `npx tsc --noEmit` zero errors; regressions re-run green: payment-retry **14/14**, variant-polish **14/14**, pagination **24/24**, variants **16/16**, upload-repro **15/15**
 - **Ops note:** dev server restarted after the Order-model change (stale Mongoose model would have stripped the new `refund` field in `findOneAndUpdate`)
 
 ---
@@ -946,7 +964,7 @@
 
 ### Verification
 - **Created** `scripts/verify-variant-polish.js` — **13 tests against the real HTTP API**: variant order snapshot (variantLabel + SKU + image), old-order compat, quick-edit own variant → 200 + summary synced (13→33), cross-supplier 404, invalid variant 400, negative stock 400, **concurrent quick-edits → exactly one 200 + one 409 (stockVersion)**, simple-product quick-edit rejected 400, simple-product checkout still works
-- **13/13 PASS**; `npx tsc --noEmit` zero errors; regressions re-run green: payment-retry **13/13**, pagination **24/24**, variants **16/16**, upload-repro **15/15**
+- **14/14 PASS**; `npx tsc --noEmit` zero errors; regressions re-run green: payment-retry **14/14**, pagination **24/24**, variants **16/16**, upload-repro **15/15**
 
 ### Bugs found & fixed during Session 31
 - **Fixture `_id` bug (test):** `[mongoose.Schema.Types.Mixed]` variants don't auto-generate `_id` → `String(v._id)` = `"undefined"` broke `isValidObjectId`. Fixed by setting explicit `_id` in fixtures.

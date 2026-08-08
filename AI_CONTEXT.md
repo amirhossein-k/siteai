@@ -74,6 +74,7 @@ A Persian (RTL) e-commerce platform built with Next.js 16 App Router. Supports t
 ### Roles
 - **customer:** Browse products, manage cart, checkout, view orders, edit profile
 - **supplier:** Dashboard, products (own), orders (own), wallet, Telegram settings
+- **admin/suppliers (Session 66):** dedicated supplier-management page — create / promote customer / deactivate+reactivate (syncs Supplier.isActive + revokes sessions via tokenVersion) / payouts link; reuses the existing `/api/admin/users` flows (no duplicate supplier API); `GET /api/admin/suppliers?all=true` = management shape
 - **admin:** Dashboard, all products, all orders, all users, categories, brands, tags, settings
 
 ### Seed Credentials

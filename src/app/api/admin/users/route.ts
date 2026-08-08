@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/dbConnect";
 import {
   requireRoleOrError,
   serverError,
+  invalidateTokenVersionCache,
 } from "@/lib/auth-utils";
 import User from "@/models/User";
 import Supplier from "@/models/Supplier";
@@ -212,8 +213,33 @@ export async function PATCH(req: NextRequest) {
           );
         }
 
+        const wasActive = user.isActive;
         user.isActive = !user.isActive;
+
+        // Session 66 — deactivating a SUPPLIER must also flip the linked
+        // Supplier document so the storefront's public active-supplier
+        // surfaces (/api/suppliers, /api/suppliers/[id], sitemap) hide them.
+        // (Reactivating restores both.) The User.isActive flag alone did NOT
+        // hide the storefront — only Supplier.isActive drives those queries.
+        if (user.supplier) {
+          await Supplier.findByIdAndUpdate(user.supplier, {
+            $set: { isActive: user.isActive },
+          });
+        }
+
+        // Session 66 — DEACTIVATION revokes every existing session
+        // immediately (tokenVersion bump + in-process cache eviction), so a
+        // deactivated user cannot keep using a live JWT. Reactivation needs
+        // no bump — the sessions were already revoked at deactivation time
+        // and the user must sign in again (fresh token).
+        if (wasActive && !user.isActive) {
+          user.tokenVersion = (user.tokenVersion ?? 0) + 1;
+        }
         await user.save();
+
+        if (wasActive && !user.isActive) {
+          invalidateTokenVersionCache(user._id.toString());
+        }
 
         return NextResponse.json({
           message: user.isActive
@@ -239,6 +265,13 @@ export async function PATCH(req: NextRequest) {
             { status: 404 }
           );
         }
+
+        // Session 66 — ANY role change revokes the user's existing sessions
+        // immediately (tokenVersion bump + cache eviction). The old JWT
+        // carries the stale role claim; forcing re-login guarantees the
+        // middleware + every API route see the NEW role. This also closes the
+        // gap where a promoted customer's old customer-role session lingered.
+        user.tokenVersion = (user.tokenVersion ?? 0) + 1;
 
         // If role is changing TO supplier, ensure a Supplier document exists
         if (value === "supplier") {
@@ -271,6 +304,7 @@ export async function PATCH(req: NextRequest) {
 
         user.role = value as UserRole;
         await user.save();
+        invalidateTokenVersionCache(user._id.toString());
 
         // Re-fetch without passwordHash for the response
         const updatedUser = await User.findById(id)

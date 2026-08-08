@@ -2,6 +2,28 @@
 
 ---
 
+## ✅ Session 66 — Supplier Onboarding v1 (Admin Supplier Management + Deactivation Enforcement)
+
+### Scope + invariants
+- [x] Approved audit design frozen — dedicated `/admin/suppliers` page; **zero duplicate supplier-creation API** (reuses existing `POST`/`PATCH /api/admin/users`); **no public registration / application queue** (out of scope); zero changes to `auth.js`/OTP/password login/middleware/Supplier ownership/payout logic
+
+### Admin Supplier Management
+- [x] `src/app/api/admin/suppliers/route.ts` — additive `?all=true` management branch (wallet + populated user + isActive); default no-param response (active-only dropdown) unchanged
+- [x] `src/app/api/admin/users/route.ts` — `toggle-active` on a supplier now flips linked `Supplier.isActive` + bumps `tokenVersion` on deactivation (cache evicted → sessions revoked immediately); **any** `change-role` bumps `tokenVersion` + evicts cache
+- [x] `src/types/index.ts` — `AdminSupplier` type; `src/hooks/use-admin-suppliers.ts` — `useAdminSuppliers` / `useToggleSupplierActive` / `usePromoteToSupplier` (mutations wrap the existing users PATCH)
+- [x] `src/components/admin/create-user-modal.tsx` (extracted shared modal) — users + suppliers pages reuse it
+- [x] `src/app/admin/suppliers/page.tsx` (new) — list / create / promote / deactivate / reactivate / status / payouts link
+- [x] `src/components/layout/admin/admin-sidebar.tsx` — «فروشندگان» nav item
+
+### Tests
+- [x] `scripts/verify-suppliers-onboarding.js` — **14/14 real-API** (unauth 401, customer 403, admin create + auto-provisioned Supplier doc + back-link + defaults, management-shape GET, dropdown-shape regression guard, customer→supplier promotion + old-session revocation, promoted-supplier login + panel, deactivation flags, public hiding (list + detail 404), deactivation session revocation, reactivation + public visibility restored)
+- [x] `tests/e2e/admin-suppliers.spec.ts` (Journey 15, desktop) — 2 tests (UI create + row appears + API confirms; UI deactivate → public hidden → reactivate → public visible)
+- [x] Wired `verify-suppliers-onboarding` into `run-regression.js` after `verify-suppliers` (**37 suites**)
+
+### Verification
+- [x] `npx tsc --noEmit` zero errors; `npm run check` exit 0 (same 4 pre-existing warnings); Vitest **211/211** (unchanged); Playwright **50/50 PASS** (chromium 38 incl. Journey 15 + mobile 12); `verify-suppliers-onboarding` **14/14**; full regression **37/37 PASS**
+- [x] No model/schema/index changes → no dev-server restart strictly required (one was performed to load the new API branches)
+
 ## ✅ Session 64 — Session Security (tokenVersion Enforcement + Password Change + Logout All + Admin Revoke)
 
 ### Scope + invariants
@@ -324,7 +346,7 @@
 - [x] `use-catalog-filters.ts` pre-existing lint debt fixed (render-phase adjustment + justified block-disable for the intentional URL-seed effect)
 
 ### Scripts + verification
-- [x] `scripts/verify-best-sellers.js` — **13/13 PASS** (ranking + tie-break, leak scans ×2, refund reversal simple + variant, double-refund 400, legacy floor, pending never counts, admin-cancel paid/pending, cash checkout never increments, CMS block)
+- [x] `scripts/verify-best-sellers.js` — **14/14 PASS** (ranking + tie-break, leak scans ×2, refund reversal simple + variant, double-refund 400, legacy floor, pending never counts, admin-cancel paid/pending, cash checkout never increments, CMS block)
 - [x] `scripts/backfill-sold-count.js` — OPTIONAL re-runnable backfill (paid + non-cancelled → `$set`); NOT in the regression runner
 - [x] `scripts/run-regression.js` — 32 suites; full regression **32/32 PASS, 0 skipped**; tsc zero errors; lint clean; production build passes; code review approved
 - [x] Known/accepted: payment-verify increment not directly HTTP-testable (sandbox verify needs the interactive page) — covered by verify-payment-retry's claim + reversal-math tests; crash-window recoverable via backfill; **variant-level sales = future scope**
@@ -474,7 +496,7 @@
 - [x] Created `scripts/verify-analytics.js` — 16 tests against the real HTTP API with a **baseline→seed→delta** design (robust to pre-existing shared-DB data)
 - [x] **16/16 PASS** (401/403/200, invalid range 400, read-only guarantee, time-series deltas incl. cancelled exclusion + 60-day invisibility, top products/categories, coupon deltas, supplier deltas)
 - [x] `npx tsc --noEmit` zero errors; full regression green across all 16 suites (sequential runs)
-- [x] Code-reviewer approved (4 rounds). Bugs fixed: unbounded coupon metrics (top-5 cap), **critical Promise.all/destructure misalignment** (500s; rewritten with exactly 13/13 bindings), test-fixture fixes (users before login, item name = product name, delta assertions), unused `Badge` import removed
+- [x] Code-reviewer approved (4 rounds). Bugs fixed: unbounded coupon metrics (top-5 cap), **critical Promise.all/destructure misalignment** (500s; rewritten with exactly 14/14 bindings), test-fixture fixes (users before login, item name = product name, delta assertions), unused `Badge` import removed
 - [x] No model changes, no business-logic files modified, no dev-server restart needed
 
 ---
@@ -493,7 +515,7 @@
 
 ### Verification
 - [x] `scripts/verify-sse.js` — **11/11 PASS** (401, connect + `:connected`, live delivery after real notification creation, customer isolation, supplier isolation, disconnect/reconnect, heartbeat).
-- [x] `npx tsc --noEmit` zero errors; regressions green (notifications 18/18, supplier-replies 21/21, coupons 27/27, wishlist-cart 18/18, payouts 17/17, reviews 20/20, wishlist 14/14, refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15, variants-e2e 32/32, upload-formats 9/9, concurrency 10/10).
+- [x] `npx tsc --noEmit` zero errors; regressions green (notifications 18/18, supplier-replies 21/21, coupons 27/27, wishlist-cart 18/18, payouts 17/17, reviews 20/20, wishlist 14/14, refund 12/12, payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15, variants-e2e 32/32, upload-formats 9/9, concurrency 10/10).
 - [x] Code-reviewer approved (3 rounds); follow-ups applied (unified cleanup, retry cap, onopen reset).
 - [x] No checkout/payment/inventory/coupon/wishlist/order files modified. No model changes → no dev-server restart needed.
 
@@ -515,7 +537,7 @@
 
 ### Verification
 - [x] Created `scripts/verify-wishlist-cart.js` — 18 tests against the real HTTP API + real zustand cart store
-- [x] **18/18 PASS**; `npx tsc --noEmit` zero errors; regressions green (wishlist 14/14, reviews 20/20, notifications 18/18, supplier-replies 21/21, refund 12/12, payouts 17/17, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15)
+- [x] **18/18 PASS**; `npx tsc --noEmit` zero errors; regressions green (wishlist 14/14, reviews 20/20, notifications 18/18, supplier-replies 21/21, refund 12/12, payouts 17/17, payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15)
 - [x] Bugs fixed: temp cart-store file inside project (require('zustand') resolution), rate-limit deletes target `_id: "rl:<key>"`; environmental Zarinpal 502s fixed by dev-server restart
 
 ---
@@ -543,7 +565,7 @@
 
 ### Verification
 - [x] Created `scripts/verify-supplier-replies.js` — 21 tests against the real HTTP API
-- [x] **21/21 PASS**; `npx tsc --noEmit` zero errors; regressions green (reviews 20/20, notifications 18/18, wishlist 14/14, refund 12/12, payouts 17/17, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15)
+- [x] **21/21 PASS**; `npx tsc --noEmit` zero errors; regressions green (reviews 20/20, notifications 18/18, wishlist 14/14, refund 12/12, payouts 17/17, payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15)
 - [x] Bugs fixed: `reply` typed-subdoc `default: null` (inline subdoc auto-populated `{author:null,text:"",at:null}` → atomic claim never matched); stale dev server holding the pre-fix schema (force-killed by PID on Windows and restarted)
 - [x] Code-reviewer approved (no critical feedback); minor non-blocking notes documented (Review.supplier drift on hypothetical product reassignment; rate-limiter placement after DB queries — matches convention)
 
@@ -575,7 +597,7 @@
 
 ### Verification
 - [x] Created `scripts/verify-reviews.js` — 20 tests against the real HTTP API
-- [x] **20/20 PASS**; `npx tsc --noEmit` zero errors; regressions green (payouts 17/17, refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15)
+- [x] **20/20 PASS**; `npx tsc --noEmit` zero errors; regressions green (payouts 17/17, refund 12/12, payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15)
 - [x] Bugs fixed: rate limit 5→20/15min (too aggressive), over-1000-char text now 400 (was truncating), TS errors (ratingSummary cast, AdminReview Omit, Product.brand), dead cache key, 404 vs 400 in moderate
 
 ---
@@ -608,7 +630,7 @@
 
 ### Verification
 - [x] Created `scripts/verify-notifications.js` — 18 tests against the real HTTP API
-- [x] **18/18 PASS**; `npx tsc --noEmit` zero errors; regressions green (wishlist 14/14, reviews 20/20, payouts 17/17, refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15)
+- [x] **18/18 PASS**; `npx tsc --noEmit` zero errors; regressions green (wishlist 14/14, reviews 20/20, payouts 17/17, refund 12/12, payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15)
 - [x] Code-review follow-ups applied: removed dead `orderNotificationKey()` helper; simplified refund `customerId` cast; hardened payment verify with `safeNotifyOrderEvent()`
 
 ---
@@ -633,7 +655,7 @@
 
 ### Verification
 - [x] Created `scripts/verify-wishlist.js` — 14 tests against the real HTTP API
-- [x] **14/14 PASS**; `npx tsc --noEmit` zero errors; regressions green (reviews 20/20, payouts 17/17, refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15)
+- [x] **14/14 PASS**; `npx tsc --noEmit` zero errors; regressions green (reviews 20/20, payouts 17/17, refund 12/12, payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15)
 - [x] Bugs fixed: lean+populate missing-ref bug (two-query fix), inactive-add test fixture, guest-gate on detail heart, rate-limit ordering, cast cleanup
 
 ---
@@ -960,7 +982,7 @@
 
 ### Verification
 - [x] Created `scripts/verify-variant-polish.js` — 13 tests against the real HTTP API
-- [x] **13/13 PASS**; `npx tsc --noEmit` zero errors; regressions green (payment-retry 13/13, pagination 24/24, variants 16/16, upload-repro 15/15)
+- [x] **14/14 PASS**; `npx tsc --noEmit` zero errors; regressions green (payment-retry 14/14, pagination 24/24, variants 16/16, upload-repro 15/15)
 - [x] Fixed: fixture `_id` (Mixed arrays), JSX fragment in products page, TEST 3 summary expectation (33)
 
 ---
@@ -990,7 +1012,7 @@
 
 ### Verification
 - [x] Created `scripts/verify-refund.js` — 12 tests against the real HTTP API (401, customer 403, supplier 403, paid refund → 200 + metadata + stock 8→10, pending 400, double-refund 400 + no double restore, variant restore + summary, simple product, history event)
-- [x] **12/12 PASS**; `npx tsc --noEmit` zero errors; regressions green (payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15)
+- [x] **12/12 PASS**; `npx tsc --noEmit` zero errors; regressions green (payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15)
 
 ---
 
@@ -1018,7 +1040,7 @@
 
 ### Verification
 - [x] Created `scripts/verify-payouts.js` — 17 tests against the real HTTP API
-- [x] **17/17 PASS**; `npx tsc --noEmit` zero errors; regressions green (refund 12/12, payment-retry 13/13, variant-polish 13/13, pagination 24/24, variants 16/16, upload-repro 15/15)
+- [x] **17/17 PASS**; `npx tsc --noEmit` zero errors; regressions green (refund 12/12, payment-retry 14/14, variant-polish 14/14, pagination 24/24, variants 16/16, upload-repro 15/15)
 
 ---
 
@@ -1182,7 +1204,7 @@
 
 ### Verification
 - [x] `npx tsc --noEmit` zero errors; `node --check` clean; code review approved (runner change)
-- [x] **Full sequential regression → 29/29 PASS** (previously intermittent 401-cascade failures); previously-affected suites confirmed standalone (upload-repro 15/15, upload-formats 9/9, variants-e2e 32/32, variant-polish 13/13, payment-retry 13/13)
+- [x] **Full sequential regression → 29/29 PASS** (previously intermittent 401-cascade failures); previously-affected suites confirmed standalone (upload-repro 15/15, upload-formats 9/9, variants-e2e 32/32, variant-polish 14/14, payment-retry 14/14)
 - [x] **Browser QA (390px):** drawer opens/closes/navigates, no console errors; **caught + fixed the render-prop RSC-boundary crash** («Functions are not valid as a child of Client Components») → plain children + store-driven close
 - [x] **Zero API/schema/model/index changes → no dev-server restart needed**
 
@@ -1205,7 +1227,7 @@
 - [x] `use-admin-homepage.ts` React Query hooks; `src/types/index.ts` homepage types
 
 ### Verification
-- [x] `scripts/verify-homepage-cms.js` — **13/13 PASS** (real API + real DB: authz, bootstrap seed, public composition + leak scan, unknown-component fail-safe, shared-renderer isolation, slug/component immutability, visibility/draft/soft-delete rules, publishedAt stamping, per-type CRUD + validation, malformed ObjectId → 400)
+- [x] `scripts/verify-homepage-cms.js` — **14/14 PASS** (real API + real DB: authz, bootstrap seed, public composition + leak scan, unknown-component fail-safe, shared-renderer isolation, slug/component immutability, visibility/draft/soft-delete rules, publishedAt stamping, per-type CRUD + validation, malformed ObjectId → 400)
 - [x] `npx tsc --noEmit` zero errors; build passes; lint clean on new files; code review approved (fixes: `isValidObjectId` guards → 400, E11000-race-tolerant seed, unused-code cleanup); regression runner → **30 suites** (`verify-homepage-cms` after `verify-coupons-marketing`)
 - [x] **Ops:** model changes ⇒ dev-server restart required — performed (fresh boot after system restart; `/api/homepage` confirmed live)
 

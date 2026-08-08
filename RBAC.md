@@ -132,6 +132,24 @@ The admin users page (`/admin/users`) provides:
 
 All endpoints require `admin` role and use the centralized `requireRole` helper.
 
+### Admin Supplier Management (Session 66)
+
+A dedicated **`/admin/suppliers`** page (sidebar «فروشندگان») is the home for Supplier onboarding:
+
+| Action | Mechanism |
+|--------|-----------|
+| Create Supplier | Reuses `POST /api/admin/users` (role=supplier) via the shared CreateUserModal — **no duplicate supplier-creation API** |
+| Promote customer → supplier | Reuses `PATCH /api/admin/users?id=X` (action `change-role`, value `supplier`) |
+| View status | `GET /api/admin/suppliers?all=true` — management shape (wallet figures + populated user) |
+| Deactivate/reactivate | Reuses `PATCH /api/admin/users?id=X` (action `toggle-active`) |
+| Settlement | Link to `/admin/payouts` |
+
+**Session 66 enforcement:**
+- **Deactivating a supplier** now also flips the linked `Supplier.isActive` (so the public storefront surfaces `/api/suppliers`, `/api/suppliers/[id]`, sitemap hide them) **and** bumps `tokenVersion` + evicts the cache → the supplier's existing sessions are revoked immediately.
+- **Any role change** bumps `tokenVersion` + evicts the cache → the user's old-role sessions die instantly (they must log in again to pick up the new role claim).
+- The default `GET /api/admin/suppliers` (no param) stays the active-only dropdown shape for product forms — unchanged.
+- **No public Supplier registration / application queue** — supplier accounts are still created by admins only (out of scope by design).
+
 ### Supplier Document Auto-Creation
 
 When a user's role is set to `supplier` (either via **POST** create or **PATCH** change-role), the API **automatically creates** a corresponding `Supplier` document with default values:
