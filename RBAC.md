@@ -150,6 +150,24 @@ A dedicated **`/admin/suppliers`** page (sidebar «فروشندگان») is the 
 - The default `GET /api/admin/suppliers` (no param) stays the active-only dropdown shape for product forms — unchanged.
 - **No public Supplier registration / application queue** — supplier accounts are still created by admins only (out of scope by design).
 
+### Public Supplier Application + Admin Approval Queue (Session 67)
+
+Customers can now **apply** to become suppliers through a public flow — but the **role flip is still admin-only**:
+
+| Actor | Can | Cannot |
+|-------|-----|--------|
+| Anonymous visitor | View the `/become-supplier` page (sign-in prompt) | Submit an application |
+| Customer (authenticated) | Submit an application (`POST /api/supplier-applications`), view own status (`GET /api/supplier-applications/me`) | **Never assign roles or touch the Supplier collection** — the applicant stays `role: customer` until an admin approves |
+| Supplier / Admin | — | Submit or decide applications (403 on the public submit route) |
+| Admin | Approve/reject via `GET + PATCH /api/admin/supplier-applications` (queue tab on `/admin/suppliers`) | — |
+
+**Security model (Session 67):**
+- **Self-role-assignment is impossible by construction** — the public submit route only creates a `pending` `SupplierApplication` row (with a unique partial index preventing a second open application, E11000 → 409); it never writes `User.role` or `Supplier`.
+- **Approve is atomic and admin-only** — a single `PATCH` provisions the Supplier doc (seeded **from the application**'s businessName/description via the shared `ensureSupplierForUser`), flips the role, **bumps `tokenVersion` + evicts the cache** (the applicant's old customer sessions are revoked immediately — they must re-login to obtain the supplier claim), records `decidedBy`/`decidedAt`, and notifies the applicant.
+- **Reject leaves the role untouched** — a rejected customer may re-apply (no open-application dedup conflict).
+- Rate limits: submit 2/user + 5/IP per 15min; decision 30/actor per 15min. All decision metadata (`adminNote`) is validated + capped.
+- Zero changes to `auth.js` / OTP / password login / middleware / the Session 66 admin flows / Supplier ownership rules.
+
 ### Supplier Document Auto-Creation
 
 When a user's role is set to `supplier` (either via **POST** create or **PATCH** change-role), the API **automatically creates** a corresponding `Supplier` document with default values:

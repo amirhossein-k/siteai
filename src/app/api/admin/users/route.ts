@@ -8,6 +8,7 @@ import {
 } from "@/lib/auth-utils";
 import User from "@/models/User";
 import Supplier from "@/models/Supplier";
+import { ensureSupplierForUser } from "@/lib/supplier-provision";
 import type { UserRole } from "@/types";
 import { sanitizePlainText } from "@/lib/sanitize";
 import { escapeRegex } from "@/lib/pagination";
@@ -274,32 +275,10 @@ export async function PATCH(req: NextRequest) {
         user.tokenVersion = (user.tokenVersion ?? 0) + 1;
 
         // If role is changing TO supplier, ensure a Supplier document exists
+        // (Session 67 — shared provisioning helper; behavior identical to the
+        // previous inline block: create-with-defaults or reactivate-existing).
         if (value === "supplier") {
-          if (!user.supplier) {
-            // No existing Supplier — create one with defaults
-            const supplier = await Supplier.create({
-              user: user._id,
-              businessName: user.name, // Default: use the user's name
-              contactPhone: user.phone, // Default: use the user's phone
-              bankAccount: {
-                cardNumber: "",
-                iban: "",
-                ownerName: "",
-              },
-              telegramChatId: "",
-              balance: 0,
-              isActive: true,
-            });
-
-            user.supplier = supplier._id;
-          }
-          // If a Supplier already exists (e.g., was a supplier before),
-          // just keep the existing link — reactivate if inactive
-          else {
-            await Supplier.findByIdAndUpdate(user.supplier, {
-              $set: { isActive: true },
-            });
-          }
+          await ensureSupplierForUser(user);
         }
 
         user.role = value as UserRole;

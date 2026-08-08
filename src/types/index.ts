@@ -630,6 +630,35 @@ export interface AdminUser {
 }
 
 // ============================================================
+// Supplier Application Types (Session 67)
+// ============================================================
+
+export type SupplierApplicationStatus = "pending" | "approved" | "rejected";
+
+/** The applicant's own application (GET /api/supplier-applications/me). */
+export interface SupplierApplication {
+  _id: string;
+  status: SupplierApplicationStatus;
+  businessName: string;
+  description?: string;
+  contactPhone?: string;
+  adminNote?: string;
+  decidedAt?: string | null;
+  createdAt: string;
+}
+
+/** Admin queue row (GET /api/admin/supplier-applications). */
+export interface AdminSupplierApplication extends SupplierApplication {
+  user: {
+    _id: string;
+    name: string;
+    phone: string;
+    isActive: boolean;
+    role: UserRole;
+  } | null;
+}
+
+// ============================================================
 // Supplier-specific Types
 // ============================================================
 

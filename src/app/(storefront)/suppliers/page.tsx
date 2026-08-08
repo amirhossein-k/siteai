@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Store, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,6 +37,22 @@ export default function SuppliersListingPage() {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Session 67 — become-a-supplier CTA */}
+      <div className="mb-8 flex flex-col items-center justify-between gap-3 rounded-xl border border-emerald-600/20 bg-emerald-50 p-4 sm:flex-row">
+        <div className="text-center sm:text-right">
+          <p className="font-medium">می‌خواهید فروشنده شوید؟</p>
+          <p className="text-sm text-muted-foreground">
+            درخواست خود را ثبت کنید تا توسط مدیریت بررسی شود.
+          </p>
+        </div>
+        <Link href="/become-supplier">
+          <Button variant="outline" className="gap-2 border-emerald-600/40 text-emerald-700">
+            <Store className="h-4 w-4" />
+            ثبت درخواست فروشندگی
+          </Button>
+        </Link>
       </div>
 
       {/* Grid */}

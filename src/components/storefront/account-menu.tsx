@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { User, ShoppingBag, Heart, Bell, LogOut } from "lucide-react";
+import { User, ShoppingBag, Heart, Bell, LogOut, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -78,6 +78,11 @@ export function AccountMenu() {
     // Wishlist is customer-only — hidden for admin/supplier sessions.
     ...(isCustomer
       ? [{ href: "/wishlist", label: "علاقه‌مندی‌ها", icon: Heart }]
+      : []),
+    // Session 67 — become-a-supplier entry (customer-only; suppliers/admins
+    // already have their own dashboards and never need the application page).
+    ...(isCustomer
+      ? [{ href: "/become-supplier", label: "فروشنده شوید", icon: Store }]
       : []),
     { href: "/notifications", label: "اعلان‌ها", icon: Bell },
   ];

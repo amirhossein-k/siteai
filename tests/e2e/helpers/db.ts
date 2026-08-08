@@ -148,6 +148,13 @@ export async function cleanupByPrefix(prefix: string): Promise<void> {
       db.collection("suppliers").deleteMany({ _id: { $in: supplierIds } })
     );
   }
+  // Session 67 — supplier applications of PREFIX'd users (applications carry
+  // no prefix on their own fields, so they are resolved through the user ref).
+  if (userIds.length > 0) {
+    deletes.push(
+      db.collection("supplierapplications").deleteMany({ user: { $in: userIds } })
+    );
+  }
   if (orderIds.length > 0) {
     deletes.push(
       db.collection("supplierorders").deleteMany({ order: { $in: orderIds } }),
@@ -192,7 +199,7 @@ export async function clearRateLimiterKeys(): Promise<void> {
   await db.collection<{ _id: string }>("ratelimits").deleteMany({
     _id: {
       $regex:
-        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify):",
+        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify|supplier-apply|supplier-application-decide):",
     },
   });
 }

@@ -2,6 +2,17 @@
 
 ## ✅ Completed Milestones
 
+### Public Supplier Application + Admin Approval Queue (Session 67)
+- [x] **`SupplierApplication` model** (additive) — `user` ref / `businessName` 2–80 / `description` ≤500 / `contactPhone` (defaults to user.phone) / `status` pending|approved|rejected / `adminNote` ≤500 / `decidedBy`+`decidedAt`; **unique partial index** `{user, status} where status=pending` (one open application per user, E11000 → 409; rejected may re-apply); queue index `{status, createdAt:-1}`; **zero changes to User/Supplier** — the applicant stays `role: customer` until approval
+- [x] **Public `POST /api/supplier-applications`** (customer-only, rate-limited 2/user + 5/IP per 15min) — validates, dedups pending (409), creates the row, notifies all admins (`supplier_application`); **never touches role or Supplier**. `GET /api/supplier-applications/me` — own latest status
+- [x] **Admin queue `GET + PATCH /api/admin/supplier-applications`** (admin-only, 30/actor/15min) — pending-first with populated applicant; **atomic approve/reject**: approve seeds the Supplier doc **from the application** (businessName/description), flips role, **bumps tokenVersion + evicts cache** (old customer sessions revoked instantly), sets decision metadata, notifies the applicant; reject leaves role untouched
+- [x] **`src/lib/supplier-provision.ts`** — single `ensureSupplierForUser()` implementation; Session 66 change-role refactored to use it (default semantics preserved); **no duplicate supplier-creation API**
+- [x] **Notification enums** — `supplier_application` / `supplier_approved` / `supplier_rejected` (category `system`) via the reused `notifyOrderEvent` facade (SSE + Telegram adapters); **model change ⇒ restart required** (done)
+- [x] **Public UI** — `/become-supplier` page (anonymous → sign-in prompt; customer → application form + status view; already-approved → note shown) + footer link + account-menu item + CTA on the `/suppliers` listing page
+- [x] **Admin UI** — «درخواستهای فروشندگی» tab on `/admin/suppliers` (`SupplierApplicationsPanel`: pending cards with approve/reject + note, decided history below — renders even when the queue is empty)
+- [x] **Out of scope preserved** — no anonymous applications (existing logged-in customer required), no public registration, admin-only approval, zero changes to auth/RBAC/OTP/password/ownership
+- [x] **Verified** — tsc 0 · check exit 0 · Vitest **226/226** (211 + 15 unit) · `verify-supplier-applications.js` **16/16 real-API** · Playwright **51/51** (chromium 39 incl. **Journey 16** + mobile 12) · full regression **38/38 PASS** (38 suites)
+
 ### Supplier Onboarding v1 — Admin Supplier Management + Deactivation Enforcement (Session 66)
 - [x] **Dedicated `/admin/suppliers` page** — the discoverable home for Supplier onboarding: management list (active + inactive, wallet + populated user), «ایجاد فروشنده جدید» (shared CreateUserModal, role defaults to supplier), «ارتقای کاربر به فروشنده» (searchable customer picker → change-role), per-row deactivate/reactivate, «تسویه» link to `/admin/payouts`; sidebar «فروشندگان»
 - [x] **Zero duplicate supplier API** — creation/promotion reuse the existing `POST`/`PATCH /api/admin/users` (auto Supplier doc provisioning preserved); `GET /api/admin/suppliers?all=true` is the only additive endpoint change (default dropdown shape untouched)

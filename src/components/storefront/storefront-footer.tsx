@@ -23,22 +23,26 @@ export function StorefrontFooter() {
               لینک‌های سریع
             </h4>
             <ul className="space-y-2">
-              {["صفحه اصلی", "محصولات", "سفارشات من", "درباره ما"].map((item) => (
-                <li key={item}>
-                  <Link
-                    href={
-                      item === "محصولات"
-                        ? "/products"
-                        : item === "سفارشات من"
-                        ? "/orders"
-                        : "/"
-                    }
+              {["صفحه اصلی", "محصولات", "سفارشات من", "فروشنده شوید", "درباره ما"].map(
+                (item) => (
+                  <li key={item}>
+                    <Link
+                      href={
+                        item === "محصولات"
+                          ? "/products"
+                          : item === "سفارشات من"
+                          ? "/orders"
+                          : item === "فروشنده شوید"
+                          ? "/become-supplier"
+                          : "/"
+                      }
                     className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                   >
                     {item}
                   </Link>
-                </li>
-              ))}
+                  </li>
+                )
+              )}
             </ul>
           </div>
           <div>

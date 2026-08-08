@@ -30,6 +30,7 @@ import "@/models/Wishlist";
 import "@/models/Coupon";
 import "@/models/CouponUsage";
 import "@/models/OtpCode";
+import "@/models/SupplierApplication";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 

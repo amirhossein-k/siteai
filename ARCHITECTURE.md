@@ -108,6 +108,13 @@ Telegram (fire-and-forget):
 | `/api/admin/users` | POST, PATCH | admin | Create admin/supplier (auto Supplier doc) · toggle-active / change-role / reset-password. **Session 66:** deactivation flips linked Supplier.isActive + bumps tokenVersion; role change bumps tokenVersion (sessions revoked immediately) |
 | `/api/admin/categories` | GET | admin, supplier | Simple list for dropdowns |
 | `/api/admin/suppliers` | GET | admin | Active suppliers list for dropdowns |
+| `/api/admin/supplier-applications` | GET, PATCH | admin | Public supplier-application queue (Session 67). GET: pending-first with populated applicant. PATCH: **atomic approve/reject** — approve seeds the Supplier doc from the application (businessName/description), flips the applicant's role to supplier, bumps tokenVersion + evicts the cache (old customer sessions revoked), sets decidedBy/decidedAt, notifies the applicant; reject leaves the role untouched. Only `pending` decidable (400); malformed ObjectId → 400, unknown → 404 |
+
+### Public Supplier Application Routes (Session 67)
+| Route | Methods | Auth | Description |
+|-------|---------|------|-------------|
+| `/api/supplier-applications` | POST | customer | Submit a supplier application. Rate-limited (2/user + 5/IP per 15min), validates businessName/description/contactPhone, pending-dedup 409 (unique partial index), notifies all admins. **Never touches role or the Supplier collection** — the applicant stays `role: customer` until an admin approves |
+| `/api/supplier-applications/me` | GET | customer | The applicant's latest application + status (drives the `/become-supplier` page state) |
 
 ### Supplier API Routes
 | Route | Methods | Auth | Description |

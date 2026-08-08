@@ -119,6 +119,24 @@ export const REVOKE_SESSION_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/** Supplier application submit: 2 per user per 15 minutes (Session 67). */
+export const SUPPLIER_APPLICATION_LIMIT: RateLimitConfig = {
+  max: 2,
+  windowMs: 15 * 60 * 1000,
+};
+
+/** Supplier application submit: 5 per IP per 15 minutes — spam guard (Session 67). */
+export const SUPPLIER_APPLICATION_IP_LIMIT: RateLimitConfig = {
+  max: 5,
+  windowMs: 15 * 60 * 1000,
+};
+
+/** Admin application decision: 30 per admin actor per 15 minutes (Session 67). */
+export const SUPPLIER_APPLICATION_DECISION_LIMIT: RateLimitConfig = {
+  max: 30,
+  windowMs: 15 * 60 * 1000,
+};
+
 // ============================================================
 // Core
 // ============================================================

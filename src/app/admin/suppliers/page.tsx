@@ -25,8 +25,10 @@ import {
   X,
   Loader2,
   Phone,
+  Inbox,
 } from "lucide-react";
 import { CreateUserModal } from "@/components/admin/create-user-modal";
+import { SupplierApplicationsPanel } from "@/components/admin/supplier-applications-panel";
 import {
   useAdminSuppliers,
   useToggleSupplierActive,
@@ -34,6 +36,7 @@ import {
   useInvalidateAdminSuppliers,
 } from "@/hooks/use-admin-suppliers";
 import { useAdminUsers, useCreateAdminUser } from "@/hooks/use-admin-users";
+import { useAdminSupplierApplications } from "@/hooks/use-admin-supplier-applications";
 import { formatPrice } from "@/lib/utils";
 import { showToast } from "@/components/ui/toast";
 import type { AdminSupplier, UserRole } from "@/types";
@@ -56,6 +59,7 @@ import type { AdminSupplier, UserRole } from "@/types";
  * out of scope (admin-only onboarding by design, see RBAC.md).
  */
 export default function AdminSuppliersPage() {
+  const [tab, setTab] = useState<"suppliers" | "applications">("suppliers");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -66,6 +70,12 @@ export default function AdminSuppliersPage() {
     isError,
     refetch,
   } = useAdminSuppliers();
+  // Pending-application count for the queue tab badge (same query key as the
+  // panel — React Query dedupes).
+  const { data: applications } = useAdminSupplierApplications();
+  const pendingCount = (applications || []).filter(
+    (a) => a.status === "pending"
+  ).length;
   const toggleActive = useToggleSupplierActive();
   const promote = usePromoteToSupplier();
   const createUser = useCreateAdminUser();
@@ -109,17 +119,64 @@ export default function AdminSuppliersPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => setShowPromoteModal(true)} className="gap-2">
-            <UserCog className="h-4 w-4" />
-            ارتقای کاربر به فروشنده
-          </Button>
-          <Button onClick={() => setShowCreateModal(true)} className="gap-2">
-            <UserPlus className="h-4 w-4" />
-            ایجاد فروشنده جدید
-          </Button>
+          {tab === "suppliers" && (
+            <>
+              <Button variant="outline" onClick={() => setShowPromoteModal(true)} className="gap-2">
+                <UserCog className="h-4 w-4" />
+                ارتقای کاربر به فروشنده
+              </Button>
+              <Button onClick={() => setShowCreateModal(true)} className="gap-2">
+                <UserPlus className="h-4 w-4" />
+                ایجاد فروشنده جدید
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Session 67 — tabs: suppliers list / approval queue */}
+      <div className="flex gap-2 border-b">
+        <button
+          type="button"
+          onClick={() => setTab("suppliers")}
+          className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "suppliers"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          فروشندگان
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("applications")}
+          className={`-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "applications"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Inbox className="h-4 w-4" />
+          درخواست‌های فروشندگی
+          {pendingCount > 0 && (
+            <span className="rounded-full bg-amber-700 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+              {pendingCount.toLocaleString("fa-IR")}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {tab === "applications" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">صف بررسی درخواست‌ها</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SupplierApplicationsPanel />
+          </CardContent>
+        </Card>
+      ) : (
+      <>
       {/* Search */}
       <Card>
         <CardContent className="p-4">
@@ -295,6 +352,8 @@ export default function AdminSuppliersPage() {
           )}
         </CardContent>
       </Card>
+      </>
+      )}
 
       {/* Create supplier modal */}
       {showCreateModal && (

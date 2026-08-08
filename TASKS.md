@@ -2,6 +2,42 @@
 
 ---
 
+## ✅ Session 67 — Public Supplier Application + Admin Approval Queue
+
+### Scope + invariants
+- [x] Approved design frozen — additive public application flow; **zero changes to `User`/`Supplier` models, `auth.js`, OTP/password login, middleware, RBAC role logic, Supplier ownership rules**; no duplicate supplier-creation API; **no anonymous applications** (existing logged-in customer required); no public registration
+
+### Data model + libs
+- [x] `src/models/SupplierApplication.js` (new) — user ref / businessName 2–80 / description ≤500 (capped to Supplier.description) / contactPhone (defaults to user.phone) / status pending|approved|rejected / adminNote ≤500 / decidedBy / decidedAt; **unique partial index** `{user, status} where status=pending` (E11000 → 409 «درخواست قبلی در انتظار بررسی است»; rejected may re-apply); queue index `{status, createdAt:-1}`
+- [x] `src/lib/supplier-provision.ts` (new) — single `ensureSupplierForUser(user, {businessName, description})`; `PATCH /api/admin/users` change-role refactored to use it (default semantics preserved byte-for-byte)
+- [x] `src/lib/supplier-application.ts` (new) — pure validation / transition / decision-payload helpers
+- [x] `src/lib/rate-limiter.ts` — `SUPPLIER_APPLICATION_LIMIT` (2/user/15min) + `SUPPLIER_APPLICATION_IP_LIMIT` (5/IP/15min) + `SUPPLIER_APPLICATION_DECISION_LIMIT` (30/actor/15min)
+- [x] `src/models/Notification.js` — type enum gains `supplier_application` / `supplier_approved` / `supplier_rejected` (category `system`); **model change ⇒ dev-server restart** (done)
+
+### APIs
+- [x] `POST /api/supplier-applications` (customer-only, 403 others) — rate-limited, validates, pending-dedup 409, creates row, notifies all admins; **never touches role/Supplier**
+- [x] `GET /api/supplier-applications/me` (customer-only) — own latest application + status
+- [x] `GET + PATCH /api/admin/supplier-applications` (admin-only, decision rate-limited) — queue GET (pending-first, populated applicant); atomic approve/reject: approve seeds Supplier **from the application** + flips role + **bumps tokenVersion + evicts cache** (old sessions 401) + sets decidedBy/decidedAt + notifies applicant; reject leaves role untouched; only pending decidable (400); malformed ObjectId → 400, unknown → 404
+
+### UI
+- [x] `src/app/(storefront)/become-supplier/page.tsx` (new) — anonymous → sign-in prompt; customer → «فروشنده شوید» form (businessName + description) → «در انتظار بررسی» state; approved/rejected → status + admin note; supplier/admin roles → notice
+- [x] Entry points — `storefront-footer.tsx` link, `account-menu.tsx` item, `/suppliers` page CTA
+- [x] `src/components/admin/supplier-applications-panel.tsx` (new) + «درخواستهای فروشندگی» tab on `/admin/suppliers` — pending cards (approve/reject + note), decided history (renders even when queue empty — early-return bug caught by Journey 16 and fixed)
+
+### Types/hooks
+- [x] `src/types/index.ts` — `SupplierApplication` / `AdminSupplierApplication` types
+- [x] `src/hooks/use-supplier-application.ts` + `src/hooks/use-admin-supplier-applications.ts`
+
+### Tests
+- [x] `tests/unit/supplier-application.test.ts` — **15 hermetic tests** (validation/transition/dedup mapping)
+- [x] `scripts/verify-supplier-applications.js` — **16/16 real-API** (401/403, validation, dedup 409, submit keeps customer role, `me`, queue GET, approve → seeded-from-application Supplier + role flip + **old session 401** + notify, non-pending → 400, reject → role untouched, re-apply, decided history, admin authz)
+- [x] `tests/e2e/supplier-application.spec.ts` (Journey 16, desktop) — customer applies via UI → admin approves via queue tab → old session revoked → management list has the provisioned supplier → fresh login reaches supplier panel; per-run applicant (never the shared seeded customer); teardown cleanup in `db.ts`
+- [x] Wired `verify-supplier-applications` into `run-regression.js` (**38 suites**) + `regression.yml`
+
+### Verification
+- [x] `npx tsc --noEmit` zero errors; `npm run check` exit 0; Vitest **226/226** (211 + 15); Playwright **51/51 PASS** (chromium 39 incl. Journeys 15 + 16 + mobile 12); `verify-supplier-applications` **16/16**; full regression **38/38 PASS**
+- [x] Model change (SupplierApplication + Notification enum) ⇒ dev-server restart performed
+
 ## ✅ Session 66 — Supplier Onboarding v1 (Admin Supplier Management + Deactivation Enforcement)
 
 ### Scope + invariants

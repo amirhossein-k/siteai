@@ -75,6 +75,7 @@ A Persian (RTL) e-commerce platform built with Next.js 16 App Router. Supports t
 - **customer:** Browse products, manage cart, checkout, view orders, edit profile
 - **supplier:** Dashboard, products (own), orders (own), wallet, Telegram settings
 - **admin/suppliers (Session 66):** dedicated supplier-management page — create / promote customer / deactivate+reactivate (syncs Supplier.isActive + revokes sessions via tokenVersion) / payouts link; reuses the existing `/api/admin/users` flows (no duplicate supplier API); `GET /api/admin/suppliers?all=true` = management shape
+- **supplier application (Session 67):** customers apply via the public `/become-supplier` page (`POST /api/supplier-applications`, customer-only, rate-limited, pending-dedup 409) and **stay `role: customer`** until an admin approves — the submit route never touches role/Supplier (self-role-assignment impossible). Admin queue `GET + PATCH /api/admin/supplier-applications` (approve: seeds Supplier from the application + flips role + bumps tokenVersion → old sessions revoked + notifies; reject: role untouched). `GET /api/supplier-applications/me` = own status
 - **admin:** Dashboard, all products, all orders, all users, categories, brands, tags, settings
 
 ### Seed Credentials
@@ -83,7 +84,7 @@ A Persian (RTL) e-commerce platform built with Next.js 16 App Router. Supports t
 
 ---
 
-## 🗄️ Database Models (11 total)
+## 🗄️ Database Models (12 total)
 
 | Model | Key Fields | Notes |
 |-------|-----------|-------|
@@ -95,6 +96,7 @@ A Persian (RTL) e-commerce platform built with Next.js 16 App Router. Supports t
 | **Brand** | name, slug, description, logo, website, isActive | Flat list |
 | **Tag** | name, slug, isActive | Flat list, used for multi-tag on products |
 | **Supplier** | user (ref), businessName, contactPhone, bankAccount, balance, telegramChatId, isActive | |
+| **SupplierApplication** | user (ref), businessName, description, contactPhone, status (pending/approved/rejected), adminNote, decidedBy (ref), decidedAt | Unique partial index `{user,status} where status=pending` — one open application per user (E11000 → 409); rejected may re-apply (Session 67) |
 | **Notification** | recipient (ref), type (new_order/confirmed/shipped/delivered/rejected), message, relatedOrder (ref), isRead, sentToTelegram | |
 | **Transaction** | supplier (ref), type (sale/payout/adjustment), amount, relatedOrder (ref), note, balanceAfter | Wallet ledger |
 | **File** | url, key, name, size, mimeType, category (image/video/document), uploadedBy (ref), product (ref) | Uploaded file metadata |
