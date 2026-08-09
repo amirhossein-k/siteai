@@ -62,7 +62,7 @@ export function ProductCard({ product, className }: ProductCardProps) {
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-xl border bg-card transition-all duration-300 hover:-translate-y-1 hover:shadow-lg",
+        "group relative overflow-hidden rounded-xl border bg-card transition-all duration-300 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lg",
         className
       )}
     >
@@ -120,12 +120,13 @@ export function ProductCard({ product, className }: ProductCardProps) {
           </div>
         )}
 
-        {/* Wishlist heart (Session 35) */}
+        {/* Wishlist heart (Session 35) — z-10 lifts it above the product
+            stretched-link overlay so it stays an independent action. */}
         <button
           type="button"
           onClick={handleWishlist}
           aria-label={inWishlist ? "حذف از علاقه‌مندی‌ها" : "افزودن به علاقه‌مندی‌ها"}
-          className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-background/85 text-muted-foreground shadow-sm backdrop-blur-sm transition-all hover:scale-110 hover:bg-background hover:text-rose-500"
+          className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-background/85 text-muted-foreground shadow-sm backdrop-blur-sm transition-all hover:scale-110 hover:bg-background hover:text-rose-500"
         >
           <Heart
             className={cn(
@@ -141,14 +142,24 @@ export function ProductCard({ product, className }: ProductCardProps) {
         {/* Category */}
         <p className="mb-1 text-xs text-muted-foreground">{categoryName}</p>
 
-        {/* Name */}
-        <Link href={`/products/${product.slug || product._id}`}>
+        {/* Name — the STRETCHED product link (Session 68.3 UX): its transparent
+            ::after overlay extends over the whole card (image, title, price),
+            so clicking any of them navigates to /products/[slug]. The supplier
+            link + wishlist + add-to-cart are stacked ABOVE the overlay with
+            z-10, so they remain independent actions — no nested anchors, one
+            keyboard tab stop for the product destination. */}
+        <Link
+          href={`/products/${product.slug || product._id}`}
+          className="after:absolute after:inset-0 after:content-['']"
+        >
           <h3 className="mb-2 text-sm font-semibold leading-tight transition-colors hover:text-primary line-clamp-2">
             {product.name}
           </h3>
         </Link>
 
-        {/* Price + supplier link (Session 42) */}
+        {/* Price + supplier link (Session 42) — the price sits under the
+            stretched overlay (navigates); the supplier link is an independent
+            action stacked above it. */}
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
             <span className="text-lg font-bold">
@@ -159,7 +170,7 @@ export function ProductCard({ product, className }: ProductCardProps) {
             <Link
               href={`/suppliers/${supplierInfo._id}`}
               onClick={(e) => e.stopPropagation()}
-              className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-primary"
+              className="relative z-10 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-primary"
               title={supplierInfo.businessName}
             >
               <Store className="h-3 w-3 flex-shrink-0" />
@@ -170,9 +181,10 @@ export function ProductCard({ product, className }: ProductCardProps) {
           )}
         </div>
 
-        {/* Add to cart button */}
+        {/* Add to cart button — z-10 lifts it above the stretched product
+            overlay so adding to cart never triggers product navigation. */}
         <Button
-          className="w-full gap-2 text-xs"
+          className="relative z-10 w-full gap-2 text-xs"
           size="sm"
           disabled={product.stock === 0}
           onClick={() => {
