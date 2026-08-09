@@ -659,6 +659,82 @@ export interface AdminSupplierApplication extends SupplierApplication {
 }
 
 // ============================================================
+// Customer Support Conversations (Session 68)
+// ============================================================
+
+export type ConversationStatus = "open" | "pending" | "resolved" | "closed";
+export type ConversationCategory =
+  | "general"
+  | "order"
+  | "delivery"
+  | "product"
+  | "refund";
+export type ConversationSenderRole = "customer" | "admin" | "supplier";
+
+/** One embedded message in a conversation thread. */
+export interface ConversationMessage {
+  _id: string;
+  sender: { _id: string; name: string } | string;
+  /** Server-derived role of the author — never trusted from the client. */
+  senderRole: ConversationSenderRole;
+  text: string;
+  createdAt: string;
+}
+
+/**
+ * A customer-support conversation (one per customer × SupplierOrder).
+ * Shared list shape across the customer/admin/supplier surfaces; `messages`
+ * is present only on detail responses.
+ *
+ * NOTE (Session 68 hardening): `customer`/`order`/`supplier` are populated
+ * relations — Mongoose populate() sets them to `null` at RUNTIME when the
+ * referenced document was deleted (e.g. a conversation whose supplier was
+ * removed). Consumers must use null-safe access (see
+ * src/lib/conversation-relations.ts), never the `typeof x === "object"`
+ * idiom (`typeof null === "object"`).
+ */
+export interface CustomerConversation {
+  _id: string;
+  customer: { _id: string; name: string; phone: string } | string | null;
+  order: { _id: string; totalAmount?: number; status?: string } | string | null;
+  supplierOrder: string;
+  supplier: { _id: string; businessName: string } | string | null;
+  product?: { _id: string; name: string } | string | null;
+  category: ConversationCategory;
+  subject: string;
+  status: ConversationStatus;
+  /** Staff replied since the customer last read (flipped on customer detail GET). */
+  customerUnread: boolean;
+  /** Customer replied since staff last read (staff = admin ∪ the conversation's supplier). */
+  staffUnread: boolean;
+  lastMessageAt: string | null;
+  lastMessagePreview: string;
+  lastMessageFrom: ConversationSenderRole | "";
+  resolvedBy?: string | null;
+  resolvedAt?: string | null;
+  closedBy?: string | null;
+  closedAt?: string | null;
+  messages?: ConversationMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** GET /api/conversations/eligible-orders — the customer's purchased orders. */
+export interface EligibleConversationOrder {
+  orderId: string;
+  orderShortId: string;
+  totalAmount: number;
+  createdAt: string;
+  suppliers: Array<{
+    supplierOrderId: string;
+    supplierId: string;
+    businessName: string;
+    amountOwed: number;
+    status: string;
+  }>;
+}
+
+// ============================================================
 // Supplier-specific Types
 // ============================================================
 
@@ -826,7 +902,12 @@ export interface AdminPayout {
 // Notifications (Session 36)
 // ============================================================
 
-export type NotificationCategory = "order" | "payment" | "payout" | "system";
+export type NotificationCategory =
+  | "order"
+  | "payment"
+  | "payout"
+  | "system"
+  | "support";
 
 /** A single inbox item as returned by GET /api/notifications */
 export interface NotificationItem {
