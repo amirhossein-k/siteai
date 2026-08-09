@@ -78,6 +78,10 @@ export async function cleanupByPrefix(prefix: string): Promise<void> {
   // with the prefix (we seed them that way) → anchored regexes for those.
   const re = new RegExp(prefix);
   const anchoredRe = new RegExp(`^${prefix}`);
+  // Session 69 — the admin product FORM validates slugs with
+  // /^[a-z0-9]+(?:-[a-z0-9]+)*$/ (underscores rejected), so UI-created
+  // products use a dashed variant of the run prefix. Clean both forms.
+  const anchoredSlugRe = new RegExp(`^${prefix.replace(/_/g, "-")}`);
   // Coupon codes are uppercased+trimmed by the server (normalizeCouponCode),
   // so `E2E_...` must also match the lowercase run prefix `e2e_...`.
   const couponRe = new RegExp(`^${prefix}`, "i");
@@ -100,7 +104,11 @@ export async function cleanupByPrefix(prefix: string): Promise<void> {
       .project({ _id: 1 })
       .toArray(),
     db.collection("coupons").find({ code: { $regex: couponRe } }).project({ _id: 1 }).toArray(),
-    db.collection("products").find({ slug: { $regex: anchoredRe } }).project({ _id: 1 }).toArray(),
+    db
+      .collection("products")
+      .find({ $or: [{ slug: { $regex: anchoredRe } }, { slug: { $regex: anchoredSlugRe } }] })
+      .project({ _id: 1 })
+      .toArray(),
   ]);
 
   const userIds = userRows.map((r) => r._id as mongoose.Types.ObjectId);

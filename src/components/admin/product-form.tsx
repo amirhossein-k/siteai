@@ -38,7 +38,9 @@ import {
   VariantBuilder,
   type VariantDraft,
 } from "@/components/admin/variant-builder";
+import { ProductDescriptionEditor } from "@/components/admin/product/product-description-editor";
 import { slugify } from "@/lib/utils";
+import type { RichDescriptionNode } from "@/types";
 
 interface ProductFormProps {
   mode: "create" | "edit";
@@ -71,6 +73,9 @@ export function ProductForm({
   const [variants, setVariants] = useState<VariantDraft[]>(
     (defaultValues as any)?.variants || []
   );
+  const [descriptionRich, setDescriptionRich] = useState<
+    RichDescriptionNode[] | undefined
+  >((defaultValues as any)?.descriptionRich);
 
   const form = useForm<ProductFormData>({
     resolver: zodResolver(productSchema),
@@ -98,6 +103,7 @@ export function ProductForm({
       tags: selectedTags,
       hasVariants,
       variants,
+      descriptionRich,
     });
   };
 
@@ -185,24 +191,28 @@ export function ProductForm({
               />
             </div>
 
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>توضیحات</FormLabel>
-                  <FormControl>
-                    <textarea
-                      {...field}
-                      rows={4}
-                      className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      placeholder="توضیحات محصول..."
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="space-y-2">
+              {/* Plain <label>: the editor is controlled via local state, not
+                  a RHF FormField — shadcn's FormLabel requires a FormField
+                  context and would throw "useFormField should be used within
+                  <FormField>". */}
+              <label
+                htmlFor="product-description-editor"
+                className="text-sm font-medium leading-none"
+              >
+                توضیحات
+              </label>
+              <ProductDescriptionEditor
+                id="product-description-editor"
+                initialValue={descriptionRich}
+                onChange={setDescriptionRich}
+                disabled={isSubmitting}
+              />
+              <p className="text-xs text-muted-foreground">
+                توضیحات غنی محصول (عنوان، لیست، تصویر و...). برای محصولات قبلی،
+                متن ساده بدون تغییر حفظ می‌شود.
+              </p>
+            </div>
           </CardContent>
         </Card>
 

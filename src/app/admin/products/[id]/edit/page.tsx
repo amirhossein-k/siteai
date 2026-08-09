@@ -36,6 +36,10 @@ export default function EditProductPage({
       name: product.name,
       slug: product.slug,
       description: product.description || "",
+      // Session 69 — rich description MUST be mapped back into the form, or
+      // the editor mounts empty and a save wipes descriptionRich (replaced by
+      // the plain-text projection). Absent on legacy products → editor empty.
+      descriptionRich: product.descriptionRich,
       // Session 65 — populated relations may be null (deleted ref) or a raw
       // id string at runtime; relationId normalizes all shapes safely. images/
       // brand/tags are mapped so the full-replacement PUT does not wipe them.

@@ -8,6 +8,7 @@ import Supplier from "@/models/Supplier";
 import Product from "@/models/Product";
 import { sanitizePlainText } from "@/lib/sanitize";
 import { prepareVariantsForSave } from "@/lib/product-variants";
+import { prepareRichDescription } from "@/lib/product-description";
 
 export async function GET(req: NextRequest) {
   const { token, error } = await requireRoleOrError(req, ["supplier"]);
@@ -85,10 +86,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: prepared.error }, { status: prepared.status });
     }
 
+    // Rich description — server-side allowlist validation + plain-text projection.
+    const rich = prepareRichDescription(body);
+    if (!rich.ok) {
+      return NextResponse.json({ error: rich.error }, { status: 400 });
+    }
+
     const product = await Product.create({
       name: sanitizePlainText(body.name),
       slug: body.slug,
-      description: sanitizePlainText(body.description || ""),
+      description:
+        rich.description !== undefined
+          ? rich.description
+          : sanitizePlainText(body.description || ""),
+      descriptionRich: rich.descriptionRich,
       images: body.images || [],
       brand: body.brand || null,
       tags: body.tags || [],
@@ -170,12 +181,24 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: prepared.error }, { status: prepared.status });
     }
 
+    // Rich description — server-side allowlist validation + plain-text projection.
+    // When descriptionRich is absent (legacy product edited without touching the
+    // rich editor), body.description flows through unchanged → nothing erased.
+    const rich = prepareRichDescription(body);
+    if (!rich.ok) {
+      return NextResponse.json({ error: rich.error }, { status: 400 });
+    }
+
     const updated = await Product.findByIdAndUpdate(
       id,
       {
         name: sanitizePlainText(body.name),
         slug: body.slug,
-        description: sanitizePlainText(body.description || ""),
+        description:
+          rich.description !== undefined
+            ? rich.description
+            : sanitizePlainText(body.description || ""),
+        descriptionRich: rich.descriptionRich,
         images: body.images,
         // Normalize the empty-string "no brand" value (the edit form's "بدون
         // برند" option submits "") — casting "" to ObjectId throws a CastError

@@ -15,6 +15,7 @@ import {
 } from "@/lib/pagination";
 import { sanitizePlainText } from "@/lib/sanitize";
 import { prepareVariantsForSave } from "@/lib/product-variants";
+import { prepareRichDescription } from "@/lib/product-description";
 // Note: All models are registered globally via dbConnect.js — no side-effect imports needed here
 
 export async function GET(req: NextRequest) {
@@ -109,10 +110,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: prepared.error }, { status: prepared.status });
     }
 
+    // Rich description — server-side allowlist validation + plain-text projection.
+    // When descriptionRich is absent, the legacy plain-text path is preserved.
+    const rich = prepareRichDescription(body);
+    if (!rich.ok) {
+      return NextResponse.json({ error: rich.error }, { status: 400 });
+    }
+
     const product = await Product.create({
       name: sanitizePlainText(body.name),
       slug: body.slug,
-      description: sanitizePlainText(body.description || ""),
+      description:
+        rich.description !== undefined
+          ? rich.description
+          : sanitizePlainText(body.description || ""),
+      descriptionRich: rich.descriptionRich,
       images: body.images || [],
       brand: body.brand || null,
       tags: body.tags || [],
@@ -170,29 +182,42 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: prepared.error }, { status: prepared.status });
     }
 
-    const updated = await Product.findByIdAndUpdate(
-      id,
-      {
-        name: sanitizePlainText(body.name),
-        slug: body.slug,
-        description: sanitizePlainText(body.description || ""),
-        images: body.images,
-        // Normalize the empty-string "no brand" value (the edit form's "بدون
-        // برند" option submits "") — casting "" to ObjectId throws a CastError
-        // 500. Mirrors the POST normalization below.
-        brand: body.brand || null,
-        tags: body.tags || [],
-        category: body.category,
-        supplier: body.supplier,
-        supplierPrice: prepared.hasVariants ? 0 : body.supplierPrice,
-        price: prepared.hasVariants ? prepared.price : body.price,
-        stock: prepared.hasVariants ? prepared.stock : body.stock,
-        hasVariants: prepared.hasVariants,
-        variants: prepared.variants,
-        isActive: body.isActive,
-      },
-      { new: true, runValidators: true }
-    )
+    // Rich description — server-side allowlist validation + plain-text projection.
+    // When descriptionRich is absent (legacy product edited without touching the
+    // rich editor), body.description flows through unchanged → nothing erased.
+    const rich = prepareRichDescription(body);
+    if (!rich.ok) {
+      return NextResponse.json({ error: rich.error }, { status: 400 });
+    }
+
+    const update: Record<string, unknown> = {
+      name: sanitizePlainText(body.name),
+      slug: body.slug,
+      description:
+        rich.description !== undefined
+          ? rich.description
+          : sanitizePlainText(body.description || ""),
+      descriptionRich: rich.descriptionRich,
+      images: body.images,
+      // Normalize the empty-string "no brand" value (the edit form's "بدون
+      // برند" option submits "") — casting "" to ObjectId throws a CastError
+      // 500. Mirrors the POST normalization below.
+      brand: body.brand || null,
+      tags: body.tags || [],
+      category: body.category,
+      supplier: body.supplier,
+      supplierPrice: prepared.hasVariants ? 0 : body.supplierPrice,
+      price: prepared.hasVariants ? prepared.price : body.price,
+      stock: prepared.hasVariants ? prepared.stock : body.stock,
+      hasVariants: prepared.hasVariants,
+      variants: prepared.variants,
+      isActive: body.isActive,
+    };
+
+    const updated = await Product.findByIdAndUpdate(id, update, {
+      new: true,
+      runValidators: true,
+    })
       .populate("category", "name")
       .populate("supplier", "businessName")
       .populate("brand", "name")

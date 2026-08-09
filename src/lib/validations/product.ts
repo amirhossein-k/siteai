@@ -54,6 +54,10 @@ const productBaseSchema = z.object({
     .max(2000, "توضیحات حداکثر ۲۰۰۰ کاراکتر")
     .optional()
     .or(z.literal("")),
+  // Session 69 — rich description (Slate JSON). Shape-agnostic on the client:
+  // the SERVER-side allowlist (src/lib/product-description.ts) is authoritative.
+  // Optional so legacy plain-text products round-trip untouched.
+  descriptionRich: z.unknown().optional(),
   brand: z.string().optional().or(z.literal("")),
   category: z.string().min(1, "دسته‌بندی الزامی است"),
   supplier: z.string().min(1, "فروشنده الزامی است"),

@@ -36,6 +36,7 @@ import { showToast } from "@/components/ui/toast";
 import { ImageLightbox } from "@/components/storefront/image-lightbox";
 import { VariantSelector } from "@/components/storefront/variant-selector";
 import { ReviewsSection } from "@/components/storefront/reviews-section";
+import { ProductDescription } from "@/components/storefront/product-description";
 import { ProductJsonLd } from "@/components/seo/json-ld-script";
 import { useWishlistIds, useToggleWishlist } from "@/hooks/use-wishlist";
 import type { Product, ProductVariant } from "@/types";
@@ -373,13 +374,17 @@ export default function ProductDetailPage({
             />
           )}
 
-          {/* Description */}
-          {product.description && (
+          {/* Description — rich (Slate JSON) with plain-text legacy fallback */}
+          {(product.description || product.descriptionRich?.length) && (
             <div>
               <h3 className="mb-2 text-sm font-semibold">توضیحات محصول</h3>
-              <p className="text-sm leading-7 text-muted-foreground whitespace-pre-line">
-                {product.description}
-              </p>
+              {product.descriptionRich?.length ? (
+                <ProductDescription value={product.descriptionRich} />
+              ) : (
+                <p className="text-sm leading-7 text-muted-foreground whitespace-pre-line">
+                  {product.description}
+                </p>
+              )}
             </div>
           )}
 

@@ -82,11 +82,45 @@ export interface ProductVariant {
   isActive: boolean;
 }
 
+// --- Rich product description (Session 69) ---
+// Structured Slate JSON emitted by the @platejs editor; server-validated
+// against an allowlist (src/lib/product-description.ts). `description` stays
+// the derived plain-text projection.
+//
+// Deliberately loosely typed at the API boundary: the editor's own TDescendant
+// type is not exported from this app, and strict structural validation lives
+// server-side. Consumers must only read allowed fields (type, children, text,
+// url, align, bold/italic/.../color/backgroundColor marks).
+export type RichDescriptionNode = {
+  type?: string;
+  text?: string;
+  url?: string;
+  align?: string;
+  /** Plate ListPlugin list style on blocks (bounded CSS values: ul/ol/disc/...). */
+  listStyleType?: string;
+  /** Plate ListPlugin nesting depth (flat list model: block + indent). */
+  indent?: number;
+  /** Plate ListPlugin ol restart value. */
+  listStart?: number;
+  /** Plate's stable node id (short alphanumeric, server-bounded). */
+  id?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  highlight?: boolean;
+  code?: boolean;
+  color?: string;
+  backgroundColor?: string;
+  children?: RichDescriptionNode[];
+};
+
 // --- Product ---
 export interface Product {
   _id: string;
   name: string;
   description: string;
+  descriptionRich?: RichDescriptionNode[];
   price: number;
   images: string[];
   category: string | { _id: string; name: string };
@@ -517,6 +551,10 @@ export interface AdminProduct {
   name: string;
   slug: string;
   description?: string;
+  /** Session 69 — rich Slate JSON; absent on legacy products. Must be mapped
+   * into edit-form defaultValues or the editor mounts empty and a save
+   * silently replaces the rich structure with plain text. */
+  descriptionRich?: RichDescriptionNode[];
   images?: string[];
   brand?: { _id: string; name: string } | string | null;
   tags?: Array<{ _id: string; name: string; slug: string } | string | null>;

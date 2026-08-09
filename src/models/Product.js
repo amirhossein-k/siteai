@@ -77,6 +77,15 @@ const ProductSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    // Session 69 — rich product description: Slate JSON tree from the
+    // @platejs editor (server-validated against an allowlist in
+    // src/lib/product-description.ts). `description` above stays as the
+    // derived plain-text projection (search/CSV/JSON-LD/legacy rendering).
+    // ADDITIVE & OPTIONAL — legacy products have only `description`.
+    descriptionRich: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined,
+    },
     images: {
       type: [String],
       default: [],

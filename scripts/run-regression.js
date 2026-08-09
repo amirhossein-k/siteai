@@ -54,6 +54,7 @@ const suites = [
   "verify-suppliers-onboarding", // Session 66 — admin supplier management (create/promote/deactivate + session revocation + public-surface hiding)
   "verify-supplier-applications", // Session 67 — public supplier application + admin approval queue (customer submit 201/409, admin approve seeds Supplier from application + tokenVersion revoke, reject keeps role, re-apply, notifications)
   "verify-customer-support", // Session 68 — order-linked customer support conversations (create for own paid order / 409 dedupe / cross-customer 404 / cross-supplier 404 / status machine / close+reopen / unread flips / per-message notification dedupe / rate limits)
+  "verify-rich-description", // Session 69 — Plate rich product description (authz 401/403, valid rich create + round-trip, unsafe link/image/property rejection, depth/node/size/leaf caps, 2000-char projection, legacy plain-text preserved on rich-less PUT, supplier auto-ownership + same gate, public storefront exposure, derived-description search)
   "verify-variant-wishlist",
   "verify-product-import-export", // Session 51 (before coupons-marketing: creates users/suppliers/products, cleans its own PREFIX'd rows)
   "verify-coupons-marketing",
