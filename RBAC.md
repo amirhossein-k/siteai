@@ -164,6 +164,24 @@ Customers can now **apply** to become suppliers through a public flow — but th
 **Security model (Session 67):**
 - **Self-role-assignment is impossible by construction** — the public submit route only creates a `pending` `SupplierApplication` row (with a unique partial index preventing a second open application, E11000 → 409); it never writes `User.role` or `Supplier`.
 - **Approve is atomic and admin-only** — a single `PATCH` provisions the Supplier doc (seeded **from the application**'s businessName/description via the shared `ensureSupplierForUser`), flips the role, **bumps `tokenVersion` + evicts the cache** (the applicant's old customer sessions are revoked immediately — they must re-login to obtain the supplier claim), records `decidedBy`/`decidedAt`, and notifies the applicant.
+
+### Customer Communication / Order Support (Session 68)
+
+Order-linked support conversations, split by **SupplierOrder** (one thread per customer × supplier-order — checkout already creates one SupplierOrder per supplier, so **cross-supplier leakage is structurally impossible**). All 11 endpoints enforce `requireRoleOrError` + server-side ownership with a **same-404 for not-found/not-owned** (a foreign conversation is indistinguishable from a missing one):
+
+| Actor | Can | Cannot |
+|-------|-----|--------|
+| Anonymous | — | Any conversation access (401) |
+| Customer (authenticated) | Create a conversation **for one of their OWN paid/refunded orders** (`POST /api/conversations` — order ownership validated via `Order.findOne({_id, customer: token.id})`; supplier derived from the SupplierOrder, never the body; duplicate active → 409); list own (`GET /api/conversations`), read eligible orders (`GET /api/conversations/eligible-orders`), read own detail (`GET /api/conversations/[id]` — marks `customerUnread=false`), send messages (`POST .../messages`), close/reopen/resolve own (`PATCH .../status`) | **Read/send/close another customer's conversation** (same 404), create for another customer's order (404), create for an unpaid order (400), impersonate a sender (sender identity always from the session) |
+| Supplier | Access **only** conversations whose `supplier` ref equals their OWN Supplier doc (`Supplier.findOne({user: token.id})` — `GET /api/supplier/conversations`, detail marks `staffUnread=false`, reply `POST .../messages`) | Read/reply to **any other supplier's** conversation (same 404; the supplier list never contains foreign rows), change status (reply-only in v1 — transitions owned by customer + admin) |
+| Admin | Full access: list all (`GET /api/admin/conversations` — status filters + subject/customer/order search), read any detail (marks `staffUnread=false`), reply, resolve/close/reopen (`PATCH .../status`) | — |
+
+**Security model (Session 68):**
+- **Sender identity is server-derived** — message `sender`/`senderRole` come from the authenticated session, never the request body.
+- **Order ownership is server-validated** — `Order.findOne({ _id, customer: token.id })` + paid/refunded eligibility; a foreign order returns the same 404 as a missing one.
+- **Supplier ownership is server-validated** — the conversation's `supplier` ref is written from the SupplierOrder at creation and every supplier route re-checks it against the caller's own Supplier doc.
+- **Rate limited** — create 5/user/15min, message 15/actor/15min (validation before the limiter).
+- **Notifications** reuse the `notifyOrderEvent` facade (`support` category, `support_message` type, per-message dedupe key, templated message with no content in payloads); customer messages notify the conversation's supplier.user only; staff messages notify the customer.
 - **Reject leaves the role untouched** — a rejected customer may re-apply (no open-application dedup conflict).
 - Rate limits: submit 2/user + 5/IP per 15min; decision 30/actor per 15min. All decision metadata (`adminNote`) is validated + capped.
 - Zero changes to `auth.js` / OTP / password login / middleware / the Session 66 admin flows / Supplier ownership rules.

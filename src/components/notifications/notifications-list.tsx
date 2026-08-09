@@ -7,6 +7,7 @@ import {
   CheckCheck,
   CreditCard,
   Inbox,
+  MessageSquareText,
   Package,
   Send,
   Wallet,
@@ -26,6 +27,8 @@ const CATEGORY_TABS: Array<{ key: NotificationCategory | "all"; label: string }>
   { key: "order", label: "سفارش‌ها" },
   { key: "payment", label: "پرداخت" },
   { key: "payout", label: "کیف پول" },
+  // Session 68 — support-message notifications tab.
+  { key: "support", label: "پشتیبانی" },
 ];
 
 const CATEGORY_META: Record<NotificationCategory, { icon: typeof Package; label: string }> = {
@@ -33,6 +36,7 @@ const CATEGORY_META: Record<NotificationCategory, { icon: typeof Package; label:
   payment: { icon: CreditCard, label: "پرداخت" },
   payout: { icon: Wallet, label: "کیف پول" },
   system: { icon: Bell, label: "سیستم" },
+  support: { icon: MessageSquareText, label: "پشتیبانی" },
 };
 
 function timeAgo(iso: string): string {

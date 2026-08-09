@@ -84,11 +84,11 @@ A Persian (RTL) e-commerce platform built with Next.js 16 App Router. Supports t
 
 ---
 
-## 🗄️ Database Models (12 total)
+## 🗄️ Database Models (13 total)
 
 | Model | Key Fields | Notes |
 |-------|-----------|-------|
-| **User** | name, phone, passwordHash, role (customer/supplier/admin), supplier (ref), address, isActive | |
+| **User** | name, phone, passwordHash, role (customer/supplier/admin), supplier (ref), address, isActive, **tokenVersion** | tokenVersion = session-revocation (Session 62/64); passwordHash optional (OTP accounts) |
 | **Product** | name, slug, description, price, supplierPrice, stock, **stockVersion**, **brand** (ref), **tags[]** (refs), category (ref), supplier (ref), **images[]**, isActive | Optimistic concurrency via stockVersion |
 | **Order** | customer (ref), items[], totalAmount, shippingAddress, **payment** (status/method/authority/refId/cardPan/paidAt), status, **stockRestored**, statusHistory[] | stockRestored prevents double restoration |
 | **SupplierOrder** | order (ref), supplier (ref), items[], amountOwed, status (pending/confirmed/shipped/delivered/rejected), isPaidOut | Per-supplier sub-order |
@@ -97,9 +97,10 @@ A Persian (RTL) e-commerce platform built with Next.js 16 App Router. Supports t
 | **Tag** | name, slug, isActive | Flat list, used for multi-tag on products |
 | **Supplier** | user (ref), businessName, contactPhone, bankAccount, balance, telegramChatId, isActive | |
 | **SupplierApplication** | user (ref), businessName, description, contactPhone, status (pending/approved/rejected), adminNote, decidedBy (ref), decidedAt | Unique partial index `{user,status} where status=pending` — one open application per user (E11000 → 409); rejected may re-apply (Session 67) |
-| **Notification** | recipient (ref), type (new_order/confirmed/shipped/delivered/rejected), message, relatedOrder (ref), isRead, sentToTelegram | |
+| **Notification** | recipient (ref), type (order lifecycle + payout/review/supplier_application/support_message), category (order/payment/payout/system/support), message, relatedOrder (ref), isRead, sentToTelegram, link, notificationKey | Event dedupe via unique partial index {recipient, notificationKey} |
 | **Transaction** | supplier (ref), type (sale/payout/adjustment), amount, relatedOrder (ref), note, balanceAfter | Wallet ledger |
 | **File** | url, key, name, size, mimeType, category (image/video/document), uploadedBy (ref), product (ref) | Uploaded file metadata |
+| **CustomerConversation** | customer (ref), order (ref), supplierOrder (ref), supplier (ref — from the SupplierOrder), product (optional ref), category, subject, status (open/pending/resolved/closed), customerUnread, staffUnread, lastMessageAt, lastMessagePreview, lastMessageFrom, messages[] (sender ref, senderRole, text, createdAt), resolvedAt, closedAt | Order-linked support threads (Session 68); unique partial index `{supplierOrder} where status ∈ (open, pending, resolved)` — one active conversation per (customer × supplier-order); queue index `{supplier,status,lastMessageAt:-1}`; text-only v1 |
 
 ---
 
@@ -158,7 +159,7 @@ src/
 │   ├── schemas/      json-ld.ts
 │   └── validations/  auth.ts, product.ts
 ├── hooks/            All use-*.ts files for React Query
-├── models/           All 11 Mongoose models
+├── models/           All 13 Mongoose models
 ├── stores/           app-store, auth-store, cart-store, index
 └── types/            index.ts
 ```

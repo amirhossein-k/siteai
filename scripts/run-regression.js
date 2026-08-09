@@ -53,6 +53,7 @@ const suites = [
   "verify-suppliers",
   "verify-suppliers-onboarding", // Session 66 — admin supplier management (create/promote/deactivate + session revocation + public-surface hiding)
   "verify-supplier-applications", // Session 67 — public supplier application + admin approval queue (customer submit 201/409, admin approve seeds Supplier from application + tokenVersion revoke, reject keeps role, re-apply, notifications)
+  "verify-customer-support", // Session 68 — order-linked customer support conversations (create for own paid order / 409 dedupe / cross-customer 404 / cross-supplier 404 / status machine / close+reopen / unread flips / per-message notification dedupe / rate limits)
   "verify-variant-wishlist",
   "verify-product-import-export", // Session 51 (before coupons-marketing: creates users/suppliers/products, cleans its own PREFIX'd rows)
   "verify-coupons-marketing",
@@ -94,7 +95,7 @@ async function clearLoginRateLimits() {
     const res = await mongoose.connection.db
       .collection("ratelimits")
       .deleteMany({
-        _id: { $regex: "^rl:(login|login_ip|otp_request|otp_request_ip|otp_verify):" },
+        _id: { $regex: "^rl:(login|login_ip|otp_request|otp_request_ip|otp_verify|conversation-create|conversation-msg):" },
       });
     console.log(`  [clean] login/OTP rate-limit state cleared (${res.deletedCount} docs)`);
     await mongoose.disconnect();

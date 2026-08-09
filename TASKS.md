@@ -2,6 +2,41 @@
 
 ---
 
+## ✅ Session 68 — Customer Communication / Order Support
+
+### Scope + invariants
+- [x] Approved design frozen (all four decisions) — split by **SupplierOrder** · paid orders only · customer-message notifications → the conversation's supplier.user only · supplier reply-only
+- [x] Additive only; zero changes to `auth.js`/OTP/password login/middleware/RBAC role logic/Order/SupplierOrder/Supplier ownership/payment/checkout
+
+### Data model + libs
+- [x] `src/models/CustomerConversation.js` (new) — customer/order/supplierOrder/supplier refs + optional product + category/subject/status + unread flags + lastMessage* + messages[] (sender/senderRole/text/createdAt) + resolvedAt/closedAt; **unique partial index `{supplierOrder} where status ∈ (open, pending, resolved)`** (E11000 → 409) + queue index; registered in `dbConnect.js`
+- [x] `src/lib/conversations.ts` (new) — pure helpers: validation (subject/category/message), `isEligibleOrderPayment` (paid|refunded), `canTransit(role, from, to)` + auto-reopen rule, `formatMessagePreview`, `notifyConversationMessage` (facade call + templated Persian message + per-message dedupe key — no content in payloads)
+- [x] `src/lib/rate-limiter.ts` — `CONVERSATION_CREATE_LIMIT` (5/user/15min) + `CONVERSATION_MESSAGE_LIMIT` (15/actor/15min)
+- [x] `src/models/Notification.js` — `support` category + `support_message` type; `notifications.ts` local type union extended
+
+### APIs (11 additive, all `requireRoleOrError` + same-404 ownership)
+- [x] Customer — `POST /api/conversations` (own PAID order only, supplier from SupplierOrder, E11000 → 409, notifies supplier.user) · `GET /api/conversations` (status filter, paginated) · `GET /api/conversations/eligible-orders` · `GET /api/conversations/[id]` (marks `customerUnread=false`) · `POST /api/conversations/[id]/messages` · `PATCH /api/conversations/[id]/status`
+- [x] Admin — `GET /api/admin/conversations` (status filter + search) · `GET /api/admin/conversations/[id]` (marks `staffUnread=false`) · `POST .../messages` · `PATCH .../status`
+- [x] Supplier — `GET /api/supplier/conversations` · `GET /api/supplier/conversations/[id]` (own supplier ref only; marks `staffUnread=false`) · `POST .../messages` (reply-only, own threads)
+- [x] Security — sender identity from session only; order ownership server-validated; supplier ownership server-validated; cross-customer / cross-supplier → same 404; malformed ObjectId → 400; validation-before-rate-limit
+
+### UI
+- [x] Customer — `/support` (list + create form + empty state) + `/support/[id]` (thread + composer + status actions); account-menu «ارتباط با مشتری», profile quick-link, order-detail «ارتباط با مشتری» button
+- [x] Admin — `/admin/support` + `/admin/support/[id]` (sidebar «پشتیبانی»; filters, search, reply, resolve/close/reopen)
+- [x] Supplier — `/supplier/support` + `/supplier/support/[id]` (sidebar «ارتباط با مشتری»; own threads, reply-only)
+- [x] Shared — `src/components/support/*` (thread/list-item/status-badge/category) + `src/components/ui/textarea.tsx`; notifications inbox `support` tab
+
+### Types/hooks/real-time
+- [x] `src/types/index.ts` — `ConversationStatus`/`CustomerConversation`/`AdminConversation`/`SupplierConversation`/`ConversationMessage` + `NotificationCategory` gains `support`
+- [x] `use-customer-conversations.ts` / `use-admin-conversations.ts` / `use-supplier-conversations.ts` (detail hooks refetchInterval ~15s + focus refetch)
+
+### Tests & wiring
+- [x] `scripts/verify-customer-support.js` — **23/23 real-API** (401/403, own-order 201 + notify, 409 dup, foreign order 404, unpaid 400, eligible-orders, unread/read, cross-customer 404, cross-supplier 404 + clean list, transitions, resolve/auto-reopen/close/closed-message 400/reopen, malformed → 400, spam 429, per-message dedupe); self-cleaning rate limits
+- [x] `tests/unit/conversations.test.ts` — **28 hermetic tests** (Vitest **254/254**)
+- [x] `tests/e2e/supplier-communication.spec.ts` (Journey 17) — customer → admin → supplier → customer full loop; teardown extended in `tests/e2e/helpers/db.ts` (conversations + rate-limit keys)
+- [x] `scripts/run-regression.js` — `verify-customer-support` added → **39 suites**; `regression.yml` 39-suite
+- [x] Gates — tsc 0 · check exit 0 · Vitest **254/254** · verify **23/23** · Playwright **52/52** · full regression **39/39 PASS**
+
 ## ✅ Session 67 — Public Supplier Application + Admin Approval Queue
 
 ### Scope + invariants

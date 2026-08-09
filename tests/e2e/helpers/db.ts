@@ -156,6 +156,23 @@ export async function cleanupByPrefix(prefix: string): Promise<void> {
     );
   }
   if (orderIds.length > 0) {
+    // Session 68 — support conversations are anchored on supplierOrders of the
+    // run's orders (plus a customer-ref backstop for safety).
+    const supplierOrderRows = await db
+      .collection("supplierorders")
+      .find({ order: { $in: orderIds } })
+      .project({ _id: 1 })
+      .toArray();
+    const supplierOrderIds = supplierOrderRows.map(
+      (r) => r._id as mongoose.Types.ObjectId
+    );
+    if (supplierOrderIds.length > 0) {
+      deletes.push(
+        db
+          .collection("customerconversations")
+          .deleteMany({ supplierOrder: { $in: supplierOrderIds } })
+      );
+    }
     deletes.push(
       db.collection("supplierorders").deleteMany({ order: { $in: orderIds } }),
       db.collection("orders").deleteMany({ _id: { $in: orderIds } })
@@ -164,6 +181,7 @@ export async function cleanupByPrefix(prefix: string): Promise<void> {
   if (userIds.length > 0) {
     deletes.push(
       db.collection("wishlists").deleteMany({ user: { $in: userIds } }),
+      db.collection("customerconversations").deleteMany({ customer: { $in: userIds } }),
       db.collection("notifications").deleteMany({ recipient: { $in: userIds } }),
       db.collection("couponusages").deleteMany({ user: { $in: userIds } }),
       db.collection("users").deleteMany({ _id: { $in: userIds } })
@@ -199,7 +217,7 @@ export async function clearRateLimiterKeys(): Promise<void> {
   await db.collection<{ _id: string }>("ratelimits").deleteMany({
     _id: {
       $regex:
-        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify|supplier-apply|supplier-application-decide):",
+        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify|supplier-apply|supplier-application-decide|conversation-create|conversation-msg):",
     },
   });
 }

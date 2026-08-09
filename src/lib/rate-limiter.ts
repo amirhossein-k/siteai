@@ -137,6 +137,18 @@ export const SUPPLIER_APPLICATION_DECISION_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/** Support conversation create: 5 per user per 15 minutes (Session 68). */
+export const CONVERSATION_CREATE_LIMIT: RateLimitConfig = {
+  max: 5,
+  windowMs: 15 * 60 * 1000,
+};
+
+/** Support message send: 15 per actor per 15 minutes — spam guard (Session 68). */
+export const CONVERSATION_MESSAGE_LIMIT: RateLimitConfig = {
+  max: 15,
+  windowMs: 15 * 60 * 1000,
+};
+
 // ============================================================
 // Core
 // ============================================================

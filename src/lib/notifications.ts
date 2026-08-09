@@ -21,7 +21,12 @@ import { dbConnect } from "@/lib/dbConnect";
 import Notification from "@/models/Notification";
 import { publishToUserStream } from "@/lib/notification-stream";
 
-export type NotificationCategory = "order" | "payment" | "payout" | "system";
+export type NotificationCategory =
+  | "order"
+  | "payment"
+  | "payout"
+  | "system"
+  | "support";
 
 export interface NotificationEventInput {
   /** Recipient user id (customer or supplier's user account). */

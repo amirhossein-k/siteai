@@ -115,6 +115,18 @@ Telegram (fire-and-forget):
 |-------|---------|------|-------------|
 | `/api/supplier-applications` | POST | customer | Submit a supplier application. Rate-limited (2/user + 5/IP per 15min), validates businessName/description/contactPhone, pending-dedup 409 (unique partial index), notifies all admins. **Never touches role or the Supplier collection** — the applicant stays `role: customer` until an admin approves |
 | `/api/supplier-applications/me` | GET | customer | The applicant's latest application + status (drives the `/become-supplier` page state) |
+| `/api/conversations` | POST, GET | customer | Create an order-linked support conversation for one of the customer's OWN paid/refunded orders (Session 68) — order ownership via `Order.findOne({_id, customer})`, supplier derived from the SupplierOrder (never the body), paid-only eligibility, rate-limited 5/user/15min, one active conversation per SupplierOrder (unique partial index → E11000 → 409). List own (status filter, paginated) |
+| `/api/conversations/eligible-orders` | GET | customer | Own paid orders with their supplier-orders grouped (drives the create-form pickers) |
+| `/api/conversations/[id]` | GET | customer | Own conversation detail — same 404 for not-found/not-owned; marks `customerUnread=false` |
+| `/api/conversations/[id]/messages` | POST | customer | Send a message (15/actor/15min); sender identity from the session; `closed` → 400, `resolved` auto-reopens to `open`; notifies the conversation's supplier.user (templated, no content in payloads) |
+| `/api/conversations/[id]/status` | PATCH | customer | Close/resolve/reopen own conversation (state machine `open|pending|resolved|closed`, unit-tested transitions) |
+| `/api/admin/conversations` | GET | admin | All conversations — status filter + subject/customer/order `search` |
+| `/api/admin/conversations/[id]` | GET | admin | Any conversation detail; marks `staffUnread=false` |
+| `/api/admin/conversations/[id]/messages` | POST | admin | Reply to any conversation; flips status to `pending`, notifies the customer |
+| `/api/admin/conversations/[id]/status` | PATCH | admin | Resolve/close/reopen any conversation |
+| `/api/supplier/conversations` | GET | supplier | ONLY the caller's own supplier's conversations (via `Supplier.findOne({user})`) |
+| `/api/supplier/conversations/[id]` | GET | supplier | Own conversation detail — same 404 for any other supplier's thread; marks `staffUnread=false` |
+| `/api/supplier/conversations/[id]/messages` | POST | supplier | Reply to own conversations (reply-only in v1; no status control) |
 
 ### Supplier API Routes
 | Route | Methods | Auth | Description |
@@ -184,13 +196,14 @@ Telegram (fire-and-forget):
 
 ## 7. Database Schema
 
-### Collections (8 total)
+### Collections (17 total — core subset below; full catalog + key fields in PROJECT_STATE.md)
 | Collection | Key Fields | Notes |
 |------------|-----------|-------|
-| **User** | name, phone, passwordHash, role, supplier, address, isActive | role: customer/supplier/admin |
+| **User** | name, phone, passwordHash (optional — OTP), role, supplier, address, isActive, **tokenVersion** | role: customer/supplier/admin |
 | **Product** | name, slug, description, price, supplierPrice, stock, category, supplier, images[], isActive | supplierPrice = wholesale cost |
 | **Order** | customer, items[], totalAmount, shippingAddress, payment, status, statusHistory[] | items = snapshots at purchase time |
 | **SupplierOrder** | order ref, supplier ref, items[], amountOwed, status, isPaidOut, timestamps | Per-supplier sub-orders |
+| **CustomerConversation** | customer (ref), order (ref), supplierOrder (ref), supplier (ref), product (optional), category, subject, status (open/pending/resolved/closed), customerUnread, staffUnread, lastMessage*, messages[], resolvedAt, closedAt | Order-linked support (Session 68); one active conversation per supplier-order (unique partial index) |
 | **Category** | name, slug, isActive | Simple categorization |
 | **Supplier** | user ref, businessName, contactPhone, bankAccount, balance, **telegramChatId**, isActive | telegramChatId for notifications |
 | **Notification** | recipient, type[], message, relatedOrder, isRead, **sentToTelegram** | In-app + Telegram tracking |
@@ -261,8 +274,9 @@ pending → failed (on cancel)
 - `/api/profile`
 - `/api/products`
 - `/api/categories`
-- `/api/admin/*` (6 routes)
-- `/api/supplier/*` (5 routes)
+- `/api/admin/*` (10 routes — incl. Session 68 `/api/admin/conversations*` × 4)
+- `/api/supplier/*` (8 routes — incl. Session 68 `/api/supplier/conversations*` × 3)
+- `/api/conversations*` (6 customer routes, Session 68)
 
 ### Other
 - `/sitemap.xml`, `/robots.txt`, `/manifest.webmanifest`

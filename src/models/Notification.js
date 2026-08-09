@@ -29,13 +29,14 @@ const NotificationSchema = new mongoose.Schema(
         "supplier_application", // برای ادمین: درخواست جدید فروشندگی (Session 67)
         "supplier_approved", // برای متقاضی: درخواست فروشندگی تأیید شد (Session 67)
         "supplier_rejected", // برای متقاضی: درخواست فروشندگی رد شد (Session 67)
+        "support_message", // برای طرف مقابل: پیام جدید در گفتگوی پشتیبانی (Session 68)
       ],
       required: true,
     },
     // دسته‌بندی برای فیلتر/تب‌های صندوق ورودی
     category: {
       type: String,
-      enum: ["order", "payment", "payout", "system"],
+      enum: ["order", "payment", "payout", "system", "support"],
       default: "order",
     },
     message: {
