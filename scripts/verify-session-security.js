@@ -117,8 +117,14 @@ async function http(method, urlPath, body, jar) {
   return { status: res.status, data, retryAfter: res.headers.get("retry-after") };
 }
 
+// Counter suffix instead of random: two calls within the same 10-second
+// Date.now() window share the same 7-digit prefix, so a random 2-digit
+// suffix could collide (~1/90) — the OTP register request then 409s with
+// "phone already registered" (pre-existing flake, observed in regression).
+let phoneCounter = 0;
 function uniquePhone() {
-  return "09" + String(Date.now()).slice(-7) + String((Math.random() * 90 + 10) | 0);
+  phoneCounter = (phoneCounter % 90) + 10; // 10..99, guaranteed distinct per run
+  return "09" + String(Date.now()).slice(-7) + phoneCounter;
 }
 
 // --- Minimal schema (fixtures only; API routes use the real models) ---
