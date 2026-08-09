@@ -49,6 +49,12 @@ const navItems = [
     href: "/supplier/reviews",
     icon: MessageSquareText,
   },
+  {
+    // Session 68 — order-linked customer support (own conversations only).
+    title: "ارتباط با مشتریان",
+    href: "/supplier/support",
+    icon: MessageSquareText,
+  },
 ];
 
 interface SupplierSidebarProps {

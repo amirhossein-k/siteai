@@ -17,6 +17,7 @@ import {
   LogOut,
   KeyRound,
   MonitorSmartphone,
+  MessageSquareText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -386,6 +387,27 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
+          {/* Session 68 — Customer support (order-linked conversations) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MessageSquareText className="h-5 w-5 text-muted-foreground" />
+                پشتیبانی و پیگیری سفارش‌ها
+              </CardTitle>
+              <CardDescription>
+                پیگیری سفارش، وضعیت ارسال، مشکلات کالا و بازپرداخت از طریق گفتگو با فروشنده و پشتیبانی
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild className="w-full gap-2">
+                <Link href="/support">
+                  <MessageSquareText className="h-4 w-4" />
+                  مشاهده گفتگوها و ایجاد گفتگوی جدید
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* Session 64 — Security: password change/set + logout all devices */}
           <Card>
             <CardHeader>
@@ -488,6 +510,11 @@ export default function ProfilePage() {
                 <Button variant="outline" size="sm" asChild>
                   <Link href="/products">
                     فروشگاه
+                  </Link>
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/support">
+                    پشتیبانی و پیگیری سفارش‌ها
                   </Link>
                 </Button>
               </div>

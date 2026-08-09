@@ -29,6 +29,7 @@ import {
   Building,
   Loader2,
   Truck,
+  MessageSquareText,
 } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 import { showToast } from "@/components/ui/toast";
@@ -281,10 +282,22 @@ export default function CustomerOrderDetailPage({
             })}
           </p>
         </div>
-        <Button variant="outline" onClick={() => router.back()}>
-          <ArrowLeft className="ml-2 h-4 w-4" />
-          بازگشت
-        </Button>
+        <div className="flex gap-2">
+          {/* Session 68 — start a support conversation for this purchased order
+              (only eligible: paid/refunded — matches the server rule). */}
+          {["paid", "refunded"].includes(order.payment?.status || "") && (
+            <Button variant="outline" className="gap-2" asChild>
+              <Link href={`/support?order=${order._id}`}>
+                <MessageSquareText className="h-4 w-4" />
+                پشتیبانی و پیگیری سفارش‌ها
+              </Link>
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => router.back()}>
+            <ArrowLeft className="ml-2 h-4 w-4" />
+            بازگشت
+          </Button>
+        </div>
       </div>
 
       {/* Main Grid */}

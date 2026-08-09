@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { User, ShoppingBag, Heart, Bell, LogOut, Store } from "lucide-react";
+import { User, ShoppingBag, Heart, Bell, LogOut, Store, MessageSquareText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -83,6 +83,10 @@ export function AccountMenu() {
     // already have their own dashboards and never need the application page).
     ...(isCustomer
       ? [{ href: "/become-supplier", label: "فروشنده شوید", icon: Store }]
+      : []),
+    // Session 68 — order-linked customer support (customer-only).
+    ...(isCustomer
+      ? [{ href: "/support", label: "پشتیبانی و پیگیری سفارش‌ها", icon: MessageSquareText }]
       : []),
     { href: "/notifications", label: "اعلان‌ها", icon: Bell },
   ];

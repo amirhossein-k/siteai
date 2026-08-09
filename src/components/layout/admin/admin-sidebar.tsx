@@ -22,6 +22,7 @@ import {
   BarChart3,
   FileUp,
   LayoutTemplate,
+  MessageSquareText,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,12 @@ const navItems = [
     title: "دیدگاه‌ها",
     href: "/admin/reviews",
     icon: Star,
+  },
+  {
+    // Session 68 — customer support queue (order-linked conversations).
+    title: "مرکز پشتیبانی",
+    href: "/admin/support",
+    icon: MessageSquareText,
   },
   {
     title: "کدهای تخفیف",
