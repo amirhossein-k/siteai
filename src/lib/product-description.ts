@@ -321,19 +321,7 @@ export function validateRichDescription(
           return;
         }
       }
-      if (type === "td" || type === "th") {
-        const bad = node.children.some(
-          (c) =>
-            c &&
-            typeof c === "object" &&
-            !Array.isArray(c) &&
-            (c as RichTextNode).type !== "p"
-        );
-        if (bad) {
-          errors.push("سلول جدول فقط می‌تواند پاراگراف داشته باشد");
-          return;
-        }
-      }
+
 
       walk(node.children as unknown[], depth + 1);
     }

@@ -390,11 +390,53 @@ describe("validateRichDescription", () => {
       ])
     ).toMatchObject({ ok: false });
 
+    // Table cells now accept ANY allowlisted block type (not just p).
+    // `li` is a valid block — the cell-level restriction was removed
+    // because Plate v53 may produce other block types or bare text
+    // inside cells during normal editing (the nested allowlist + property
+    // checks still provide full security).
     expect(
       validateRichDescription([
         {
           type: "td",
           children: [{ type: "li", children: [{ text: "x" }] }],
+        },
+      ])
+    ).toEqual({ ok: true });
+
+    // Bare text node inside a table cell is also accepted (the normalizer
+    // wraps it, but edge cases may produce it before the normalizer runs).
+    expect(
+      validateRichDescription([
+        {
+          type: "td",
+          children: [{ text: "متن خام در سلول" }],
+        },
+      ])
+    ).toEqual({ ok: true });
+
+    // Non-allowlisted block types are still rejected (security).
+    expect(
+      validateRichDescription([
+        {
+          type: "td",
+          children: [{ type: "div", children: [{ text: "x" }] }],
+        },
+      ])
+    ).toMatchObject({ ok: false });
+
+    // Unknown properties on nodes inside cells are still rejected.
+    expect(
+      validateRichDescription([
+        {
+          type: "td",
+          children: [
+            {
+              type: "p",
+              children: [{ text: "x" }],
+              style: "color:red",
+            },
+          ],
         },
       ])
     ).toMatchObject({ ok: false });

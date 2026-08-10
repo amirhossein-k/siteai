@@ -521,6 +521,59 @@ async function run() {
     );
   });
 
+  // --- TEST 18: table bug regression (td child types) ---
+  await testAsync("Table: td>p>text creates product -> 201", async () => {
+    const res = await http("POST", "/api/admin/products", adminJar, {
+      name: "tbl " + PREFIX, slug: PREFIX + "table1",
+      category: String(category._id), supplier: String(supplier._id),
+      price: 1000, supplierPrice: 500, stock: 5,
+      descriptionRich: [{
+        type: "table",
+        children: [{ type: "tr", children: [{ type: "td", children: [{ type: "p", children: [{ text: "سلول" }] }] }] }],
+      }],
+    });
+    assert(res.status === 201, "expected 201, got " + res.status + " " + JSON.stringify(res.data).slice(0, 200));
+  });
+
+  await testAsync("Table: td>bare text -> 201 (fix: accept bare text in cells)", async () => {
+    const res = await http("POST", "/api/admin/products", adminJar, {
+      name: "tbl2 " + PREFIX, slug: PREFIX + "table2",
+      category: String(category._id), supplier: String(supplier._id),
+      price: 1000, supplierPrice: 500, stock: 5,
+      descriptionRich: [{
+        type: "table",
+        children: [{ type: "tr", children: [{ type: "td", children: [{ text: "متن خام در سلول" }] }] }],
+      }],
+    });
+    assert(res.status === 201, "expected 201, got " + res.status + " " + JSON.stringify(res.data).slice(0, 200));
+  });
+
+  await testAsync("Table: td>h3 (block type) -> 201 (fix: accept other block types)", async () => {
+    const res = await http("POST", "/api/admin/products", adminJar, {
+      name: "tbl3 " + PREFIX, slug: PREFIX + "table3",
+      category: String(category._id), supplier: String(supplier._id),
+      price: 1000, supplierPrice: 500, stock: 5,
+      descriptionRich: [{
+        type: "table",
+        children: [{ type: "tr", children: [{ type: "td", children: [{ type: "h3", children: [{ text: "عنوان در سلول" }] }] }] }],
+      }],
+    });
+    assert(res.status === 201, "expected 201, got " + res.status + " " + JSON.stringify(res.data).slice(0, 200));
+  });
+
+  await testAsync("Table: td>div (non-allowlisted) -> 400 (still rejected)", async () => {
+    const res = await http("POST", "/api/admin/products", adminJar, {
+      name: "tbl4 " + PREFIX, slug: PREFIX + "table4",
+      category: String(category._id), supplier: String(supplier._id),
+      price: 1000, supplierPrice: 500, stock: 5,
+      descriptionRich: [{
+        type: "table",
+        children: [{ type: "tr", children: [{ type: "td", children: [{ type: "div", children: [{ text: "bad" }] }] }] }],
+      }],
+    });
+    assert(res.status === 400, "expected 400, got " + res.status + " " + JSON.stringify(res.data));
+  });
+
   // --- Cleanup fixtures ---
   console.log("\nCleaning up test data...");
   await mongoose.connection.db
