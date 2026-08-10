@@ -3,7 +3,7 @@ import { Geist, Geist_Mono, Vazirmatn } from "next/font/google";
 import "./globals.css";
 import Providers from "@/app/Providers";
 import { OrganizationJsonLd, WebsiteJsonLd } from "@/components/seo/json-ld-script";
-import { APP_NAME, APP_DESCRIPTION } from "@/lib/constants";
+import { APP_NAME, APP_DESCRIPTION, APP_URL } from "@/lib/constants";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,9 +28,9 @@ export const metadata: Metadata = {
   },
   description: APP_DESCRIPTION,
 
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-  ),
+  // Session 71 — one source of truth for the public origin (the production
+  // guard in constants.ts guarantees APP_URL is a valid absolute URL).
+  metadataBase: new URL(APP_URL),
 
   openGraph: {
     type: "website",

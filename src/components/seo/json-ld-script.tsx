@@ -5,7 +5,9 @@ import {
   productSchema,
   faqSchema,
   articleSchema,
+  serializeJsonLd,
 } from "@/lib/schemas/json-ld";
+import { APP_URL } from "@/lib/constants";
 
 interface JsonLdScriptProps {
   type: "organization" | "website" | "breadcrumb" | "product" | "faq" | "article";
@@ -17,7 +19,9 @@ function JsonLdScript({ data }: { data: Record<string, unknown> }) {
     <script
       type="application/ld+json"
       dangerouslySetInnerHTML={{
-        __html: JSON.stringify({
+        // Session 71 — serializeJsonLd escapes < > & U+2028/29 so hostile
+        // data can never break out of the script element.
+        __html: serializeJsonLd({
           "@context": "https://schema.org",
           ...data,
         }),
@@ -35,7 +39,7 @@ export function OrganizationJsonLd() {
     <JsonLdScript
       data={organizationSchema({
         name: "فروشگاه من",
-        url: process.env.NEXT_PUBLIC_APP_URL || "https://example.com",
+        url: APP_URL,
         sameAs: ["#"],
       })}
     />
@@ -47,8 +51,8 @@ export function WebsiteJsonLd() {
     <JsonLdScript
       data={websiteSchema({
         name: "فروشگاه من",
-        url: process.env.NEXT_PUBLIC_APP_URL || "https://example.com",
-        searchUrl: `${process.env.NEXT_PUBLIC_APP_URL || "https://example.com"}/search?q={search_term_string}`,
+        url: APP_URL,
+        searchUrl: `${APP_URL}/search?q={search_term_string}`,
       })}
     />
   );
