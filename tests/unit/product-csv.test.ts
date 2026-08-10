@@ -80,11 +80,22 @@ describe("parseProductCsv", () => {
   });
 
   it("rejects an invalid slug format", () => {
+    // Whitespace + punctuation violate the Session 70 Unicode contract.
     const result = parseProductCsv(csv(["محصول,Bad Slug!,x,100,80,1,دسته,,,img,1,"]));
     if (!result.ok) return;
     expect(result.rows[0].errors).toContain(
-      "اسلاگ فقط شامل حروف لاتین کوچک، اعداد و خط تیره است"
+      "اسلاگ فقط شامل حروف فارسی، حروف لاتین کوچک، اعداد و خط تیره است"
     );
+  });
+
+  it("accepts Unicode Persian slugs (Session 70 contract)", () => {
+    const result = parseProductCsv(
+      csv(["محصول,هدفون-بیسیم-بلوتوثی,x,100,80,1,دسته,,,img,1,"])
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.rows[0].slug).toBe("هدفون-بیسیم-بلوتوثی");
+    expect(result.rows[0].errors).toEqual([]);
   });
 
   it("rejects an unrecognized isActive value", () => {

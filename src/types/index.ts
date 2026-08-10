@@ -128,7 +128,10 @@ export interface Product {
   isActive?: boolean;
   slug?: string;
   brand?: string | { _id: string; name: string; slug?: string; logo?: string } | null;
-  supplier?: string | { _id: string; businessName: string };
+  // Session 65/71 — populated relations are `null` at RUNTIME when the
+  // referenced Supplier doc was deleted (Mongoose populate → null); consumers
+  // must null-check (the product page's supplier badge does).
+  supplier?: string | { _id: string; businessName: string } | null;
   hasVariants?: boolean;
   variants?: ProductVariant[];
   ratingSummary?: RatingSummary;

@@ -1,7 +1,18 @@
 import type { MetadataRoute } from "next";
 import { APP_URL } from "@/lib/constants";
 import { dbConnect } from "@/lib/dbConnect";
+import Product from "@/models/Product";
 import Supplier from "@/models/Supplier";
+import { buildProductUrl } from "@/lib/product-slug";
+
+// Next 16 docs: sitemap.ts is a special Route Handler that is CACHED BY
+// DEFAULT unless it opts into a Request-time API or a dynamic config option.
+// The catalog changes constantly (new products, deactivations), so the
+// sitemap must reflect the live DB — otherwise a production build freezes the
+// product list until the next rebuild and Google can't discover new products.
+// force-dynamic regenerates per request (the same freshness contract as the
+// force-dynamic product page).
+export const dynamic = "force-dynamic";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = APP_URL;
@@ -46,14 +57,40 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     console.error("Error generating supplier sitemap entries:", error);
   }
 
-  // TODO: Fetch dynamic product pages from DB when available
-  // const products = await getProducts();
-  // const productPages = products.map((product) => ({
-  //   url: `${baseUrl}/products/${product.slug}`,
-  //   lastModified: new Date(product.updatedAt),
-  //   changeFrequency: 'weekly' as const,
-  //   priority: 0.8,
-  // }));
+  // Dynamic PRODUCT pages (Session 71) — every indexable product: active +
+  // non-empty slug (the unique slug index makes duplicates impossible; the
+  // Set below is defensive). URL = the same buildProductUrl used by the
+  // canonical + JSON-LD so the sitemap, canonical and structured data always
+  // point at the identical resource (Unicode slugs stay human-readable; the
+  // XML is UTF-8 and search engines percent-encode on fetch). lastModified =
+  // updatedAt (falls back to createdAt). Google's hard limit is 50k URLs per
+  // sitemap file — this project is far below it, so a single sitemap is
+  // correct; if the catalog ever approaches ~45k products, switch to
+  // generateSitemaps() (Next 16 docs) with a 50k chunk size instead.
+  const productPages: MetadataRoute.Sitemap = [];
+  try {
+    await dbConnect();
+    const products = await Product.find({
+      isActive: true,
+      slug: { $exists: true, $ne: "" },
+    })
+      .select("slug updatedAt createdAt")
+      .sort({ updatedAt: -1 })
+      .lean();
+    const seen = new Set<string>();
+    for (const p of products) {
+      if (!p.slug || seen.has(p.slug)) continue;
+      seen.add(p.slug);
+      productPages.push({
+        url: buildProductUrl(baseUrl, p.slug),
+        lastModified: p.updatedAt || p.createdAt || new Date(),
+        changeFrequency: "weekly" as const,
+        priority: 0.8,
+      });
+    }
+  } catch (error) {
+    console.error("Error generating product sitemap entries:", error);
+  }
 
-  return [...staticPages, ...supplierPages];
+  return [...staticPages, ...supplierPages, ...productPages];
 }

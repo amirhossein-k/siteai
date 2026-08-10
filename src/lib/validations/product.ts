@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SLUG_PATTERN } from "@/lib/product-slug";
 
 /**
  * Product variant validation schema (client-side form validation)
@@ -48,7 +49,13 @@ const productBaseSchema = z.object({
     .string()
     .min(1, "اسلاگ الزامی است")
     .max(200, "اسلاگ حداکثر ۲۰۰ کاراکتر")
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "اسلاگ فقط شامل حروف لاتین، اعداد و خط تیره"),
+    // Session 70 — SEO-first Unicode slugs: Persian/Arabic letters, lowercase
+    // Latin and digits are allowed («هدفون-بیسیم-بلوتوثی»). Uppercase Latin is
+    // rejected (the model stores `lowercase: true` → URL mismatch → 404).
+    .regex(
+      SLUG_PATTERN,
+      "اسلاگ فقط شامل حروف فارسی، حروف لاتین کوچک، اعداد و خط تیره است"
+    ),
   description: z
     .string()
     .max(2000, "توضیحات حداکثر ۲۰۰۰ کاراکتر")
@@ -101,6 +108,10 @@ export type ProductFormData = z.infer<typeof productSchema> & {
   tags?: string[];
   hasVariants?: boolean;
   variants?: z.infer<typeof productVariantSchema>[];
+  /** Session 70 — true when the slug was derived from the name (NOT manually
+   * edited): a server-side collision then gets a deterministic -2/-3 suffix
+   * instead of the manual-slug 409. */
+  autoSlug?: boolean;
 };
 
 /**
@@ -115,4 +126,6 @@ export type SupplierProductFormData = z.infer<typeof supplierProductSchema> & {
   tags?: string[];
   hasVariants?: boolean;
   variants?: z.infer<typeof productVariantSchema>[];
+  /** Session 70 — same autoSlug marker as the admin form. */
+  autoSlug?: boolean;
 };

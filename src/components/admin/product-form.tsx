@@ -96,6 +96,18 @@ export function ProductForm({
     },
   });
 
+  // RHF 7.83 + React 19 + React Compiler (next.config reactCompiler: true):
+  // the shadcn FormMessage components read formState.errors via
+  // useFormContext, but the proxy update alone does not force the render
+  // through — the compiler memoizes the JSX and the messages stay invisible
+  // (proven during QA: a failed submit scrolled to the first invalid field
+  // with NO visible message). Reading errors here AND referencing them in the
+  // JSX below makes them a real render input: a failed submit re-renders the
+  // whole FormField tree, the Persian validation messages appear, and the
+  // form-level hint below makes the failure visible — never a silent
+  // scroll-to-top.
+  const formErrors = form.formState.errors;
+
   const handleFormSubmit = async (data: ProductFormData) => {
     await onSubmit({
       ...data,
@@ -104,6 +116,11 @@ export function ProductForm({
       hasVariants,
       variants,
       descriptionRich,
+      // Session 70 — autoSlug tells the server this slug was derived from the
+      // name (NOT manually edited), so a collision gets a deterministic
+      // suffix (base-2, …). A manually-entered slug is authoritative (409 on
+      // conflict, as before).
+      autoSlug: !form.formState.dirtyFields.slug,
     });
   };
 
@@ -121,7 +138,11 @@ export function ProductForm({
   };
 
   const handleSlugChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    form.setValue("slug", e.target.value);
+    // shouldDirty: the user is deliberately overriding the auto-generated
+    // slug — dirtyFields.slug must become true so handleNameChange stops
+    // regenerating it (and autoSlug=false is sent to the server, keeping the
+    // manually-entered slug authoritative).
+    form.setValue("slug", e.target.value, { shouldDirty: true });
     form.trigger("slug");
   };
 
@@ -545,6 +566,11 @@ export function ProductForm({
         )}
 
         {/* Actions */}
+        {Object.keys(formErrors).length > 0 && (
+          <p role="alert" className="text-sm font-medium text-destructive">
+            لطفاً خطاهای فرم را برطرف کنید
+          </p>
+        )}
         <div className="flex items-center justify-between gap-4">
           <Button
             type="button"

@@ -4,6 +4,27 @@
  */
 
 /**
+ * Safe JSON-LD serialization (Session 71).
+ *
+ * `JSON.stringify` alone does NOT escape `<`/`>`/`&`, so product data
+ * containing e.g. `</script><script>alert(1)</script>` would break out of the
+ * `<script type="application/ld+json">` element (the HTML parser closes the
+ * script early → markup injection / broken structured data). Escaping the
+ * five dangerous sequences keeps the JSON valid (the escapes decode to the
+ * original characters when parsed) while making script-tag breakout
+ * impossible. Do NOT trust editor/API content merely because it came from the
+ * admin UI.
+ */
+export function serializeJsonLd(data: Record<string, unknown>): string {
+  return JSON.stringify(data)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
+/**
  * Organization Schema
  */
 export function organizationSchema({
@@ -142,6 +163,7 @@ export function productSchema({
   image,
   sku,
   brand,
+  url,
   offers,
   aggregateRating,
 }: {
@@ -150,6 +172,8 @@ export function productSchema({
   image?: string[];
   sku?: string;
   brand?: string;
+  /** Canonical product URL (Session 70 — drives structured data + canonical). */
+  url?: string;
   offers: {
     price: number;
     priceCurrency: string;
@@ -169,6 +193,7 @@ export function productSchema({
     ...(image && image.length > 0 && { image }),
     ...(sku && { sku }),
     ...(brand && { brand: { "@type": "Brand", name: brand } }),
+    ...(url && { url }),
     offers: {
       "@type": "Offer",
       price: offers.price,

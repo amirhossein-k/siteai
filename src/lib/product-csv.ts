@@ -14,19 +14,12 @@ import {
   MAX_IMPORT_ROWS,
   MAX_CSV_BYTES,
 } from "@/lib/product-csv-constants";
+import { SLUG_PATTERN } from "@/lib/product-slug";
+import { toLatinDigits } from "@/lib/utils";
 
-const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-/** Persian + Arabic digits → Latin (e.g. "۱۰۰۰۰۰" → "100000"). */
-const FA = "۰۱۲۳۴۵۶۷۸۹";
-const AR = "٠١٢٣٤٥٦٧٨٩";
-const DIGIT_MAP: Record<string, string> = {};
-FA.split("").forEach((d, i) => (DIGIT_MAP[d] = String(i)));
-AR.split("").forEach((d, i) => (DIGIT_MAP[d] = String(i)));
-
-export function toLatinDigits(value: string): string {
-  return value.replace(/[\u06F0-\u06F9\u0660-\u0669]/g, (ch) => DIGIT_MAP[ch] ?? ch);
-}
+// Session 70 — toLatinDigits moved to src/lib/utils.ts (shared with slugify);
+// re-exported here so existing importers keep working.
+export { toLatinDigits };
 
 /** One validated row from the CSV (rowNumber is 1-based, header excluded). */
 export interface CsvProductRow {
@@ -126,8 +119,8 @@ export function parseProductCsv(csvText: string): ProductCsvParseResult {
     else if (name.length > 200) errors.push("نام محصول حداکثر ۲۰۰ کاراکتر");
 
     if (!slug) errors.push("اسلاگ الزامی است");
-    else if (!SLUG_REGEX.test(slug))
-      errors.push("اسلاگ فقط شامل حروف لاتین کوچک، اعداد و خط تیره است");
+    else if (!SLUG_PATTERN.test(slug))
+      errors.push("اسلاگ فقط شامل حروف فارسی، حروف لاتین کوچک، اعداد و خط تیره است");
 
     if (description.length > 2000) errors.push("توضیحات حداکثر ۲۰۰۰ کاراکتر");
 

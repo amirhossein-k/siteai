@@ -9,6 +9,7 @@ import Product from "@/models/Product";
 import { sanitizePlainText } from "@/lib/sanitize";
 import { prepareVariantsForSave } from "@/lib/product-variants";
 import { prepareRichDescription } from "@/lib/product-description";
+import { createWithUniqueSlug } from "@/lib/product-slug";
 
 export async function GET(req: NextRequest) {
   const { token, error } = await requireRoleOrError(req, ["supplier"]);
@@ -92,7 +93,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: rich.error }, { status: 400 });
     }
 
-    const product = await Product.create({
+    // Session 70 — auto-generated slugs (autoSlug: true) get a deterministic
+    // collision suffix (base-2, …); user-entered slugs keep the 409 behavior.
+    const productFields = {
       name: sanitizePlainText(body.name),
       slug: body.slug,
       description:
@@ -111,7 +114,19 @@ export async function POST(req: NextRequest) {
       hasVariants: prepared.hasVariants,
       variants: prepared.variants,
       isActive: body.isActive ?? true,
-    });
+    };
+    const slugResult = await createWithUniqueSlug(
+      body.slug,
+      (candidate) => Product.create({ ...productFields, slug: candidate }),
+      body.autoSlug === true ? 20 : 1
+    );
+    if (!slugResult.ok) {
+      return NextResponse.json(
+        { error: "محصولی با این اسلاگ قبلاً وجود دارد" },
+        { status: 409 }
+      );
+    }
+    const product = slugResult.value;
 
     const populated = await Product.findById(product._id)
       .populate("category", "name")
@@ -189,37 +204,51 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: rich.error }, { status: 400 });
     }
 
-    const updated = await Product.findByIdAndUpdate(
-      id,
-      {
-        name: sanitizePlainText(body.name),
-        slug: body.slug,
-        description:
-          rich.description !== undefined
-            ? rich.description
-            : sanitizePlainText(body.description || ""),
-        descriptionRich: rich.descriptionRich,
-        images: body.images,
-        // Normalize the empty-string "no brand" value (the edit form's "بدون
-        // برند" option submits "") — casting "" to ObjectId throws a CastError
-        // 500. Mirrors the POST normalization below.
-        brand: body.brand || null,
-        tags: body.tags || [],
-        category: body.category,
-        supplierPrice: prepared.hasVariants ? 0 : body.supplierPrice,
-        price: prepared.hasVariants ? prepared.price : body.price,
-        stock: prepared.hasVariants ? prepared.stock : body.stock,
-        hasVariants: prepared.hasVariants,
-        variants: prepared.variants,
-        isActive: body.isActive,
-      },
-      { new: true, runValidators: true }
-    )
-      .populate("category", "name")
-      .populate("supplier", "businessName")
-      .populate("brand", "name")
-      .populate("tags", "name slug")
-      .lean();
+    // Same auto-slug collision handling as POST.
+    const updateFields = {
+      name: sanitizePlainText(body.name),
+      slug: body.slug,
+      description:
+        rich.description !== undefined
+          ? rich.description
+          : sanitizePlainText(body.description || ""),
+      descriptionRich: rich.descriptionRich,
+      images: body.images,
+      // Normalize the empty-string "no brand" value (the edit form's "بدون
+      // برند" option submits "") — casting "" to ObjectId throws a CastError
+      // 500. Mirrors the POST normalization below.
+      brand: body.brand || null,
+      tags: body.tags || [],
+      category: body.category,
+      supplierPrice: prepared.hasVariants ? 0 : body.supplierPrice,
+      price: prepared.hasVariants ? prepared.price : body.price,
+      stock: prepared.hasVariants ? prepared.stock : body.stock,
+      hasVariants: prepared.hasVariants,
+      variants: prepared.variants,
+      isActive: body.isActive,
+    };
+    const slugResult = await createWithUniqueSlug(
+      body.slug,
+      (candidate) =>
+        Product.findByIdAndUpdate(
+          id,
+          { ...updateFields, slug: candidate },
+          { new: true, runValidators: true }
+        )
+          .populate("category", "name")
+          .populate("supplier", "businessName")
+          .populate("brand", "name")
+          .populate("tags", "name slug")
+          .lean(),
+      body.autoSlug === true ? 20 : 1
+    );
+    if (!slugResult.ok) {
+      return NextResponse.json(
+        { error: "محصولی با این اسلاگ قبلاً وجود دارد" },
+        { status: 409 }
+      );
+    }
+    const updated = slugResult.value;
 
     return NextResponse.json(updated);
   } catch (error: unknown) {

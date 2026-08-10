@@ -83,6 +83,11 @@ export function SupplierProductForm({
       hasVariants,
       variants,
       descriptionRich,
+      // Session 70 — autoSlug tells the server this slug was derived from the
+      // name (NOT manually edited), so a collision gets a deterministic
+      // suffix (base-2, …). A manually-entered slug is authoritative (409 on
+      // conflict, as before).
+      autoSlug: !form.formState.dirtyFields.slug,
     });
   };
 
@@ -103,6 +108,12 @@ export function SupplierProductForm({
     },
   });
 
+  // Same RHF 7.83 + React 19 + React Compiler quirk as the admin form: read
+  // formState.errors here AND reference it in the JSX below so a failed
+  // submit re-renders the FormField tree and the Persian validation messages
+  // are actually visible.
+  const formErrors = form.formState.errors;
+
   const isFormLoading = catsLoading || brandsLoading || tagsLoading || attrsLoading;
 
   // Auto-generate slug from name
@@ -116,7 +127,11 @@ export function SupplierProductForm({
   };
 
   const handleSlugChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    form.setValue("slug", e.target.value);
+    // shouldDirty: the user is deliberately overriding the auto-generated
+    // slug — dirtyFields.slug must become true so handleNameChange stops
+    // regenerating it (and autoSlug=false is sent to the server, keeping the
+    // manually-entered slug authoritative).
+    form.setValue("slug", e.target.value, { shouldDirty: true });
     form.trigger("slug");
   };
 
@@ -533,6 +548,11 @@ export function SupplierProductForm({
         </Card>
 
         {/* Actions */}
+        {Object.keys(formErrors).length > 0 && (
+          <p role="alert" className="text-sm font-medium text-destructive">
+            لطفاً خطاهای فرم را برطرف کنید
+          </p>
+        )}
         <div className="flex items-center justify-between gap-4">
           <Button
             type="button"

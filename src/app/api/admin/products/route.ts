@@ -16,6 +16,7 @@ import {
 import { sanitizePlainText } from "@/lib/sanitize";
 import { prepareVariantsForSave } from "@/lib/product-variants";
 import { prepareRichDescription } from "@/lib/product-description";
+import { createWithUniqueSlug } from "@/lib/product-slug";
 // Note: All models are registered globally via dbConnect.js — no side-effect imports needed here
 
 export async function GET(req: NextRequest) {
@@ -117,7 +118,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: rich.error }, { status: 400 });
     }
 
-    const product = await Product.create({
+    // Session 70 — an AUTO-GENERATED slug (autoSlug: true, derived from the
+    // name) that collides gets a deterministic suffix (base-2, base-3, …) via
+    // the DB unique index retry; a manually-entered slug is authoritative and
+    // keeps the existing 409 behavior (maxTries=1 → conflict = {ok:false}).
+    const productFields = {
       name: sanitizePlainText(body.name),
       slug: body.slug,
       description:
@@ -136,7 +141,19 @@ export async function POST(req: NextRequest) {
       hasVariants: prepared.hasVariants,
       variants: prepared.variants,
       isActive: body.isActive ?? true,
-    });
+    };
+    const slugResult = await createWithUniqueSlug(
+      body.slug,
+      (candidate) => Product.create({ ...productFields, slug: candidate }),
+      body.autoSlug === true ? 20 : 1
+    );
+    if (!slugResult.ok) {
+      return NextResponse.json(
+        { error: "محصولی با این اسلاگ قبلاً وجود دارد" },
+        { status: 409 }
+      );
+    }
+    const product = slugResult.value;
 
     const populated = await Product.findById(product._id)
       .populate("category", "name")
@@ -214,15 +231,30 @@ export async function PUT(req: NextRequest) {
       isActive: body.isActive,
     };
 
-    const updated = await Product.findByIdAndUpdate(id, update, {
-      new: true,
-      runValidators: true,
-    })
-      .populate("category", "name")
-      .populate("supplier", "businessName")
-      .populate("brand", "name")
-      .populate("tags", "name slug")
-      .lean();
+    // Same auto-slug collision handling as POST: auto-generated slugs get a
+    // deterministic suffix; user-entered slugs keep the 409 behavior.
+    const slugResult = await createWithUniqueSlug(
+      body.slug,
+      (candidate) =>
+        Product.findByIdAndUpdate(
+          id,
+          { ...update, slug: candidate },
+          { new: true, runValidators: true }
+        )
+          .populate("category", "name")
+          .populate("supplier", "businessName")
+          .populate("brand", "name")
+          .populate("tags", "name slug")
+          .lean(),
+      body.autoSlug === true ? 20 : 1
+    );
+    if (!slugResult.ok) {
+      return NextResponse.json(
+        { error: "محصولی با این اسلاگ قبلاً وجود دارد" },
+        { status: 409 }
+      );
+    }
+    const updated = slugResult.value;
 
     if (!updated) {
       return NextResponse.json(

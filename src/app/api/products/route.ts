@@ -2,46 +2,16 @@ import { NextResponse, NextRequest } from "next/server";
 import mongoose from "mongoose";
 import { dbConnect } from "@/lib/dbConnect";
 import Product from "@/models/Product";
-import Review from "@/models/Review";
 import Attribute from "@/models/Attribute";
 import Brand from "@/models/Brand";
 import Tag from "@/models/Tag";
 import Category from "@/models/Category";
+import { getPublicProductById, getPublicProductBySlug } from "@/lib/public-products";
 import {
   parsePaginationParams,
   buildPaginatedResponse,
   escapeRegex,
 } from "@/lib/pagination";
-
-/**
- * Compute the rating summary (average + count) from APPROVED reviews only.
- * Used for SEO structured data + storefront display (Session 34).
- * Returns { average: 0, count: 0 } when there are no approved reviews.
- */
-async function computeRatingSummary(productId: unknown) {
-  const aggregate = await Review.aggregate([
-    {
-      $match: {
-        product: new mongoose.Types.ObjectId(String(productId)),
-        status: "approved",
-      },
-    },
-    {
-      $group: {
-        _id: null,
-        average: { $avg: "$rating" },
-        count: { $sum: 1 },
-      },
-    },
-  ]);
-
-  return aggregate.length > 0
-    ? {
-        average: Math.round(aggregate[0].average * 10) / 10,
-        count: aggregate[0].count,
-      }
-    : { average: 0, count: 0 };
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -62,7 +32,9 @@ export async function GET(req: NextRequest) {
     // Build query filter
     const filter: Record<string, unknown> = { isActive: true, stock: { $gt: 0 } };
 
-    // If id or slug is provided, return a single product (unchanged behavior)
+    // If id or slug is provided, return a single product (unchanged behavior).
+    // Session 71 — the detail shape lives in src/lib/public-products.ts
+    // (same projection/population/ratingSummary), shared with the SSR page.
     if (id || slug) {
       // Malformed id would throw a CastError -> 500; guard it to 404 instead
       if (id && !mongoose.isValidObjectId(id)) {
@@ -71,16 +43,9 @@ export async function GET(req: NextRequest) {
           { status: 404 }
         );
       }
-      const product = await Product.findOne(
-        id ? { _id: id, isActive: true } : { slug, isActive: true }
-      )
-        // Session 56 — soldCount is INTERNAL (ranking only), never exposed.
-        .select("-soldCount")
-        .populate("category", "name slug")
-        .populate("supplier", "_id businessName logo")
-        .populate("brand", "name slug logo")
-        .populate("tags", "name slug")
-        .lean();
+      const product = id
+        ? await getPublicProductById(id)
+        : await getPublicProductBySlug(slug!);
 
       if (!product) {
         return NextResponse.json(
@@ -89,12 +54,7 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      // SEO/storefront sync: aggregate rating from APPROVED reviews only
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const productDoc: any = product;
-      productDoc.ratingSummary = await computeRatingSummary(productDoc._id);
-
-      return NextResponse.json(productDoc);
+      return NextResponse.json(product);
     }
 
     // NOTE (Session 48): filter ids are cast to ObjectId at build time.

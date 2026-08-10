@@ -47,11 +47,21 @@ describe("formatDate", () => {
 });
 
 describe("slugify", () => {
+  // The product slug validation contract — the single source of truth is
+  // src/lib/product-slug.ts SLUG_PATTERN (validations/product.ts and
+  // product-csv.ts import it). Session 70 made it Unicode-aware so Persian
+  // product names keep their own script in the URL.
+  const SLUG_CONTRACT = /^[a-z0-9\u0600-\u06FF]+(?:-[a-z0-9\u0600-\u06FF]+)*$/;
+
   it("lowercases and dashes internal whitespace", () => {
     expect(slugify("Hello World")).toBe("hello-world");
-    // Leading/trailing whitespace becomes leading/trailing dashes (not
-    // stripped by the current implementation).
-    expect(slugify("  Hello   World  ")).toBe("-hello-world-");
+  });
+
+  it("strips leading/trailing dashes so the result is always valid", () => {
+    // "  Hello   World  " used to produce "-hello-world-", which the
+    // validation contract rejects (leading/trailing dashes).
+    expect(slugify("  Hello   World  ")).toBe("hello-world");
+    expect(SLUG_CONTRACT.test(slugify("  Hello   World  "))).toBe(true);
   });
 
   it("removes non-word characters", () => {
@@ -65,8 +75,88 @@ describe("slugify", () => {
     expect(slugify("A--B")).toBe("a-b");
   });
 
+  it("maps underscores to dashes (underscores violate the slug contract)", () => {
+    expect(slugify("foo_bar_baz")).toBe("foo-bar-baz");
+    expect(SLUG_CONTRACT.test(slugify("foo_bar_baz"))).toBe(true);
+  });
+
   it("handles empty input", () => {
     expect(slugify("")).toBe("");
+  });
+
+  it("returns empty for whitespace/punctuation-only input (the form's min(1) then surfaces «اسلاگ الزامی است»)", () => {
+    expect(slugify(" ")).toBe("");
+    expect(slugify("---")).toBe("");
+    expect(slugify("!!!")).toBe("");
+  });
+
+  it("keeps Persian product names readable — «هدفون بیسیم بلوتوثی» → «هدفون-بیسیم-بلوتوثی»", () => {
+    // Session 70 — SEO-first: Persian keeps its own script in the slug
+    // (originally every Persian char was stripped → "-" → the dead-click
+    // bug; the first fix fell back to a p-<hash>, which the SEO audit
+    // replaced with the readable Unicode slug).
+    expect(slugify("هدفون بیسیم بلوتوثی")).toBe("هدفون-بیسیم-بلوتوثی");
+    expect(SLUG_CONTRACT.test(slugify("هدفون بیسیم بلوتوثی"))).toBe(true);
+    // Deterministic — same input, same slug, no timestamps/randomness.
+    expect(slugify("هدفون بیسیم بلوتوثی")).toBe(slugify("هدفون بیسیم بلوتوثی"));
+  });
+
+  it("preserves the Latin/numeric portion of mixed names — «مایکروویو X200» → «مایکروویو-x200»", () => {
+    expect(slugify("مایکروویو X200")).toBe("مایکروویو-x200");
+    expect(SLUG_CONTRACT.test(slugify("مایکروویو X200"))).toBe(true);
+    expect(slugify("کولر گازی 24000 BTU")).toBe("کولر-گازی-24000-btu");
+    expect(SLUG_CONTRACT.test(slugify("کولر گازی 24000 BTU"))).toBe(true);
+  });
+
+  it("normalizes Arabic ي/ك to Persian ی/ک — «يخچال كلاسيك» → «یخچال-کلاسیک»", () => {
+    // Arabic ye (U+064A) → Persian ye (U+06CC), Arabic kaf (U+0643) → Persian
+    // kaf (U+06A9): normalized names produce consistent, readable slugs.
+    expect(slugify("يخچال كلاسيك")).toBe("یخچال-کلاسیک");
+    expect(slugify("يخچال كلاسيك")).toBe(slugify("یخچال کلاسیک"));
+  });
+
+  it("removes Arabic/Persian diacritics", () => {
+    // Fatha (U+064E) on «ب» and tashdid (U+0651) on «ق» — both INSIDE the
+    // U+0600–U+06FF block, so they must be stripped BEFORE the alphabet
+    // filter or they would leak into the slug.
+    expect(slugify("بَرق قویّ")).toBe("برق-قوی");
+    expect(SLUG_CONTRACT.test(slugify("بَرق قویّ"))).toBe(true);
+  });
+
+  it("treats ZWNJ (نیمفاصله U+200C) as a word separator", () => {
+    expect(slugify("بی\u200Cسیم")).toBe("بی-سیم");
+    expect(SLUG_CONTRACT.test(slugify("بی\u200Cسیم"))).toBe(true);
+  });
+
+  it("normalizes Persian/Arabic digits to Latin digits", () => {
+    expect(slugify("هدفون ۲۴۰۰۰")).toBe("هدفون-24000");
+    expect(slugify("کولر ٠١٢")).toBe("کولر-012");
+    expect(SLUG_CONTRACT.test(slugify("هدفون ۲۴۰۰۰"))).toBe(true);
+  });
+
+  it("strips punctuation and symbols — «قیمت: ۸۵۰,۰۰۰ تومان!» → «قیمت-850000-تومان»", () => {
+    expect(slugify("قیمت: ۸۵۰,۰۰۰ تومان!")).toBe("قیمت-850000-تومان");
+    expect(SLUG_CONTRACT.test(slugify("قیمت: ۸۵۰,۰۰۰ تومان!"))).toBe(true);
+  });
+
+  it("always emits a contract-valid slug for representative inputs", () => {
+    for (const input of [
+      "Hello World",
+      "  Hello   World  ",
+      "هدفون بیسیم بلوتوثی",
+      "مایکروویو X200",
+      "کولر گازی 24000 BTU",
+      "يخچال كلاسيك",
+      "بَرق قویّ",
+      "بی\u200Cسیم",
+      "هدفون ۲۴۰۰۰",
+      "A--B",
+      "foo_bar_baz",
+      "Café!",
+      "123",
+    ]) {
+      expect(SLUG_CONTRACT.test(slugify(input)), JSON.stringify(input)).toBe(true);
+    }
   });
 });
 

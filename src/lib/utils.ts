@@ -34,16 +34,71 @@ export function formatPrice(price: number): string {
   return new Intl.NumberFormat("fa-IR").format(price) + " تومان";
 }
 
+/** Persian + Arabic digits → Latin (e.g. "۱۰۰۰۰۰" → "100000"). */
+const FA = "۰۱۲۳۴۵۶۷۸۹";
+const AR = "٠١٢٣٤٥٦٧٨٩";
+const DIGIT_MAP: Record<string, string> = {};
+FA.split("").forEach((d, i) => (DIGIT_MAP[d] = String(i)));
+AR.split("").forEach((d, i) => (DIGIT_MAP[d] = String(i)));
+const PERSIAN_ARABIC_DIGITS = /[\u06F0-\u06F9\u0660-\u0669]/g;
+
 /**
- * Generate a slug from a string
+ * Convert Persian/Arabic-Indic digits to Latin digits ("۱۰۰" → "100").
+ * Shared by slugify (SEO slugs keep universal Latin digits) and the CSV
+ * import path (Session 51).
+ */
+export function toLatinDigits(value: string): string {
+  return value.replace(PERSIAN_ARABIC_DIGITS, (ch) => DIGIT_MAP[ch] ?? ch);
+}
+
+// Arabic ي (U+064A) → Persian ی (U+06CC), Arabic ك (U+0643) → Persian ک (U+06A9)
+// so normalized Persian names produce consistent, readable slugs.
+const ARABIC_YE = /\u064A/g;
+const ARABIC_KAF = /\u0643/g;
+// Arabic diacritics (harakat), superscript alef and tatweel — removed.
+const ARABIC_DIACRITICS = /[\u064B-\u0652\u0670\u0640]/g;
+// ZWNJ (نیم‌فاصله U+200C) — handled as a word separator.
+const ZWNJ = /\u200C/g;
+// Anything outside the slug alphabet (lowercase Latin, digits, Arabic/Persian
+// block U+0600–U+06FF, hyphen) is removed. No `u`-flag property escapes here
+// so the project's ES2017 tsconfig target stays happy (constructor form is
+// not target-checked anyway) and the output ALWAYS satisfies SLUG_PATTERN.
+const INVALID_SLUG_CHARS = new RegExp("[^a-z0-9\\u0600-\\u06FF-]", "g");
+
+/**
+ * Generate a slug from a string (Session 70 — SEO-first, Persian-first).
+ *
+ * Persian/Arabic product names keep their own script in the slug —
+ * «هدفون بیسیم بلوتوثی» → `هدفون-بیسیم-بلوتوثی` — instead of a transliteration
+ * or a hash. The output is deterministic and ALWAYS satisfies the slug
+ * validation contract /^[a-z0-9\u0600-\u06FF]+(?:-[a-z0-9\u0600-\u06FF]+)*$/
+ * (src/lib/product-slug.ts). Uniqueness stays at the server/DB layer; an
+ * auto-generated slug that collides gets a deterministic `-2`/`-3` suffix
+ * server-side (see src/lib/product-slug.ts createWithUniqueSlug).
+ *
+ * Normalization steps:
+ *  1. trim + Latin lowercase,
+ *  2. Arabic ي/ك → Persian ی/ک, remove Arabic diacritics,
+ *  3. ZWNJ → word separator (`-`),
+ *  4. Persian/Arabic digits → Latin digits,
+ *  5. whitespace/underscore runs → `-`,
+ *  6. remove anything outside the slug alphabet,
+ *  7. collapse repeated hyphens, strip leading/trailing hyphens.
  */
 export function slugify(text: string): string {
-  return text
+  const normalized = text
+    .trim()
     .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/\s+/g, "-")
+    .replace(ARABIC_YE, "\u06CC")
+    .replace(ARABIC_KAF, "\u06A9")
+    .replace(ARABIC_DIACRITICS, "")
+    .replace(ZWNJ, "-")
+    .replace(/[\s_]+/g, "-");
+
+  return toLatinDigits(normalized)
+    .replace(INVALID_SLUG_CHARS, "")
     .replace(/-+/g, "-")
-    .trim();
+    .replace(/^-+|-+$/g, "");
 }
 
 /**
