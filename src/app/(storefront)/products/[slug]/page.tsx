@@ -5,8 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Package } from "lucide-react";
 import { ProductDetailView } from "@/components/storefront/product-detail-view";
-import { ProductJsonLd } from "@/components/seo/json-ld-script";
+import { Breadcrumbs } from "@/components/storefront/breadcrumbs";
+import { BreadcrumbJsonLd, ProductJsonLd } from "@/components/seo/json-ld-script";
 import { getPublicProductBySlug, type PublicProduct } from "@/lib/public-products";
+import {
+  buildProductBreadcrumbTrail,
+  getCategoryAncestors,
+} from "@/lib/breadcrumbs";
 import { buildProductUrl } from "@/lib/product-slug";
 import { APP_URL, APP_NAME } from "@/lib/constants";
 import { isAllowedImageSrc } from "@/lib/utils";
@@ -139,9 +144,35 @@ export default async function ProductDetailPage({
   const displayImages = (product.images || []).filter(isAllowedImageSrc);
   const ratingSummary = product.ratingSummary;
 
+  // Breadcrumb (Session 72) — real navigational hierarchy, nothing invented:
+  //   Home → [Parent Category → … →] Category → Product
+  // The public loader populates the product's category (name/slug); its
+  // ancestor chain (Category.parent self-refs) is resolved with bounded
+  // indexed lookups. No category → Home → Product. Category URLs use the
+  // storefront's real category-browse URL (/products?category=<id>); the
+  // product is the current page — no url, no self-link.
+  const categoryId =
+    typeof product.category === "object" && product.category
+      ? String((product.category as { _id: string })._id)
+      : null;
+  const categoryChain = categoryId
+    ? await getCategoryAncestors(categoryId)
+    : [];
+  const breadcrumbItems = buildProductBreadcrumbTrail({
+    categoryChain,
+    productName: product.name,
+    baseUrl: APP_URL,
+  });
+
   return (
     <>
+      {/* Visible breadcrumb — in the INITIAL HTML (Server Component). */}
+      <Breadcrumbs items={breadcrumbItems} />
       <ProductDetailView product={product} />
+      {/* SEO: BreadcrumbList structured data — mirrors the visible trail;
+          positions 1..n, `item` omitted on the final (current) element per
+          Google's guidance. Separate block — Product schema untouched. */}
+      <BreadcrumbJsonLd items={breadcrumbItems} />
       {/* SEO: Product structured data — real data only, nothing invented.
           aggregateRating appears ONLY when approved reviews exist. */}
       <ProductJsonLd

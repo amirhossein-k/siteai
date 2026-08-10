@@ -139,9 +139,16 @@ export function articleSchema({
 }
 
 /**
- * BreadcrumbList Schema
+ * BreadcrumbList Schema (Session 72).
+ *
+ * Google's current guidance: `position` (1-based, strictly sequential) and
+ * `name` are required on every ListItem; `item` (the absolute URL) is
+ * required for intermediate elements but OPTIONAL on the final (current
+ * page) element — search engines infer the current page's URL from the
+ * crawled page itself. The final breadcrumb (the product) therefore carries
+ * no `item` and is never a self-link in the visible UI.
  */
-export function breadcrumbSchema(items: Array<{ name: string; url: string }>) {
+export function breadcrumbSchema(items: Array<{ name: string; url?: string }>) {
   return {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -149,7 +156,7 @@ export function breadcrumbSchema(items: Array<{ name: string; url: string }>) {
       "@type": "ListItem",
       position: index + 1,
       name: item.name,
-      item: item.url,
+      ...(item.url ? { item: item.url } : {}),
     })),
   };
 }

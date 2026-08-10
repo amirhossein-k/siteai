@@ -61,7 +61,7 @@ export function WebsiteJsonLd() {
 export function BreadcrumbJsonLd({
   items,
 }: {
-  items: Array<{ name: string; url: string }>;
+  items: Array<{ name: string; url?: string }>;
 }) {
   return <JsonLdScript data={breadcrumbSchema(items)} />;
 }

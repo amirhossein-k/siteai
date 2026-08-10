@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
   ShoppingCart,
-  ChevronRight,
   Store,
   CheckCircle2,
   Truck,
@@ -98,22 +97,6 @@ export function ProductDetailView({ product }: { product: Product }) {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Breadcrumb */}
-      <nav className="mb-6 flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/" className="transition-colors hover:text-foreground">
-          صفحه اصلی
-        </Link>
-        <ChevronRight className="h-4 w-4" />
-        <Link
-          href="/products"
-          className="transition-colors hover:text-foreground"
-        >
-          محصولات
-        </Link>
-        <ChevronRight className="h-4 w-4" />
-        <span className="text-foreground font-medium">{product.name}</span>
-      </nav>
-
       <div className="grid gap-8 lg:grid-cols-2">
         {/* Product Images Gallery */}
         <div className="space-y-3">

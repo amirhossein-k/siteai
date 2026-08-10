@@ -90,8 +90,10 @@ test.describe("Persian product name auto-slug", () => {
     // Sanity: it must NOT be a hash fallback and must be human-readable.
     expect(slug).not.toMatch(/^p-[0-9a-f]+$/);
 
-    // Required selects + pricing.
-    await page.getByLabel(/دسته/).selectOption({ index: 1 });
+    // Required selects + pricing. Select the CREATED category by value (not
+    // index) so the storefront breadcrumb assertions below are deterministic
+    // (Home → Category → Product).
+    await page.getByLabel(/دسته/).selectOption({ value: categoryId });
     await page.getByLabel(/فروشنده/).selectOption({ index: 1 });
     await page.getByLabel("قیمت فروش (تومان)").fill("850000");
     await page.getByLabel("قیمت تأمین (تومان)").fill("650000");
@@ -137,6 +139,27 @@ test.describe("Persian product name auto-slug", () => {
       page.getByRole("heading", { name: persianName })
     ).toBeVisible();
 
+    // Session 72 — visible breadcrumb (server-rendered initial HTML).
+    // Home → Category → Product (the category is root — no parent chain).
+    const categoryName = `دسته E2E ${state.prefix}11`;
+    const breadcrumb = page.getByRole("navigation", { name: "مسیر دسترسی" });
+    await expect(breadcrumb).toBeVisible();
+    const homeLink = breadcrumb.getByRole("link", { name: "صفحه اصلی" });
+    await expect(homeLink).toBeVisible();
+    // The Home link is an absolute URL (from APP_URL).
+    await expect(homeLink).toHaveAttribute("href", state.baseURL);
+    const categoryLink = breadcrumb.getByRole("link", { name: categoryName });
+    await expect(categoryLink).toBeVisible();
+    // Category link is an absolute URL (from APP_URL).
+    await expect(categoryLink).toHaveAttribute(
+      "href",
+      `${state.baseURL}/products?category=${categoryId}`
+    );
+    // The product name is the FINAL breadcrumb item — plain text with aria-current.
+    const productCrumb = breadcrumb.getByText(persianName, { exact: true });
+    await expect(productCrumb).toBeVisible();
+    await expect(productCrumb).toHaveAttribute("aria-current", "page");
+
     // Canonical link — the href carries the product URL. Next.js's metadata
     // serializer percent-encodes the Unicode slug on the wire (browsers and
     // search engines decode it — the encoded and decoded forms identify the
@@ -152,26 +175,48 @@ test.describe("Persian product name auto-slug", () => {
     ).toBe(true);
 
     // JSON-LD Product schema — same Unicode product URL (SEO structured data).
-    const productLd = await page
-      .locator('script[type="application/ld+json"]')
-      .evaluateAll((scripts) => {
-        for (const s of scripts) {
-          try {
-            const data = JSON.parse(s.textContent || "{}") as {
-              "@type"?: string;
-              name?: string;
-              url?: string;
-            };
-            if (data["@type"] === "Product") return data;
-          } catch {
-            // skip non-JSON / malformed scripts
-          }
+    const allLdScripts = page.locator('script[type="application/ld+json"]');
+    const productLd = await allLdScripts.evaluateAll((scripts) => {
+      for (const s of scripts) {
+        try {
+          const data = JSON.parse(s.textContent || "{}") as Record<string, unknown>;
+          if (data["@type"] === "Product") return data;
+        } catch {
+          // skip non-JSON / malformed scripts
         }
-        return null;
-      });
+      }
+      return null;
+    });
     expect(productLd).not.toBeNull();
     expect(productLd?.["name"]).toBe(persianName);
     expect(productLd?.["url"]).toBe(`${state.baseURL}/products/${slug}`);
+
+    // BreadcrumbList JSON-LD — same evaluateAll, look for BreadcrumbList.
+    const bcLd = await allLdScripts.evaluateAll((scripts) => {
+      for (const s of scripts) {
+        try {
+          const data = JSON.parse(s.textContent || "{}") as Record<string, unknown>;
+          if (data["@type"] === "BreadcrumbList") return data;
+        } catch {
+          // skip
+        }
+      }
+      return null;
+    });
+    expect(bcLd).not.toBeNull();
+    const elements = (bcLd as Record<string, unknown[]>)["itemListElement"];
+    expect(elements).toHaveLength(3);
+    expect((elements[0] as { position: number }).position).toBe(1);
+    expect((elements[1] as { position: number }).position).toBe(2);
+    expect((elements[2] as { position: number }).position).toBe(3);
+    // First item = Home (absolute URL).
+    expect((elements[0] as { item: string }).item).toBe(state.baseURL);
+    // Second item = Category (absolute URL).
+    expect((elements[1] as { item: string }).item).toBe(
+      `${state.baseURL}/products?category=${categoryId}`
+    );
+    // Third item = Product (the current page) — no `item` per Google guidance.
+    expect((elements[2] as { item?: string }).item).toBeUndefined();
 
     // Session 71 — SEO metadata must live in the INITIAL server HTML (a
     // crawler with no JavaScript must see title/description/canonical/OG/
@@ -193,6 +238,11 @@ test.describe("Persian product name auto-slug", () => {
     expect(html).toContain(`name="twitter:card"`);
     expect(html).toContain(`application/ld+json`);
     expect(html).toContain(`${state.baseURL}/products/${slug}`);
+    // Session 72 — the initial HTML must contain the BreadcrumbList structured
+    // data (server-rendered, not hydration-dependent).
+    expect(html).toContain('"@type":"BreadcrumbList"');
+    // The page must NOT emit noindex anywhere.
+    expect(html).not.toContain('content="noindex');
   });
 
   test("sitemap.xml lists indexable products (incl. Unicode slugs) and excludes inactive ones", async () => {
