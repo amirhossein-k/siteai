@@ -206,6 +206,14 @@ export function ProductDescriptionEditor({
     []
   );
 
+  // Issue 3 (editor images) — capture the caret BEFORE the native file picker
+  // opens and the editor blurs. During the async upload the DOM selection is
+  // lost; without a selection `insertImage` can no-op or insert at a stale
+  // location. On completion we restore the captured selection first so the
+  // image lands exactly where the user was typing. Declared after `editor` so
+  // the ref is typed by the editor's selection type.
+  const selectionBeforeUpload = useRef<typeof editor.selection>(null);
+
   const handleUpload = async (file: File | undefined) => {
     if (!file) return;
     setUploading(true);
@@ -217,6 +225,11 @@ export function ProductDescriptionEditor({
       if (!url) {
         showToast.error("آپلود تصویر ناموفق بود");
         return;
+      }
+      // Restore the pre-upload caret if the current selection went stale
+      // (the file picker blurred the editor during the async upload).
+      if (!editor.selection && selectionBeforeUpload.current) {
+        editor.tf.select(selectionBeforeUpload.current);
       }
       // Insert via the media plugin's own transform (registers the node with
       // the plugin's img type + preview pipeline so it renders in the editor —
@@ -410,8 +423,20 @@ export function ProductDescriptionEditor({
         <ToolbarButton label="جدول" onClick={() => tf(editor).insert?.table?.({ rowCount: 2, colCount: 2 }) ?? editor.tf.insertNode({ type: "table", children: [] })}>
           <TableIcon className="h-4 w-4" />
         </ToolbarButton>
-        <ToolbarButton label="افزودن تصویر" disabled={uploading || disabled} onClick={() => fileInputRef.current?.click()}>
-          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
+        <ToolbarButton
+          label="افزودن تصویر"
+          disabled={uploading || disabled}
+          onClick={() => {
+            // Capture the caret before the native picker steals focus.
+            selectionBeforeUpload.current = editor.selection ?? null;
+            fileInputRef.current?.click();
+          }}
+        >
+          {uploading ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <ImagePlus className="h-4 w-4" />
+          )}
         </ToolbarButton>
         <input
           ref={fileInputRef}
@@ -432,6 +457,20 @@ export function ProductDescriptionEditor({
           <Redo2 className="h-4 w-4" />
         </ToolbarButton>
       </div>
+
+      {/* Upload status strip — a visible, non-toast-only signal that the
+          image is being uploaded (Issue 3, editor images). Cleared on
+          success/failure; success is then confirmed by the in-editor
+          thumbnail, failure by the error toast. */}
+      {uploading && (
+        <div
+          role="status"
+          className="flex items-center gap-2 border-b border-input bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          در حال آپلود تصویر...
+        </div>
+      )}
 
       {/* Editable content */}
       <Plate

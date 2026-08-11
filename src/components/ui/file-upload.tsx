@@ -10,7 +10,7 @@ import {
   AlertCircle,
   Loader2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, isAllowedImageSrc } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { showToast } from "@/components/ui/toast";
 import axios from "axios";
@@ -47,6 +47,16 @@ export function FileUpload({
   const [isDragOver, setIsDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedUrls, setUploadedUrls] = useState<string[]>(existingImages);
+  // Issue 3 (main product image) — per-URL render diagnostics. A success toast
+  // is NOT proof the image displays: a URL whose host is not allowlisted or
+  // whose HTTP GET fails must be VISIBLY distinguishable from a rendered
+  // thumbnail (previously onError silently hid the <img> behind a generic
+  // icon with no explanation).
+  const [failedUrls, setFailedUrls] = useState<string[]>([]);
+  // URLs whose <img> has actually fired onLoad — the «آپلود شد» badge must
+  // reflect the RENDERED state, not merely "uploaded" (a still-loading or
+  // about-to-fail image must not flash a success badge).
+  const [loadedUrls, setLoadedUrls] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(
@@ -112,6 +122,10 @@ export function FileUpload({
   const handleRemove = useCallback(
     async (url: string) => {
       setUploadedUrls((prev) => prev.filter((u) => u !== url));
+      // Purge diagnostic state so a removed-and-re-added URL never inherits a
+      // stale failure/loaded badge.
+      setFailedUrls((prev) => prev.filter((u) => u !== url));
+      setLoadedUrls((prev) => prev.filter((u) => u !== url));
       // Extract key from URL and call delete API
       try {
         await axios.delete("/api/upload", { data: { key: url } });
@@ -135,6 +149,12 @@ export function FileUpload({
     return ["jpg", "jpeg", "png", "webp", "gif", "avif"].includes(ext);
   };
 
+  // An image whose host is NOT in the allowlist can never render (the
+  // storefront guard + next/image remotePatterns reject it). Show an explicit
+  // "دامنه مجاز نیست" tile instead of a silent broken thumbnail.
+  const isUnallowedImage = (url: string): boolean =>
+    isImage(url) && !isAllowedImageSrc(url);
+
   return (
     <div className={cn("space-y-3", className)}>
       {/* Uploaded files preview */}
@@ -145,23 +165,62 @@ export function FileUpload({
               key={url}
               className="group relative aspect-square overflow-hidden rounded-lg border bg-muted"
             >
-              {isImage(url) ? (
+              {isImage(url) && !failedUrls.includes(url) && !isUnallowedImage(url) ? (
                 <img
                   src={url}
                   alt=""
                   className="h-full w-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                    (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden");
-                  }}
+                  onLoad={() =>
+                    setLoadedUrls((prev) =>
+                      prev.includes(url) ? prev : [...prev, url]
+                    )
+                  }
+                  onError={() =>
+                    setFailedUrls((prev) =>
+                      prev.includes(url) ? prev : [...prev, url]
+                    )
+                  }
                 />
               ) : null}
-              <div className={cn(
-                "flex h-full w-full items-center justify-center",
-                isImage(url) && "hidden"
-              )}>
-                {getFileIcon(url)}
-              </div>
+              {/* Non-image file → generic icon tile (unchanged). */}
+              {!isImage(url) && (
+                <div className="flex h-full w-full items-center justify-center">
+                  {getFileIcon(url)}
+                </div>
+              )}
+              {/* Load failure → explicit diagnostic instead of a silent icon. */}
+              {isImage(url) && failedUrls.includes(url) && (
+                <div
+                  className="flex h-full w-full flex-col items-center justify-center gap-1 bg-destructive/5 p-2 text-center"
+                  data-testid="upload-image-load-failed"
+                >
+                  <AlertCircle className="h-6 w-6 text-destructive" />
+                  <span className="text-[10px] leading-tight text-destructive">
+                    خطا در نمایش تصویر
+                  </span>
+                </div>
+              )}
+              {/* Unallowed image host → explicit diagnostic, never rendered. */}
+              {isImage(url) && !failedUrls.includes(url) && isUnallowedImage(url) && (
+                <div
+                  className="flex h-full w-full flex-col items-center justify-center gap-1 bg-destructive/5 p-2 text-center"
+                  data-testid="upload-image-domain-rejected"
+                >
+                  <AlertCircle className="h-6 w-6 text-destructive" />
+                  <span className="text-[10px] leading-tight text-destructive">
+                    دامنه تصویر مجاز نیست
+                  </span>
+                </div>
+              )}
+              {/* Successfully RENDERED thumbnail (onLoad fired) → badge. */}
+              {isImage(url) &&
+                !failedUrls.includes(url) &&
+                !isUnallowedImage(url) &&
+                loadedUrls.includes(url) && (
+                  <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded-full bg-emerald-600/90 px-1.5 py-0.5 text-[9px] font-medium text-white">
+                    آپلود شد
+                  </span>
+                )}
               <button
                 type="button"
                 onClick={() => handleRemove(url)}

@@ -64,6 +64,10 @@ test.describe("Rich product description", () => {
           `${uiPrefix()}rich-conflict`,
           `${uiPrefix()}${editorRichSlug}`,
           `${uiPrefix()}rich-paste`,
+          `${uiPrefix()}rich-img`,
+          `${uiPrefix()}rich-ext-img`,
+          `${uiPrefix()}rich-preview`,
+          `${uiPrefix()}rich-mainimg`,
         ],
       },
     });
@@ -126,6 +130,29 @@ test.describe("Rich product description", () => {
     };
     const res = await adminCtx.post("/api/admin/products", { data: richBody });
     expect(res.ok()).toBeTruthy();
+
+    // Product carrying an image URL whose host is NOT in the image allowlist
+    // (the schema stores arbitrary strings; rendering must flag it). The edit
+    // form must show the explicit "دامنه تصویر مجاز نیست" diagnostic instead
+    // of a silent broken thumbnail.
+    const unallowedImgBody = {
+      name: `محصول تصویر خارجی ${state.prefix}`,
+      slug: `${uiPrefix()}rich-ext-img`,
+      description: "تصویر دامنه خارجی",
+      images: ["https://img.test/foreign.jpg"],
+      category: categoryId,
+      supplier: state.supplierId,
+      supplierPrice: 900_000,
+      price,
+      stock: 5,
+      hasVariants: false,
+      variants: [],
+      isActive: true,
+    };
+    const uRes = await adminCtx.post("/api/admin/products", {
+      data: unallowedImgBody,
+    });
+    expect(uRes.ok()).toBeTruthy();
 
     // Conflict-slug product for the "editor stays editable after a
     // server-side error" test — a duplicate MANUAL slug triggers the
@@ -399,6 +426,226 @@ test.describe("Rich product description", () => {
     const link = page.getByRole("link", { name: "لینک چسبانده‌شده" });
     await expect(link).toHaveAttribute("href", "https://example.com/pasted");
     await expect(link).toHaveAttribute("rel", /noopener/);
+  });
+
+  test("editor: upload an image via the toolbar and store the img node", async ({
+    page,
+  }) => {
+    const uiSlug = `${uiPrefix()}rich-img`;
+    await page.goto("/admin/products/new");
+    await expect(
+      page.getByRole("heading", { name: "افزودن محصول جدید" })
+    ).toBeVisible();
+
+    await page
+      .getByLabel("نام محصول")
+      .fill(`محصول تصویری ${state.prefix}ادیتور`);
+    await page.getByLabel("اسلاگ (لینک)").fill(uiSlug);
+    await page.getByLabel("دسته‌بندی").selectOption({ index: 1 });
+    await page.getByLabel("فروشنده (تأمین‌کننده)").selectOption({ index: 1 });
+
+    const editor = page.getByLabel("توضیحات محصول");
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await page.keyboard.type("مقدمه ");
+
+    // Real upload through the editor's hidden file input (what the toolbar
+    // button opens). The success TOAST is not the proof — the visible
+    // in-editor thumbnail and the stored node are. Scope via the toolbar
+    // button's parent (the toolbar div) — `div:has(...)` also matches every
+    // ancestor div of the button (strict-mode violation).
+    const fileInput = page
+      .locator('button[aria-label="افزودن تصویر"]')
+      .locator("..")
+      .locator('input[type="file"]');
+    await fileInput.setInputFiles({
+      name: "editor-1x1.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64"
+      ),
+    });
+    await expect(page.getByText("تصویر به توضیحات اضافه شد")).toBeVisible();
+    await expect(editor.locator("img")).toBeVisible();
+
+    await page.getByLabel("قیمت فروش (تومان)").fill(String(price));
+    await page.getByLabel("قیمت تأمین (تومان)").fill("900000");
+    await page.getByLabel("موجودی").fill("7");
+    await page.getByRole("button", { name: "ایجاد محصول" }).click();
+    await expect(page.getByText("محصول با موفقیت ایجاد شد")).toBeVisible();
+
+    // The stored tree must actually contain the img node (allowlisted host).
+    const listRes = await adminCtx.get(
+      `/api/admin/products?search=${encodeURIComponent(uiSlug)}`
+    );
+    expect(listRes.ok()).toBeTruthy();
+    const product = (
+      (await listRes.json()) as {
+        data: {
+          descriptionRich?: { type?: string; url?: string; children?: unknown[] }[];
+        }[];
+      }
+    ).data[0];
+    const findNode = (
+      nodes?: { type?: string; url?: string; children?: unknown[] }[]
+    ): { type?: string; url?: string } | undefined => {
+      for (const n of nodes || []) {
+        if (n.type === "img") return n;
+        const found = findNode((n.children || []) as never);
+        if (found) return found;
+      }
+      return undefined;
+    };
+    const imgNode = findNode(product.descriptionRich);
+    expect(imgNode).toBeTruthy();
+    expect(imgNode?.url).toMatch(/^https:\/\/c589564\.parspack\.net\//);
+
+    // Storefront renders the description image.
+    await page.goto(`/products/${uiSlug}`);
+    await expect(
+      page.locator('img[src^="https://c589564.parspack.net"]')
+    ).toBeVisible();
+  });
+
+  test("preview toggle renders the storefront-equivalent description", async ({
+    page,
+  }) => {
+    // Issue 3 (description preview) — the پیشنمایش tab must render the SAME
+    // closed-set structured output as the storefront (ProductDescription)
+    // from the CURRENT unsaved state, and toggling back to ویرایش must not
+    // lose any typed content (editor remounts with the live value).
+    await page.goto("/admin/products/new");
+    await expect(
+      page.getByRole("heading", { name: "افزودن محصول جدید" })
+    ).toBeVisible();
+
+    await page
+      .getByLabel("نام محصول")
+      .fill(`محصول پیشنمایش ${state.prefix}`);
+    await page.getByLabel("اسلاگ (لینک)").fill(`${uiPrefix()}rich-preview`);
+    await page.getByLabel("دسته‌بندی").selectOption({ index: 1 });
+    await page.getByLabel("فروشنده (تأمین‌کننده)").selectOption({ index: 1 });
+
+    const editor = page.getByLabel("توضیحات محصول");
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await page.keyboard.type("مقدمه پیشنمایش");
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: "عنوان ۲" }).click();
+    await page.keyboard.type("مشخصات پیشنمایش");
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: "پررنگ" }).click();
+    await page.keyboard.type("متن پررنگ پیشنمایش");
+    await page.getByRole("button", { name: "پررنگ" }).click();
+
+    // Switch to preview — structured output, no raw HTML.
+    await page.getByRole("button", { name: "پیشنمایش" }).click();
+    const preview = page.getByTestId("description-preview");
+    await expect(preview).toBeVisible();
+    await expect(
+      preview.getByRole("heading", { name: "مشخصات پیشنمایش", level: 2 })
+    ).toBeVisible();
+    await expect(preview.locator("strong", { hasText: "متن پررنگ پیشنمایش" })).toBeVisible();
+    await expect(preview.getByText("مقدمه پیشنمایش")).toBeVisible();
+    // Editor must NOT be present in preview mode.
+    await expect(editor).not.toBeVisible();
+
+    // Toggle back — nothing typed is lost (live state remount).
+    await page.getByRole("button", { name: "ویرایش" }).click();
+    await expect(editor).toBeVisible();
+    await expect(editor).toContainText("مقدمه پیشنمایش");
+    await expect(editor).toContainText("مشخصات پیشنمایش");
+  });
+
+  test("main image upload: thumbnail + badge, persists after save, flags unallowed hosts", async ({
+    page,
+  }) => {
+    // Issue 3 (main product image) — a success toast is NOT proof: the
+    // rendered thumbnail + «آپلود شد» badge, the persisted images array, and
+    // the reopened edit form's thumbnail prove the chain. The seeded
+    // foreign-host product must show the explicit «دامنه تصویر مجاز نیست»
+    // diagnostic in the edit form.
+    const uiSlug = `${uiPrefix()}rich-mainimg`;
+    await page.goto("/admin/products/new");
+    await expect(
+      page.getByRole("heading", { name: "افزودن محصول جدید" })
+    ).toBeVisible();
+
+    await page
+      .getByLabel("نام محصول")
+      .fill(`محصول تصویر اصلی ${state.prefix}`);
+    await page.getByLabel("اسلاگ (لینک)").fill(uiSlug);
+    await page.getByLabel("دسته‌بندی").selectOption({ index: 1 });
+    await page.getByLabel("فروشنده (تأمین‌کننده)").selectOption({ index: 1 });
+    await page.getByLabel("قیمت فروش (تومان)").fill(String(price));
+    await page.getByLabel("قیمت تأمین (تومان)").fill("900000");
+    await page.getByLabel("موجودی").fill("7");
+
+    // The FileUpload hidden input — scoped via the drop-zone container (the
+    // editor's own hidden file input lives in a different card, so a bare
+    // input[type=file] selector would be ambiguous).
+    const fileInput = page
+      .locator('div.space-y-3')
+      .filter({ hasText: "فایل را اینجا رها کنید یا کلیک کنید" })
+      .locator('input[type="file"]');
+    await fileInput.setInputFiles({
+      name: "main-1x1.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64"
+      ),
+    });
+
+    // Uploaded + rendered: real thumbnail with the allowlisted host AND the
+    // «آپلود شد» badge — not just a toast.
+    const thumbnail = page.locator(
+      'img[src^="https://c589564.parspack.net"]'
+    );
+    await expect(thumbnail).toBeVisible();
+    await expect(page.getByText("آپلود شد").first()).toBeVisible();
+
+    await page.getByRole("button", { name: "ایجاد محصول" }).click();
+    await expect(page.getByText("محصول با موفقیت ایجاد شد")).toBeVisible();
+
+    // Persisted images array contains the uploaded URL.
+    const listRes = await adminCtx.get(
+      `/api/admin/products?search=${encodeURIComponent(uiSlug)}`
+    );
+    expect(listRes.ok()).toBeTruthy();
+    const product = (
+      (await listRes.json()) as {
+        data: { _id: string; images: string[] }[];
+      }
+    ).data[0];
+    expect(product.images.length).toBe(1);
+    expect(product.images[0]).toMatch(/^https:\/\/c589564\.parspack\.net\//);
+
+    // Reopened edit form still renders the thumbnail.
+    await page.goto(`/admin/products/${product._id}/edit`);
+    await expect(
+      page.getByRole("heading", { name: "ویرایش محصول" })
+    ).toBeVisible();
+    await expect(thumbnail).toBeVisible();
+
+    // Unallowed-host product → explicit diagnostic in the edit form.
+    const extRes = await adminCtx.get(
+      `/api/admin/products?search=${encodeURIComponent(
+        `${uiPrefix()}rich-ext-img`
+      )}`
+    );
+    expect(extRes.ok()).toBeTruthy();
+    const extProduct = (
+      (await extRes.json()) as { data: { _id: string }[] }
+    ).data[0];
+    await page.goto(`/admin/products/${extProduct._id}/edit`);
+    await expect(
+      page.getByTestId("upload-image-domain-rejected")
+    ).toBeVisible();
+    await expect(
+      page.getByText("دامنه تصویر مجاز نیست").first()
+    ).toBeVisible();
   });
 
   test("editor stays editable (Backspace) after a server-side submit error", async ({

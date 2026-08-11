@@ -35,7 +35,7 @@ import {
   VariantBuilder,
   type VariantDraft,
 } from "@/components/admin/variant-builder";
-import { ProductDescriptionEditor } from "@/components/admin/product/product-description-editor";
+import { DescriptionEditorWithPreview } from "@/components/admin/product/description-editor-with-preview";
 import { FileUpload } from "@/components/ui/file-upload";
 import { showToast } from "@/components/ui/toast";
 import { slugify } from "@/lib/utils";
@@ -212,9 +212,10 @@ export function SupplierProductForm({
               >
                 توضیحات
               </label>
-              <ProductDescriptionEditor
+              <DescriptionEditorWithPreview
                 id="product-description-editor"
                 initialValue={descriptionRich}
+                legacyText={form.watch("description")}
                 onChange={setDescriptionRich}
                 disabled={isSubmitting}
               />
