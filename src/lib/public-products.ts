@@ -2,7 +2,15 @@ import mongoose from "mongoose";
 import { dbConnect } from "@/lib/dbConnect";
 import Product from "@/models/Product";
 import Review from "@/models/Review";
-import type { RatingSummary, RichDescriptionNode, ProductVariant } from "@/types";
+import {
+  applyEffectivePricing,
+  type PublicDiscountMetadata,
+} from "@/lib/product-pricing";
+import type {
+  RatingSummary,
+  RichDescriptionNode,
+  ProductVariant,
+} from "@/types";
 
 /**
  * Public product detail loader (Session 71) — the SINGLE implementation of
@@ -28,7 +36,13 @@ export interface PublicProduct {
   slug: string;
   description: string;
   descriptionRich?: RichDescriptionNode[];
+  /** Original/base price — NEVER overwritten by a discount. */
   price: number;
+  /** Server-computed effective (post-discount) price — equals price when no discount is active. */
+  effectivePrice: number;
+  /** Active-only discount summary — null when no discount is live
+   *  (future/expired/disabled config never leaks to public consumers). */
+  discount: PublicDiscountMetadata | null;
   images: string[];
   category: string | { _id: string; name: string; slug?: string };
   stock: number;
@@ -83,9 +97,14 @@ async function queryPublicProduct(
   if (!product) return null;
   // JSON round-trip: ObjectIds → hex strings, Dates → ISO strings — identical
   // to NextResponse.json's serialization and safe for RSC props.
-  const plain = JSON.parse(JSON.stringify(product)) as PublicProduct;
+  const plain = JSON.parse(JSON.stringify(product)) as PublicProduct & {
+    discount?: unknown;
+  };
   plain.ratingSummary = await computeRatingSummary(plain._id);
-  return plain;
+  // Session 77 — effective pricing: effectivePrice + ACTIVE-only discount
+  // metadata (the raw discount subdoc never leaves the server). Variants get
+  // per-variant effectivePrice.
+  return applyEffectivePricing(plain);
 }
 
 /** Detail by slug (public product page). */

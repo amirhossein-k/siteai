@@ -89,7 +89,26 @@ export function ProductDetailView({ product }: { product: Product }) {
       : product.images || []
   ).filter(isAllowedImageSrc);
 
-  const displayPrice = activeVariant ? activeVariant.price : product.price;
+  // Session 77 — server-computed effective pricing. displayPrice = the
+  // effective (post-discount) unit price; the original price + badge render
+  // ONLY when the server reports an ACTIVE discount (product.discount is the
+  // active-only summary — null when no discount is running, so an expired/
+  // future discount can never show a stale badge or price from a client clock).
+  const displayOriginalPrice = activeVariant
+    ? activeVariant.price
+    : product.price;
+  const displayPrice = activeVariant
+    ? activeVariant.effectivePrice ?? activeVariant.price
+    : product.effectivePrice ?? product.price;
+  const hasActiveDiscount =
+    !!product.discount && displayPrice < displayOriginalPrice;
+  // Badge percent: configured value (percent type) at product level; for a
+  // selected variant the per-variant reduction is computed from the pair.
+  const discountPercent = hasActiveDiscount
+    ? activeVariant
+      ? Math.round((1 - displayPrice / displayOriginalPrice) * 100)
+      : (product.discount?.percent ?? 0)
+    : 0;
   const displayStock = activeVariant ? activeVariant.stock : product.stock;
   const variantLabel = activeVariant
     ? activeVariant.attributes.map((a) => `${a.name}: ${a.value}`).join("، ")
@@ -258,14 +277,25 @@ export function ProductDetailView({ product }: { product: Product }) {
             {product.name}
           </h1>
 
-          {/* Price */}
-          <div>
+          {/* Price — original struck through + effective price + badge while an
+              active discount exists (server-computed only, never stale). */}
+          <div className="flex flex-wrap items-center gap-3">
             <span className="text-3xl font-bold text-emerald-600">
               {formatPrice(displayPrice)}
             </span>
+            {hasActiveDiscount && (
+              <>
+                <span className="text-lg text-muted-foreground line-through">
+                  {formatPrice(displayOriginalPrice)}
+                </span>
+                <Badge className="bg-rose-600 text-white">
+                  ٪{discountPercent} تخفیف
+                </Badge>
+              </>
+            )}
             {hasVariants && !activeVariant && (
-              <span className="mr-2 text-sm text-muted-foreground">
-                (از {formatPrice(product.price)})
+              <span className="text-sm text-muted-foreground">
+                (از {formatPrice(displayPrice)})
               </span>
             )}
           </div>

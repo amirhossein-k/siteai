@@ -41,6 +41,7 @@ import {
 import { DescriptionEditorWithPreview } from "@/components/admin/product/description-editor-with-preview";
 import {
   DiscountFields,
+  toLocalInputValue,
   type DiscountDraft,
 } from "@/components/admin/product/discount-fields";
 import { slugify } from "@/lib/utils";
@@ -88,8 +89,10 @@ export function ProductForm({
     return {
       type: d.type === "fixed" ? "fixed" : "percent",
       value: d.value != null ? String(d.value) : "",
-      startsAt: d.startsAt || "",
-      endsAt: d.endsAt || "",
+      // Stored UTC ISO → local datetime-local value (browser-local TZ) so the
+      // existing discount edits in the same local time it was entered in.
+      startsAt: toLocalInputValue(d.startsAt),
+      endsAt: toLocalInputValue(d.endsAt),
       isActive: d.isActive !== false,
     };
   });

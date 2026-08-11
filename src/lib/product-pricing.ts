@@ -156,15 +156,37 @@ export function toPublicDiscount(
 }
 
 /** Enrich a public/API product row with effectivePrice + active-only discount
- *  metadata (used by list + detail paths; does NOT touch variants). */
-export function applyEffectivePricing<T extends { price: number }>(
-  product: T & { discount?: unknown }
-): T & { effectivePrice: number; discount: PublicDiscountMetadata | null } {
-  const effective = getEffectivePrice(product.price, product.discount as ProductDiscountInput | undefined);
+ *  metadata (used by list + detail paths). Variant products also get a
+ *  per-variant effectivePrice — each variant is priced independently against
+ *  the SAME discount (percent per-variant; fixed clamped per-variant). */
+export function applyEffectivePricing<
+  T extends { price: number },
+  V extends { price: number }
+>(
+  product: T & { discount?: unknown; variants?: V[] },
+  now: Date = new Date()
+): T & {
+  effectivePrice: number;
+  discount: PublicDiscountMetadata | null;
+  variants?: Array<V & { effectivePrice: number }>;
+} {
+  const discount = product.discount as ProductDiscountInput | undefined;
+  const effective = getEffectivePrice(product.price, discount, now);
+  const variants = product.variants?.map((v) => ({
+    ...v,
+    effectivePrice: getEffectivePrice(v.price, discount, now).finalPrice,
+  })) as Array<V & { effectivePrice: number }> | undefined;
   return {
     ...product,
     effectivePrice: effective.finalPrice,
     discount: toPublicDiscount(effective),
+    // Explicitly included (undefined drops out of JSON) — the generic spread
+    // would otherwise lose the per-variant effectivePrice in the type.
+    variants,
+  } as T & {
+    effectivePrice: number;
+    discount: PublicDiscountMetadata | null;
+    variants?: Array<V & { effectivePrice: number }>;
   };
 }
 

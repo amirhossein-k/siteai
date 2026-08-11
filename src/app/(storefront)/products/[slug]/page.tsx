@@ -186,9 +186,18 @@ export default async function ProductDetailPage({
               ? (product.brand as { name: string }).name
               : undefined,
           offers: {
-            price: product.price,
+            // Session 77 — a live discount uses the server-computed
+            // effectivePrice; otherwise the original price.
+            price: product.effectivePrice ?? product.price,
             priceCurrency: "IRR",
             availability: (product.stock ?? 0) > 0 ? "InStock" : "OutOfStock",
+            // priceValidUntil ONLY for a live discount with a finite end —
+            // never fabricated. product.discount is the active-only summary
+            // (null when no discount is running, so expired/future windows
+            // can never leak into structured data).
+            ...(product.discount?.endsAt
+              ? { priceValidUntil: product.discount.endsAt }
+              : {}),
           },
           aggregateRating:
             ratingSummary && ratingSummary.count > 0

@@ -18,8 +18,9 @@ export interface DiscountDraft {
   isActive: boolean;
 }
 
-/** Stored UTC ISO → local datetime-local input value (browser-local TZ). */
-function toLocalInputValue(iso: string | null | undefined): string {
+/** Stored UTC ISO → local datetime-local input value (browser-local TZ).
+ *  Exported for the form's edit-prefill (stored Date → datetime-local value). */
+export function toLocalInputValue(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";

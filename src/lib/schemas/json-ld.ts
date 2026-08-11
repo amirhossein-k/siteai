@@ -186,6 +186,8 @@ export function productSchema({
     priceCurrency: string;
     availability: "InStock" | "OutOfStock" | "PreOrder";
     url?: string;
+    /** Active-discount end (Session 77) — ISO date; ONLY when the discount is live AND finite. */
+    priceValidUntil?: string;
   };
   aggregateRating?: {
     ratingValue: number;
@@ -207,6 +209,9 @@ export function productSchema({
       priceCurrency: offers.priceCurrency,
       availability: `https://schema.org/${offers.availability}`,
       ...(offers.url && { url: offers.url }),
+      ...(offers.priceValidUntil && {
+        priceValidUntil: offers.priceValidUntil,
+      }),
     },
   };
 

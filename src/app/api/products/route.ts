@@ -7,6 +7,7 @@ import Brand from "@/models/Brand";
 import Tag from "@/models/Tag";
 import Category from "@/models/Category";
 import { getPublicProductById, getPublicProductBySlug } from "@/lib/public-products";
+import { applyEffectivePricing } from "@/lib/product-pricing";
 import {
   parsePaginationParams,
   buildPaginatedResponse,
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
     const tag = searchParams.get("tag");
     const search = searchParams.get("search");
     const sort = searchParams.get("sort") || "newest";
+    const discounted = searchParams.get("discounted");
     const minPrice = searchParams.get("minPrice");
     const maxPrice = searchParams.get("maxPrice");
 
@@ -140,6 +142,33 @@ export async function GET(req: NextRequest) {
           $all: elemMatches.map((em) => ({ $elemMatch: em })),
         };
       }
+    }
+
+    // Discounted-only filter (Session 77 — homepage «محصولات تخفیف‌دار» rail):
+    // ONLY products with a currently-ACTIVE discount (enabled + in-window).
+    // Time semantics mirror getEffectivePrice: start INCLUSIVE (startsAt <= now),
+    // end EXCLUSIVE (now < endsAt); a missing/null boundary = open-ended.
+    // Products without a discount subdoc never match. `discounted` is a data
+    // filter only — its URLs stay noindex, follow via catalog-seo (Session 74).
+    if (discounted === "true") {
+      const now = new Date();
+      filter["discount.isActive"] = true;
+      filter.$and = [
+        {
+          $or: [
+            { "discount.startsAt": { $lte: now } },
+            { "discount.startsAt": null },
+            { "discount.startsAt": { $exists: false } },
+          ],
+        },
+        {
+          $or: [
+            { "discount.endsAt": { $gt: now } },
+            { "discount.endsAt": null },
+            { "discount.endsAt": { $exists: false } },
+          ],
+        },
+      ];
     }
 
     // Search filter (Session 48) — expanded coverage: product name/description,
@@ -386,7 +415,20 @@ export async function GET(req: NextRequest) {
       );
 
       return NextResponse.json(
-        buildPaginatedResponse(products, total, page, limit)
+        buildPaginatedResponse(
+          products.map((p) =>
+            applyEffectivePricing(
+              p as unknown as {
+                price: number;
+                discount?: unknown;
+                variants?: Array<{ price: number }>;
+              }
+            )
+          ),
+          total,
+          page,
+          limit
+        )
       );
     }
 
@@ -405,7 +447,21 @@ export async function GET(req: NextRequest) {
     ]);
 
     return NextResponse.json(
-      buildPaginatedResponse(products, total, page, limit)
+      buildPaginatedResponse(
+        // Session 77 — effective pricing on every list row (active-only discount).
+        products.map((p) =>
+          applyEffectivePricing(
+            p as unknown as {
+              price: number;
+              discount?: unknown;
+              variants?: Array<{ price: number }>;
+            }
+          )
+        ),
+        total,
+        page,
+        limit
+      )
     );
   } catch (error) {
     console.error("Error fetching products:", error);

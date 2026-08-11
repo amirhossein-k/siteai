@@ -54,6 +54,15 @@ export function ProductCard({ product, className }: ProductCardProps) {
 
   const hasLowStock = product.stock > 0 && product.stock <= 3;
 
+  // Session 77 — server-computed effective pricing (active-only discount
+  // summary from the API; never client-derived, never stale: the API returns
+  // discount=null once the window ends). effectivePrice === price when no
+  // discount is active, so plain-price rendering is the untouched default.
+  const effectivePrice = product.effectivePrice ?? product.price;
+  const hasActiveDiscount =
+    !!product.discount && effectivePrice < product.price;
+  const discountPercent = product.discount?.percent ?? 0;
+
   const firstImage = product.images?.[0];
   // Session 61 — next/image throws on unconfigured hosts (native <img> just
   // showed a broken image); fall back to the placeholder instead.
@@ -104,21 +113,24 @@ export function ProductCard({ product, className }: ProductCardProps) {
           </div>
         )}
 
-        {/* Stock badge */}
-        {product.stock === 0 && (
-          <div className="absolute left-2 top-2">
+        {/* Stock + discount badges (stacked, top-left) */}
+        <div className="absolute left-2 top-2 flex flex-col items-start gap-2">
+          {product.stock === 0 && (
             <Badge variant="destructive" className="text-xs">
               ناموجود
             </Badge>
-          </div>
-        )}
-        {hasLowStock && (
-          <div className="absolute left-2 top-2">
+          )}
+          {hasLowStock && (
             <Badge variant="warning" className="text-xs">
               تنها {product.stock} عدد باقیست
             </Badge>
-          </div>
-        )}
+          )}
+          {hasActiveDiscount && (
+            <Badge className="bg-rose-600 text-xs text-white">
+              ٪{discountPercent} تخفیف
+            </Badge>
+          )}
+        </div>
 
         {/* Wishlist heart (Session 35) — z-10 lifts it above the product
             stretched-link overlay so it stays an independent action. */}
@@ -161,10 +173,21 @@ export function ProductCard({ product, className }: ProductCardProps) {
             stretched overlay (navigates); the supplier link is an independent
             action stacked above it. */}
         <div className="mb-3 flex items-center justify-between gap-2">
-          <div>
-            <span className="text-lg font-bold">
-              {formatPrice(product.price)}
-            </span>
+          <div className="flex flex-wrap items-baseline gap-2">
+            {hasActiveDiscount ? (
+              <>
+                <span className="text-lg font-bold text-emerald-600">
+                  {formatPrice(effectivePrice)}
+                </span>
+                <span className="text-xs text-muted-foreground line-through">
+                  {formatPrice(product.price)}
+                </span>
+              </>
+            ) : (
+              <span className="text-lg font-bold">
+                {formatPrice(effectivePrice)}
+              </span>
+            )}
           </div>
           {supplierInfo && (
             <Link
@@ -192,7 +215,7 @@ export function ProductCard({ product, className }: ProductCardProps) {
               id: product._id,
               slug: product.slug || product._id,
               name: product.name,
-              price: product.price,
+              price: effectivePrice, // Session 77 — effective unit price
               maxQuantity: product.stock,
               image: product.images?.[0],
             });

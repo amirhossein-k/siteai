@@ -75,6 +75,8 @@ export interface ProductVariant {
   sku: string;
   attributes: ProductVariantAttribute[];
   price: number;
+  /** Server-computed effective (post-discount) price — equals price when no discount is active. */
+  effectivePrice?: number;
   supplierPrice: number;
   stock: number;
   stockVersion?: number;
@@ -117,13 +119,49 @@ export type RichDescriptionNode = {
   children?: RichDescriptionNode[];
 };
 
+// --- Product discount / sale pricing (Session 77) ---
+// The stored config is an OPTIONAL embedded Product.discount subdoc (absent on
+// pre-discount products — zero migration). Pricing math + time semantics live
+// in src/lib/product-pricing.ts (single source of truth). The STORED config
+// is admin/API-only and NEVER appears on public shapes — public payloads
+// carry only the ACTIVE-only summary below (discount = null when no discount
+// is live, so future/expired/disabled configuration never leaks).
+export type ProductDiscountType = "percent" | "fixed";
+
+/** Raw stored/admin-submitted discount (Product.discount subdoc). */
+export interface ProductDiscount {
+  type: ProductDiscountType;
+  /** percent → 1–90; fixed → whole toman amount */
+  value: number;
+  startsAt: string | null;
+  endsAt: string | null;
+  isActive: boolean;
+}
+
+/** Active-only public discount summary (product.discount = null when inactive). */
+export interface ProductDiscountSummary {
+  type: ProductDiscountType;
+  value: number;
+  /** Badge percentage: configured value for percent, computed for fixed. */
+  percent: number;
+  /** Absolute toman reduction on the relevant unit price. */
+  amount: number;
+  startsAt: string | null;
+  endsAt: string | null;
+}
+
 // --- Product ---
 export interface Product {
   _id: string;
   name: string;
   description: string;
   descriptionRich?: RichDescriptionNode[];
+  /** Original/base price — NEVER overwritten by a discount. */
   price: number;
+  /** Server-computed effective (post-discount) price — equals price when no discount is active. */
+  effectivePrice?: number;
+  /** Active-only discount summary (null when no discount is live). */
+  discount?: ProductDiscountSummary | null;
   images: string[];
   category: string | { _id: string; name: string };
   stock: number;
@@ -571,6 +609,8 @@ export interface AdminProduct {
   supplier: { _id: string; businessName: string } | string | null;
   supplierPrice: number;
   price: number;
+  /** Admin-only stored discount config (absent on pre-discount products). */
+  discount?: ProductDiscount | null;
   stock: number;
   hasVariants?: boolean;
   variants?: ProductVariant[];

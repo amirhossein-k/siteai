@@ -239,7 +239,7 @@ describe("toPublicDiscount / applyEffectivePricing", () => {
     expect(pub?.endsAt).toBeTruthy();
   });
 
-  it("applyEffectivePricing enriches a product row without touching variants", () => {
+  it("applyEffectivePricing enriches a product row AND each variant (per-variant effectivePrice)", () => {
     const row: { _id: string; price: number; variants: { price: number }[]; discount: { type: "percent"; value: number; startsAt: null; endsAt: null; isActive: boolean } } = {
       _id: "p1",
       price: 2_000_000,
@@ -249,8 +249,31 @@ describe("toPublicDiscount / applyEffectivePricing", () => {
     const out = applyEffectivePricing(row);
     expect(out.effectivePrice).toBe(1_500_000);
     expect(out.discount?.amount).toBe(500_000);
-    // variants untouched — per-variant enrichment is the detail path's job
-    expect(out.variants[0].price).toBe(3_000_000);
+    // per-variant: same discount, independent math (percent of the variant price)
+    expect(out.variants[0].price).toBe(3_000_000); // original untouched
+    expect(out.variants[0].effectivePrice).toBe(2_250_000);
+  });
+
+  it("applyEffectivePricing on a product without discount returns effectivePrice === price and discount null", () => {
+    const out = applyEffectivePricing({ price: 1_000_000 });
+    expect(out.effectivePrice).toBe(1_000_000);
+    expect(out.discount).toBeNull();
+  });
+
+  it("applyEffectivePricing never leaks future/expired discount configuration", () => {
+    const future = {
+      price: 1_000_000,
+      discount: {
+        type: "percent" as const,
+        value: 50,
+        startsAt: new Date(NOW.getTime() + 86_400_000), // tomorrow
+        endsAt: null,
+        isActive: true,
+      },
+    };
+    const out = applyEffectivePricing(future, NOW);
+    expect(out.effectivePrice).toBe(1_000_000);
+    expect(out.discount).toBeNull();
   });
 
   it("variant pricing: the product-level discount applies to every variant price", () => {
