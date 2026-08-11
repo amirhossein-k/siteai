@@ -1,7 +1,9 @@
 import mongoose from "mongoose";
-import { APP_NAME, APP_URL } from "@/lib/constants";
+import { APP_NAME, APP_URL, PAGINATION } from "@/lib/constants";
 import { dbConnect } from "@/lib/dbConnect";
 import Category from "@/models/Category";
+import Product from "@/models/Product";
+import { parsePageParam } from "@/lib/pagination";
 
 /**
  * Catalog listing SEO policy (Session 74) — the SINGLE implementation of the
@@ -16,15 +18,20 @@ import Category from "@/models/Category";
  *     the FUTURE `/categories/<slug>` route (Session 75). The slug is resolved
  *     from the DB here; when the category is unknown/deleted/malformed the
  *     canonical falls back to `/products` (never a fabricated URL).
- *   - `?page=N` is treated as non-indexable for now: the catalog client keeps
- *     pagination in local state (not the URL), so `?page=2` currently serves
- *     page-1 content — indexing it would create a duplicate. Session 76
- *     (URL-driven pagination with real links) flips base pagination to
- *     indexable.
+ *   - BASE pagination (Session 76) is now INDEXABLE: `/products?page=N` (page
+ *     param with NO other params) is `index, follow` with a SELF-canonical
+ *     `/products?page=N`; `?page=1` and invalid page values canonicalize to
+ *     the clean `/products` (the content IS page 1); an OUT-OF-RANGE page
+ *     (page beyond totalPages, detected via one indexed count) is
+ *     `noindex, follow` canonicalized to `/products` — never a thin indexed
+ *     page. Any URL with OTHER filter parameters stays `noindex, follow`
+ *     (Session 74 rule unchanged), and `/products?category=<id>` still
+ *     canonicalizes toward `/categories/<slug>` regardless of `page`.
  *
  * The pure policy functions are hermetic (unit-tested). The async
  * `getCatalogMetadata` is the thin generateMetadata-facing wrapper that
- * normalizes Next.js searchParams and resolves the category slug via the DB
+ * normalizes Next.js searchParams, resolves the category slug via the DB and
+ * (only for page-only URLs) counts products to detect out-of-range pages
  * (same pattern as src/lib/breadcrumbs.ts — model import is inert until the
  * DB function is called, so the pure tests stay hermetic).
  */
@@ -70,25 +77,50 @@ export function normalizeCatalogParams(
 }
 
 /**
- * Indexable ONLY when the URL is the clean `/products` (no params at all).
- * Fail-closed: ANY key (known facet, sort, page, or an unknown future param)
- * → non-indexable. This is deliberately stricter than enumerating params,
- * so an unexpected query string can never create an accidentally-indexed
- * duplicate.
+ * The page-only URL (no filter/sort/facet params, page param alone) — the
+ * ONLY relaxed case of the Session 74 fail-closed policy.
  */
-export function isIndexableCatalogUrl(params: CatalogSearchParams): boolean {
-  return Object.keys(params).length === 0;
+function isPageOnlyUrl(params: CatalogSearchParams): boolean {
+  const rest = { ...params };
+  delete rest.page;
+  return Object.keys(rest).length === 0;
 }
 
 /**
- * Robots policy: `index, follow` on the clean URL, `noindex, follow`
- * everywhere else — Google can still CRAWL filtered variants (and discover
- * product links inside them) but never indexes the duplicates.
+ * Indexable when:
+ *   - the URL is the clean `/products` (no params at all), OR
+ *   - it is a PAGE-ONLY URL whose page resolves to a REAL page: page 1,
+ *     invalid values (content = page 1), or a valid in-range page ≥ 2.
+ *
+ * Fail-closed everywhere else: ANY other key (known facet, sort, or an
+ * unknown future param) → non-indexable, and a page-only URL beyond
+ * `totalPages` (opts.pageOutOfRange) → non-indexable (a thin page with no
+ * content must never enter the index).
+ */
+export function isIndexableCatalogUrl(
+  params: CatalogSearchParams,
+  opts: { pageOutOfRange?: boolean } = {}
+): boolean {
+  if (!isPageOnlyUrl(params)) return false;
+  if (params.page === undefined) return true;
+  const page = parsePageParam(params.page);
+  // page 1 / invalid values serve page-1 content → indexable with the clean
+  // canonical. Valid page ≥ 2 is indexable UNLESS it is out of range.
+  if (page <= 1) return true;
+  return !opts.pageOutOfRange;
+}
+
+/**
+ * Robots policy: `index, follow` on indexable URLs (clean + in-range base
+ * pagination), `noindex, follow` everywhere else — Google can still CRAWL
+ * filtered variants (and discover product links inside them) but never
+ * indexes the duplicates or thin out-of-range pages.
  */
 export function getCatalogRobots(
-  params: CatalogSearchParams
+  params: CatalogSearchParams,
+  opts: { pageOutOfRange?: boolean } = {}
 ): { index: boolean; follow: boolean } {
-  return isIndexableCatalogUrl(params)
+  return isIndexableCatalogUrl(params, opts)
     ? { index: true, follow: true }
     : { index: false, follow: true };
 }
@@ -96,19 +128,32 @@ export function getCatalogRobots(
 /**
  * Canonical URL for a given parameter set.
  *
- * - `?category=<id>` (slug resolvable) → the future `/categories/<slug>`
- *   route (Session 75) — the single URL that will represent that category.
- * - everything else → the clean `/products` base.
+ * - `?category=<id>` (slug resolvable) → the `/categories/<slug>` route
+ *   (Session 75) — the single URL that will represent that category.
+ *   A `page` param is deliberately ignored here: category-filtered URLs are
+ *   `noindex, follow` duplicate surfaces and their canonical points at the
+ *   canonical page-1 category URL (never a fragile deep-canonical that could
+ *   point at a nonexistent category page).
+ * - PAGE-ONLY URLs: `?page=N` (valid, in range, N ≥ 2) → self-canonical
+ *   `/products?page=N`; page 1 / invalid / out-of-range → clean `/products`.
+ * - every other parameterized URL → the clean `/products` base.
  *
  * The `categorySlug` argument is resolved asynchronously by
  * `getCatalogMetadata` (DB lookup); pure callers pass it explicitly.
  */
 export function getCatalogCanonicalUrl(
   params: CatalogSearchParams,
-  categorySlug: string | null = null
+  categorySlug: string | null = null,
+  opts: { pageOutOfRange?: boolean } = {}
 ): string {
   if (params.category && categorySlug) {
     return `${APP_URL}/categories/${categorySlug}`;
+  }
+  if (isPageOnlyUrl(params) && params.page !== undefined) {
+    const page = parsePageParam(params.page);
+    if (page > 1 && !opts.pageOutOfRange) {
+      return `${APP_URL}/products?page=${page}`;
+    }
   }
   return `${APP_URL}/products`;
 }
@@ -166,10 +211,11 @@ export interface CatalogMetadata {
  */
 export function buildCatalogMetadata(
   params: CatalogSearchParams,
-  categorySlug: string | null = null
+  categorySlug: string | null = null,
+  opts: { pageOutOfRange?: boolean } = {}
 ): CatalogMetadata {
-  const canonical = getCatalogCanonicalUrl(params, categorySlug);
-  const robots = getCatalogRobots(params);
+  const canonical = getCatalogCanonicalUrl(params, categorySlug, opts);
+  const robots = getCatalogRobots(params, opts);
   return {
     title: CATALOG_TITLE,
     description: CATALOG_DESCRIPTION,
@@ -192,10 +238,35 @@ export function buildCatalogMetadata(
 }
 
 /**
- * generateMetadata-facing wrapper: normalizes Next.js searchParams and
- * resolves the category slug when a `category` param is present (one indexed
- * DB lookup, only for category-filtered URLs). Called from the /products
- * page's `generateMetadata`.
+ * Detect an out-of-range page-only URL: one indexed count (isActive +
+ * in-stock, the exact public listing rule), totalPages from
+ * DEFAULT_PAGE_SIZE. Fail-open — a DB error leaves the page indexable (the
+ * count is an SEO refinement, never a reason to hide a real page).
+ */
+async function isPageOutOfRange(
+  params: CatalogSearchParams
+): Promise<boolean> {
+  const page = parsePageParam(params.page);
+  if (page <= 1) return false;
+  try {
+    await dbConnect();
+    const total = await Product.countDocuments({
+      isActive: true,
+      stock: { $gt: 0 },
+    });
+    const totalPages = Math.max(1, Math.ceil(total / PAGINATION.DEFAULT_PAGE_SIZE));
+    return page > totalPages;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * generateMetadata-facing wrapper: normalizes Next.js searchParams, resolves
+ * the category slug when a `category` param is present (one indexed DB
+ * lookup, only for category-filtered URLs) and — ONLY for page-only URLs —
+ * counts products to detect out-of-range pages (one indexed count). Called
+ * from the /products page's `generateMetadata`.
  */
 export async function getCatalogMetadata(
   searchParams: Promise<Record<string, string | string[] | undefined>>
@@ -204,5 +275,8 @@ export async function getCatalogMetadata(
   const categorySlug = params.category
     ? await resolveCategorySlug(params.category)
     : null;
-  return buildCatalogMetadata(params, categorySlug);
+  const pageOutOfRange = isPageOnlyUrl(params)
+    ? await isPageOutOfRange(params)
+    : false;
+  return buildCatalogMetadata(params, categorySlug, { pageOutOfRange });
 }

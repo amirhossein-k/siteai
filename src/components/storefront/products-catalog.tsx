@@ -59,7 +59,7 @@ export default function ProductsCatalogPage() {
     sortBy,
     setSortBy,
     page,
-    setPage,
+    pageHref,
     activeFilterCount,
     queryParams,
     clearFilters,
@@ -427,7 +427,9 @@ export default function ProductsCatalogPage() {
             ))}
           </div>
 
-          {/* Results count + Pagination */}
+          {/* Results count + Pagination (Session 76 — real crawlable <a> links
+              built from the URL; the page derives from ?page= so back/forward
+              and direct URL loads work natively). */}
           <div className="mt-8 space-y-4">
             <div className="text-center text-sm text-muted-foreground">
               نمایش {products.length} محصول از {totalProducts} محصول
@@ -435,7 +437,7 @@ export default function ProductsCatalogPage() {
             <PaginationControls
               page={page}
               totalPages={totalPages}
-              onPageChange={setPage}
+              hrefFor={pageHref}
             />
           </div>
         </>

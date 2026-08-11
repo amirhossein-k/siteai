@@ -4,6 +4,7 @@ import {
   buildCategoryItemList,
   buildCategoryMetadata,
   normalizeCategorySlug,
+  resolveCategoryPageParam,
 } from "@/lib/category-pages";
 import { itemListSchema } from "@/lib/schemas/json-ld";
 import { buildCategoryUrl } from "@/lib/category-url";
@@ -173,6 +174,25 @@ describe("buildCategoryMetadata", () => {
     expect(meta.alternates.canonical).toBe(`${BASE}/categories/هدفون-بیسیم-بلوتوثی`);
   });
 
+  it("Session 76 — page 1 (default) keeps the clean canonical, robots index,follow", () => {
+    const meta = buildCategoryMetadata(category, BASE);
+    expect(meta.alternates.canonical).toBe(`${BASE}/categories/هدفون-بیسیم-بلوتوثی`);
+    expect(meta.robots).toEqual({ index: true, follow: true });
+  });
+
+  it("Session 76 — valid page 2+ → self-canonical /categories/<slug>?page=N", () => {
+    const meta = buildCategoryMetadata(category, BASE, { page: 2, totalPages: 3 });
+    expect(meta.alternates.canonical).toBe(
+      `${BASE}/categories/هدفون-بیسیم-بلوتوثی?page=2`
+    );
+    expect(meta.openGraph.url).toBe(meta.alternates.canonical);
+  });
+
+  it("Session 76 — page beyond totalPages falls back to the clean canonical (page component 404s before serving)", () => {
+    const meta = buildCategoryMetadata(category, BASE, { page: 99, totalPages: 2 });
+    expect(meta.alternates.canonical).toBe(`${BASE}/categories/هدفون-بیسیم-بلوتوثی`);
+  });
+
   it("valid active category → index,follow robots", () => {
     const meta = buildCategoryMetadata(category, BASE);
     expect(meta.robots).toEqual({ index: true, follow: true });
@@ -203,6 +223,32 @@ describe("buildCategoryUrl", () => {
     expect(buildCategoryUrl("https://mystore.com/", "هدفون-بیسیم")).toBe(
       "https://mystore.com/categories/هدفون-بیسیم"
     );
+  });
+});
+
+describe("resolveCategoryPageParam (Session 76 — redirect vs render)", () => {
+  it("missing / empty → page 1, NO redirect", () => {
+    expect(resolveCategoryPageParam(null)).toEqual({ page: 1, redirectClean: false });
+    expect(resolveCategoryPageParam(undefined)).toEqual({ page: 1, redirectClean: false });
+    expect(resolveCategoryPageParam("")).toEqual({ page: 1, redirectClean: false });
+  });
+
+  it("valid page ≥ 2 → render that page, no redirect", () => {
+    expect(resolveCategoryPageParam("2")).toEqual({ page: 2, redirectClean: false });
+    expect(resolveCategoryPageParam("5")).toEqual({ page: 5, redirectClean: false });
+  });
+
+  it("explicit page=1 → page 1 WITH redirect to the clean URL (canonical consolidation)", () => {
+    expect(resolveCategoryPageParam("1")).toEqual({ page: 1, redirectClean: true });
+  });
+
+  it("malformed values → page 1 WITH redirect to the clean URL", () => {
+    for (const bad of ["0", "-2", "1.5", "abc", "NaN", " "]) {
+      expect(resolveCategoryPageParam(bad), `value=${JSON.stringify(bad)}`).toEqual({
+        page: 1,
+        redirectClean: true,
+      });
+    }
   });
 });
 

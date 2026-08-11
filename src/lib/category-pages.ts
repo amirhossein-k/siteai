@@ -6,6 +6,7 @@ import Product from "@/models/Product";
 import { getCategoryAncestors, type CategoryBreadcrumbNode } from "@/lib/breadcrumbs";
 import { buildCategoryUrl } from "@/lib/category-url";
 import { buildProductUrl } from "@/lib/product-slug";
+import { parsePageParam } from "@/lib/pagination";
 import { isAllowedImageSrc } from "@/lib/utils";
 import type { Product as CatalogProduct } from "@/types";
 
@@ -30,10 +31,15 @@ import type { Product as CatalogProduct } from "@/types";
  *   - Empty categories (active, zero products) remain indexable: they are
  *     real navigational pages with real metadata, and admins publish products
  *     into them over time — no artificial minimum-product threshold.
- *   - First-page products: the SAME public listing rules as the catalog API
- *     (isActive + stock > 0, `-soldCount`, populated category/supplier/brand/
- *     tags, newest first, DEFAULT_PAGE_SIZE), so the category page and the
- *     interactive filter never disagree about what is publicly listed.
+ *   - Products: the SAME public listing rules as the catalog API (isActive +
+ *     stock > 0, `-soldCount`, populated category/supplier/brand/tags, newest
+ *     first, DEFAULT_PAGE_SIZE), so the category page and the interactive
+ *     filter never disagree about what is publicly listed.
+ *   - URL-driven pagination (Session 76): `?page=N` slices the listing on
+ *     the SERVER. Page 1 canonicalizes to the clean `/categories/<slug>`;
+ *     valid page 2+ are indexable with SELF-canonicals; page=1 / malformed /
+ *     invalid values are 308-redirected to the clean URL by the page
+ *     component; out-of-range pages 404 (never a thin indexable page).
  */
 
 /** JSON-plain category page data (safe as an RSC prop / for JSON-LD). */
@@ -68,6 +74,32 @@ export function normalizeCategorySlug(value: string): string {
   } catch {
     return value;
   }
+}
+
+/**
+ * Resolve the RAW `?page=` search param for the category page (Session 76).
+ *
+ * The category page needs to DISTINGUISH the redirect cases from a real page
+ * (unlike `parsePageParam`, which collapses everything to ≥ 1):
+ *   - missing / empty → page 1, no redirect (plain render),
+ *   - present but malformed (non-integer, ≤ 0, «abc», «2.5») or explicitly
+ *     «1» → page 1 WITH a permanent redirect to the clean category URL
+ *     (canonical consolidation — no `?page=1` / no junk-param duplicates),
+ *   - a valid integer ≥ 2 → render that page (the page component 404s when
+ *     it exceeds totalPages).
+ */
+export function resolveCategoryPageParam(
+  raw: string | null | undefined
+): { page: number; redirectClean: boolean } {
+  if (raw === null || raw === undefined || raw === "") {
+    return { page: 1, redirectClean: false };
+  }
+  const n = Number(raw);
+  const valid = Number.isInteger(n) && n >= 1;
+  if (!valid || n === 1) {
+    return { page: 1, redirectClean: true };
+  }
+  return { page: n, redirectClean: false };
 }
 
 /**
@@ -172,9 +204,17 @@ export interface CategoryMetadata {
  */
 export function buildCategoryMetadata(
   category: CategoryPageData["category"],
-  baseUrl: string
+  baseUrl: string,
+  opts: { page?: number; totalPages?: number } = {}
 ): CategoryMetadata {
-  const canonical = buildCategoryUrl(baseUrl, category.slug);
+  const { page = 1, totalPages = 1 } = opts;
+  // Page 1 → the clean URL; a valid page ≥ 2 (the page component 404s
+  // anything beyond totalPages, so this canonical always resolves) → a
+  // self-canonical /categories/<slug>?page=N.
+  const canonical =
+    page > 1 && page <= totalPages
+      ? `${buildCategoryUrl(baseUrl, category.slug)}?page=${page}`
+      : buildCategoryUrl(baseUrl, category.slug);
   const title = category.metaTitle?.trim() || category.name;
   const description =
     toMetaText(category.metaDescription) ||
@@ -209,11 +249,15 @@ export function buildCategoryMetadata(
  * Load the category page data — one indexed active-category lookup by slug,
  * one bounded ancestor walk (getCategoryAncestors: max-depth + cycle guard,
  * indexed `_id` point lookups — no N+1 over products), and TWO product
- * queries (count + first page) with the exact public listing rules of the
- * catalog API. Returns `null` for inactive/missing/malformed categories.
+ * queries (count + the requested page) with the exact public listing rules
+ * of the catalog API. Returns `null` for inactive/missing/malformed
+ * categories. `page` is 1-based; the page component is responsible for
+ * redirecting invalid values and 404ing pages beyond totalPages (this
+ * function simply slices — a beyond-range page yields an empty list).
  */
 export async function getCategoryPage(
-  slug: string
+  slug: string,
+  page: number = 1
 ): Promise<CategoryPageData | null> {
   await dbConnect();
   const category = (await Category.findOne({ slug, isActive: true })
@@ -236,6 +280,8 @@ export async function getCategoryPage(
     stock: { $gt: 0 },
     category: new mongoose.Types.ObjectId(String(category._id)),
   };
+  const safePage = parsePageParam(String(page));
+  const skip = (safePage - 1) * PAGINATION.DEFAULT_PAGE_SIZE;
   const [total, products] = await Promise.all([
     Product.countDocuments(filter),
     Product.find(filter)
@@ -245,6 +291,7 @@ export async function getCategoryPage(
       .populate("brand", "name slug logo")
       .populate("tags", "name slug")
       .sort({ createdAt: -1 })
+      .skip(skip)
       .limit(PAGINATION.DEFAULT_PAGE_SIZE)
       .lean(),
   ]);

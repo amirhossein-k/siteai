@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import ProductsCatalogPage from "@/components/storefront/products-catalog";
 import { getCatalogMetadata } from "@/lib/catalog-seo";
 
@@ -20,8 +21,10 @@ import { getCatalogMetadata } from "@/lib/catalog-seo";
  *     self-canonical; every parameterized variant → noindex,follow
  *     canonicalized to the base; ?category → noindex canonicalized toward
  *     the future /categories/<slug> route),
- *   - renders the unchanged interactive catalog (filters, search, sort,
- *     pagination) as the client ProductsCatalogPage component below.
+ *   - renders the interactive catalog (filters, search, sort, URL-driven
+ *     pagination) as the client ProductsCatalogPage component below, wrapped
+ *     in <Suspense> — required by Next.js because the catalog derives its
+ *     `page` from useSearchParams (Session 76).
  *
  * - `dynamic = "force-dynamic"`: the metadata depends on the request's
  *   searchParams (and the category slug for ?category canonicalization),
@@ -40,5 +43,9 @@ export async function generateMetadata({
 }
 
 export default function ProductsPage() {
-  return <ProductsCatalogPage />;
+  return (
+    <Suspense fallback={null}>
+      <ProductsCatalogPage />
+    </Suspense>
+  );
 }

@@ -61,7 +61,7 @@ describe("isIndexableCatalogUrl", () => {
     expect(isIndexableCatalogUrl({})).toBe(true);
   });
 
-  it("every faceted/filter/sort param makes it non-indexable", () => {
+  it("every faceted/filter/sort param makes it non-indexable (page NOT in this set — Session 76)", () => {
     for (const params of [
       { search: "هدفون" },
       { brand: "b1" },
@@ -71,14 +71,33 @@ describe("isIndexableCatalogUrl", () => {
       { minPrice: "100000" },
       { maxPrice: "500000" },
       { category: "c1" },
-      { page: "2" },
       { supplier: "s1" },
       { limit: "100" },
       { "attributes[color]": "قرمز" },
       { category: "c1", sort: "price_asc", search: "x" },
+      { search: "x", page: "2" },
+      { sort: "price_desc", page: "2" },
+      { category: "c1", page: "2" },
     ]) {
       expect(isIndexableCatalogUrl(params), JSON.stringify(params)).toBe(false);
     }
+  });
+
+  it("Session 76 — page-only URLs are indexable (base pagination)", () => {
+    expect(isIndexableCatalogUrl({ page: "2" })).toBe(true);
+    expect(isIndexableCatalogUrl({ page: "3" })).toBe(true);
+  });
+
+  it("page 1 / invalid page values are indexable (content IS page 1)", () => {
+    expect(isIndexableCatalogUrl({ page: "1" })).toBe(true);
+    for (const bad of ["0", "-2", "1.5", "abc", "NaN", " ", ""]) {
+      expect(isIndexableCatalogUrl({ page: bad }), `page=${JSON.stringify(bad)}`).toBe(true);
+    }
+  });
+
+  it("Session 76 — out-of-range page-only URLs are NOT indexable (thin page)", () => {
+    expect(isIndexableCatalogUrl({ page: "2" }, { pageOutOfRange: true })).toBe(false);
+    expect(isIndexableCatalogUrl({ page: "999" }, { pageOutOfRange: true })).toBe(false);
   });
 
   it("fail-closed: an unknown future param is never indexable", () => {
@@ -97,6 +116,20 @@ describe("getCatalogRobots", () => {
       follow: true,
     });
     expect(getCatalogRobots({ category: "c1" })).toEqual({
+      index: false,
+      follow: true,
+    });
+    expect(getCatalogRobots({ search: "x", page: "2" })).toEqual({
+      index: false,
+      follow: true,
+    });
+  });
+
+  it("Session 76 — index,follow on in-range page-only URLs, noindex on out-of-range", () => {
+    expect(getCatalogRobots({ page: "2" })).toEqual({ index: true, follow: true });
+    expect(getCatalogRobots({ page: "1" })).toEqual({ index: true, follow: true });
+    expect(getCatalogRobots({ page: "abc" })).toEqual({ index: true, follow: true });
+    expect(getCatalogRobots({ page: "2" }, { pageOutOfRange: true })).toEqual({
       index: false,
       follow: true,
     });
@@ -132,6 +165,27 @@ describe("getCatalogCanonicalUrl", () => {
       getCatalogCanonicalUrl({ category: "c1", sort: "price_desc" }, "الکترونیک")
     ).toBe(`${BASE}/categories/الکترونیک`);
   });
+
+  it("Session 76 — in-range page-only URL → self-canonical /products?page=N", () => {
+    expect(getCatalogCanonicalUrl({ page: "2" })).toBe(`${PRODUCTS_URL}?page=2`);
+    expect(getCatalogCanonicalUrl({ page: "7" })).toBe(`${PRODUCTS_URL}?page=7`);
+  });
+
+  it("Session 76 — page 1 / invalid / out-of-range page-only → clean /products", () => {
+    expect(getCatalogCanonicalUrl({ page: "1" })).toBe(PRODUCTS_URL);
+    for (const bad of ["0", "-2", "1.5", "abc"]) {
+      expect(getCatalogCanonicalUrl({ page: bad }), `page=${bad}`).toBe(PRODUCTS_URL);
+    }
+    expect(
+      getCatalogCanonicalUrl({ page: "2" }, null, { pageOutOfRange: true })
+    ).toBe(PRODUCTS_URL);
+  });
+
+  it("Session 76 — category + page canonical ignores page (points at the canonical page-1 category URL)", () => {
+    expect(getCatalogCanonicalUrl({ category: "c1", page: "2" }, "الکترونیک")).toBe(
+      `${BASE}/categories/الکترونیک`
+    );
+  });
 });
 
 describe("buildCatalogMetadata", () => {
@@ -160,6 +214,31 @@ describe("buildCatalogMetadata", () => {
     expect(meta.alternates.canonical).toBe(
       `${BASE}/categories/الکترونیک`
     );
+  });
+
+  it("Session 76 — page-only metadata: in-range page 2 is indexable with self-canonical", () => {
+    const meta = buildCatalogMetadata({ page: "2" });
+    expect(meta.robots).toEqual({ index: true, follow: true });
+    expect(meta.alternates.canonical).toBe(`${PRODUCTS_URL}?page=2`);
+    expect(meta.openGraph.url).toBe(`${PRODUCTS_URL}?page=2`);
+  });
+
+  it("Session 76 — page 1 canonicalizes to the clean URL (no ?page=1 duplicate)", () => {
+    const meta = buildCatalogMetadata({ page: "1" });
+    expect(meta.robots).toEqual({ index: true, follow: true });
+    expect(meta.alternates.canonical).toBe(PRODUCTS_URL);
+  });
+
+  it("Session 76 — out-of-range page → noindex with canonical to clean /products", () => {
+    const meta = buildCatalogMetadata({ page: "999" }, null, { pageOutOfRange: true });
+    expect(meta.robots).toEqual({ index: false, follow: true });
+    expect(meta.alternates.canonical).toBe(PRODUCTS_URL);
+  });
+
+  it("Session 76 — filtered + page stays noindex with the base canonical", () => {
+    const meta = buildCatalogMetadata({ sort: "price_desc", page: "2" });
+    expect(meta.robots).toEqual({ index: false, follow: true });
+    expect(meta.alternates.canonical).toBe(PRODUCTS_URL);
   });
 });
 

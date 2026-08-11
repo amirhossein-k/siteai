@@ -29,8 +29,11 @@ async function purgeOwnFixtures(prefix: string): Promise<void> {
   const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const catRe = new RegExp(`^${esc}cat-13`);
   const prodRe = new RegExp(`^${esc}cat13-prod-`);
+  // Session 76 — the pagination bulk fixtures live under cat13-bulk-*.
+  const bulkRe = new RegExp(`^${esc}cat13-bulk-`);
   await db.collection("categories").deleteMany({ slug: catRe });
   await db.collection("products").deleteMany({ slug: prodRe });
+  await db.collection("products").deleteMany({ slug: bulkRe });
   await disconnectDb();
 }
 
@@ -53,6 +56,15 @@ async function purgeOwnFixtures(prefix: string): Promise<void> {
  *   - homepage quick-category tiles link to /categories/<slug>
  *   - sitemap lists active categories (Persian + Latin), excludes inactive,
  *     product/supplier entries intact
+ *
+ * Session 76 (URL-driven pagination) — 21 extra products are seeded BEFORE
+ * prod1/prod2 so the two named fixtures stay the newest (page 1) while the
+ * three oldest bulk products land on page 2:
+ *   - `/categories/<slug>?page=2` → 200, self-canonical ?page=2, indexable,
+ *     page-2 products rendered, aria-current, ItemList = page-2 items only
+ *   - `?page=1` / `?page=0` / malformed → 308 permanent redirect to the clean URL
+ *   - `?page=99` (out of range) → 404
+ *   - pagination links are real <a> hrefs in the INITIAL HTML
  */
 test.describe("category page SEO", () => {
   let state: E2EState;
@@ -105,6 +117,25 @@ test.describe("category page SEO", () => {
     const inactiveBody = (await inactiveRes.json()) as { _id: string };
     createdIds.push(inactiveBody._id);
 
+    // Session 76 — 21 ACTIVE in-stock bulk products created FIRST (oldest),
+    // so the two named fixtures below stay the NEWEST and remain on page 1
+    // while the three oldest bulk products land on page 2 (public sort =
+    // createdAt desc, page size 20). Prefix-slugged under cat13-bulk-*.
+    const bulkIds: string[] = [];
+    for (let i = 1; i <= 21; i++) {
+      bulkIds.push(
+        await createProduct(adminCtx, {
+          slug: `${state.prefix}cat13-bulk-${i}`,
+          name: `محصول حجیم ${state.prefix}${i}`,
+          categoryId: persianCat._id,
+          supplierId: state.supplierId,
+          price: 10_000 * i,
+          supplierPrice: 8_000 * i,
+          stock: 2,
+        })
+      );
+    }
+
     // Two ACTIVE products in the Persian category (public listing) + one
     // out-of-stock (must NOT render: public list rule is stock > 0).
     const prod1 = await createProduct(adminCtx, {
@@ -142,7 +173,7 @@ test.describe("category page SEO", () => {
     });
     // Products are prefix-slugged → global teardown cleans them; register
     // explicitly anyway so a mid-test failure never leaks rows.
-    createdIds.push(prod1, prod2, prod3);
+    createdIds.push(prod1, prod2, prod3, ...bulkIds);
   });
 
   test.afterAll(async () => {
@@ -226,6 +257,84 @@ test.describe("category page SEO", () => {
     expect(html).toContain("<title>");
     expect(html).toContain('property="og:title"');
     expect(html).toContain('name="twitter:card"');
+  });
+
+  test("Session 76: page 2 renders the oldest products with self-canonical + per-page ItemList", async ({
+    request,
+  }) => {
+    // 21 bulk (oldest) + prod1/prod2 (newest) = 23 active in-stock → page 1
+    // holds the 20 newest, page 2 the 3 oldest (bulk-1..3).
+    const url = `/categories/${encodeURIComponent(persianCat.slug)}?page=2`;
+    const res = await request.get(url);
+    expect(res.status(), `GET ${url}`).toBe(200);
+    const html = await res.text();
+
+    // Page-2 products server-rendered; page-1 fixtures NOT on page 2.
+    expect(html).toContain(`/products/${state.prefix}cat13-bulk-1`);
+    expect(html).toContain(`/products/${state.prefix}cat13-bulk-3`);
+    expect(html).not.toContain(`/products/${state.prefix}cat13-prod-1`);
+
+    // EXACTLY one canonical → the self ?page=2 form.
+    const canonicals = canonicalHrefs(html);
+    expect(canonicals, "exactly one canonical").toHaveLength(1);
+    expect(decode(canonicals[0])).toBe(
+      `${state.baseURL}/categories/${persianCat.slug}?page=2`
+    );
+
+    // Indexable — no noindex.
+    expect(html).not.toContain('content="noindex');
+
+    // Real pagination links + current page marked in the INITIAL HTML.
+    expect(html).toContain('aria-label="صفحه‌بندی"');
+    expect(html).toContain('aria-current="page"');
+    // The page-1 link points at the CLEAN URL (never ?page=1 → no redirect churn).
+    expect(html).toContain(`href="/categories/${persianCat.slug}"`);
+
+    // ItemList reflects ONLY the rendered page-2 products (bulk-1..3), with
+    // sequential positions — page-1 fixtures are absent from the structured data.
+    expect(html).toContain('"@type":"ItemList"');
+    expect(html).toContain(`"url":"${state.baseURL}/products/${state.prefix}cat13-bulk-1"`);
+    expect(html).not.toContain(
+      `"url":"${state.baseURL}/products/${state.prefix}cat13-prod-1"`
+    );
+    // BreadcrumbList still present and intact (not duplicated).
+    expect(html).toContain('"@type":"BreadcrumbList"');
+  });
+
+  test("Session 76: ?page=1 and malformed page values → 308 to the clean URL", async ({
+    request,
+  }) => {
+    const encoded = encodeURIComponent(persianCat.slug);
+    const cases = [
+      `?page=1`,
+      `?page=0`,
+      `?page=-2`,
+      `?page=abc`,
+      `?page=2.5`,
+    ];
+    for (const qs of cases) {
+      const res = await request.get(`/categories/${encoded}${qs}`, {
+        maxRedirects: 0,
+      });
+      expect(res.status(), `${qs} → 308`).toBe(308);
+      const location = decode(res.headers()["location"] || "");
+      // Next may emit the Location as the raw relative path or an absolute
+      // URL — both must resolve to the CLEAN category page (no ?page= remnant).
+      const cleanPath = `/categories/${persianCat.slug}`;
+      expect(
+        location === cleanPath || location.endsWith(cleanPath),
+        `${qs} → redirect target is the clean category URL (got ${location})`
+      ).toBe(true);
+    }
+  });
+
+  test("Session 76: out-of-range page → 404 (never a thin indexable page)", async ({
+    request,
+  }) => {
+    const res = await request.get(
+      `/categories/${encodeURIComponent(persianCat.slug)}?page=99`
+    );
+    expect(res.status()).toBe(404);
   });
 
   test("missing / inactive / malformed categories → 404", async ({ request }) => {

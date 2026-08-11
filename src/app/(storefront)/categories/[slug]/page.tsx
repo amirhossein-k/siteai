@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { cache } from "react";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { Package, LayoutGrid } from "lucide-react";
 import { Breadcrumbs } from "@/components/storefront/breadcrumbs";
+import { PaginationControls } from "@/components/ui/pagination";
 import { BreadcrumbJsonLd, ItemListJsonLd } from "@/components/seo/json-ld-script";
 import { ProductCard } from "@/components/storefront/product-card";
 import { APP_URL, PAGINATION } from "@/lib/constants";
@@ -12,6 +13,7 @@ import { isAllowedImageSrc } from "@/lib/utils";
 import {
   getCategoryPage,
   normalizeCategorySlug,
+  resolveCategoryPageParam,
   buildCategoryBreadcrumbTrail,
   buildCategoryItemList,
   buildCategoryMetadata,
@@ -32,12 +34,18 @@ import {
  *     component but decoded slugs to generateMetadata; normalizing first
  *     keeps the cache key identical for both passes.
  *   - Valid ACTIVE category → HTTP 200, `index, follow`, self-canonical
- *     `/categories/<slug>`, server-rendered name/description, first-page
- *     product links, visible breadcrumbs, BreadcrumbList + ItemList JSON-LD —
- *     ALL in the initial HTML (raw HTTP, no JS).
+ *     `/categories/<slug>`, server-rendered name/description, product links,
+ *     visible breadcrumbs, BreadcrumbList + ItemList JSON-LD — ALL in the
+ *     initial HTML (raw HTTP, no JS).
+ *   - URL-driven pagination (Session 76): `?page=N` slices the listing
+ *     SERVER-side and renders REAL `<a>` pagination links in the initial
+ *     HTML. Page 1 → clean canonical; page 2+ → self-canonical
+ *     `/categories/<slug>?page=N`; `?page=1` / malformed values → 308 to the
+ *     clean URL; page beyond totalPages → `notFound()` (404). ItemList
+ *     reflects ONLY the products rendered on that page.
  *   - Missing / inactive / malformed category → `notFound()` → HTTP 404.
  *   - Only factual structured data: ItemList carries position/name/url for
- *     the first-page products — no fabricated price/rating/review count.
+ *     the rendered products — no fabricated price/rating/review count.
  */
 
 export const dynamic = "force-dynamic";
@@ -45,32 +53,64 @@ export const dynamic = "force-dynamic";
 // React cache() — dedupes same-argument queries within a render pass
 // (generateMetadata + page share ONE DB load per request). Callers must
 // normalize the slug BEFORE invoking it (see the two call sites) so the
-// encoded-vs-decoded asymmetry above never splits the cache key.
-const getCategory = cache((slug: string) => getCategoryPage(slug));
+// encoded-vs-decoded asymmetry above never splits the cache key, and pass
+// the SAME resolved page so the pagination variant keys identically.
+const getCategory = cache((slug: string, page: number) =>
+  getCategoryPage(slug, page)
+);
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }): Promise<Metadata> {
-  const { slug } = await params;
-  const data = await getCategory(normalizeCategorySlug(slug));
+  const [{ slug }, raw] = await Promise.all([params, searchParams]);
+  const pageRes = resolveCategoryPageParam(
+    Array.isArray(raw.page) ? raw.page[0] : raw.page
+  );
+  const data = await getCategory(normalizeCategorySlug(slug), pageRes.page);
   if (!data) return {};
-  return buildCategoryMetadata(data.category, APP_URL);
+  return buildCategoryMetadata(data.category, APP_URL, {
+    page: pageRes.page,
+    totalPages: data.totalPages,
+  });
 }
 
 export default async function CategoryPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { slug } = await params;
-  const data = await getCategory(normalizeCategorySlug(slug));
+  const [{ slug }, raw] = await Promise.all([params, searchParams]);
+  const normalizedSlug = normalizeCategorySlug(slug);
+  const pageRes = resolveCategoryPageParam(
+    Array.isArray(raw.page) ? raw.page[0] : raw.page
+  );
 
-  // Missing / inactive / malformed slug — 404, never indexable.
+  // Missing / inactive / malformed slug — 404, never indexable (checked
+  // BEFORE any page-param redirect so a bad category never bounces).
+  const data = await getCategory(normalizedSlug, pageRes.page);
   if (!data) notFound();
 
-  const { category, ancestorChain, products, total } = data;
+  // Canonical consolidation: ?page=1 and malformed page values permanently
+  // redirect to the clean category URL (never a duplicated ?page=1 or a
+  // junk-param URL in the index). The slug is PERCENT-ENCODED for the
+  // redirect target: Node rejects raw Unicode in the HTTP `Location` header
+  // (ERR_INVALID_CHAR → 500) — the encoded form is ASCII, and the route
+  // decodes it back on arrival. (Link hrefs below can stay decoded — HTML
+  // attributes are not HTTP headers; browsers encode them on request.)
+  if (pageRes.redirectClean) {
+    permanentRedirect(`/categories/${encodeURIComponent(normalizedSlug)}`);
+  }
+
+  // Out-of-range page → 404 (a thin page must never be indexable).
+  if (pageRes.page > data.totalPages) notFound();
+
+  const { category, ancestorChain, products, total, totalPages } = data;
 
   // Visible breadcrumb — server-rendered in the INITIAL HTML. Same items feed
   // the BreadcrumbList JSON-LD so UI and structured data can never diverge.
@@ -79,8 +119,19 @@ export default async function CategoryPage({
     baseUrl: APP_URL,
   });
 
-  // First-page ItemList data — factual name/url only.
+  // Current-page ItemList data — factual name/url only (reflects exactly the
+  // products rendered below; positions are sequential per the schema).
   const itemListItems = buildCategoryItemList(products, APP_URL);
+
+  // Real crawlable pagination links — page 1 points at the CLEAN category URL
+  // (never a ?page=1 that would 308), page 2+ carry the ?page=N form. Passed
+  // as a SERIALIZABLE string[] (indexed by page number) because a Server
+  // Component cannot pass a function prop to the client PaginationControls.
+  const pageHrefs: string[] = [];
+  for (let n = 1; n <= totalPages; n++) {
+    pageHrefs[n] =
+      n === 1 ? `/categories/${normalizedSlug}` : `/categories/${normalizedSlug}?page=${n}`;
+  }
 
   const categoryImage = isAllowedImageSrc(category.image)
     ? category.image
@@ -131,6 +182,20 @@ export default async function CategoryPage({
               <ProductCard key={product._id} product={product} />
             ))}
           </div>
+
+          {/* Results count + URL-driven pagination (Session 76) — real links
+              server-rendered in the INITIAL HTML. */}
+          <div className="mt-8 space-y-4">
+            <div className="text-center text-sm text-muted-foreground">
+              نمایش {products.length} محصول از {total} محصول
+            </div>
+            <PaginationControls
+              page={pageRes.page}
+              totalPages={totalPages}
+              pageHrefs={pageHrefs}
+            />
+          </div>
+
           {total > PAGINATION.DEFAULT_PAGE_SIZE && (
             <div className="mt-8 text-center">
               <Link

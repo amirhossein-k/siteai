@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { parsePageParam } from "@/lib/pagination";
 
 export interface CatalogFilterValues {
   search?: string;
@@ -20,10 +22,14 @@ export interface CatalogFilterValues {
  * Shared catalog filter state (Session 47).
  *
  * Owns the filter state for the storefront catalog page and maps it to the
- * query params consumed by usePublicProducts. Centralizes the three concerns
- * that the page previously duplicated per filter:
- *   - filter state (useState — NOT useSearchParams, per locked design)
- *   - page reset whenever any filter changes
+ * query params consumed by usePublicProducts. Centralizes the concerns that
+ * the page previously duplicated per filter:
+ *   - filter state (useState — filters stay LOCAL state, per locked design)
+ *   - PAGE state (Session 76 — URL-DRIVEN: derived from `?page=` via
+ *     useSearchParams; the URL is the single source of truth so pagination
+ *     links are real crawlable <a> elements, back/forward works, and direct
+ *     URL loading lands on the right page)
+ *   - page reset whenever any filter changes (strips `?page` from the URL)
  *   - active filter count + query-param mapping
  *
  * Session 47 extension: attribute facets are stored as a `selectedAttributes`
@@ -45,7 +51,14 @@ export function useCatalogFilters() {
     Record<string, string>
   >({});
   const [sortBy, setSortBy] = useState("newest");
-  const [page, setPage] = useState(1);
+
+  // Session 76 — URL-driven page. Derived from `?page=` (parsePageParam
+  // coerces missing/malformed values to 1); the URL is the single source of
+  // truth for the page, so the real <a> pagination links + back/forward +
+  // direct loads all work natively.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const page = parsePageParam(searchParams.get("page"));
 
   // Debounce the search term (Session 48): commit the query value 300ms after
   // the last keystroke (timer effect — the async commit in the callback is
@@ -95,10 +108,14 @@ export function useCatalogFilters() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
-  // Reset to page 1 whenever any filter changes. Implemented with the
-  // React-documented "adjust state during render" pattern (guarded so it only
-  // fires when the filter fingerprint actually changes) instead of an effect
-  // that calls setState directly (react-hooks/set-state-in-effect).
+  // Reset to page 1 whenever any filter changes. Page is DERIVED from the
+  // URL, so the reset is: strip `?page` from the URL when a filter actually
+  // changed. The ref compares the PREVIOUS fingerprint — initialized to the
+  // initial value so the MOUNT run is a no-op (a direct `?page=N` load must
+  // keep its page; the reviewer-caught bug: a null-initialized guard stripped
+  // the page on every fresh load). Bounded: the write only happens when a
+  // page param is present, so typing in the search box from a clean URL never
+  // touches the URL, and a filter change from `?page=N` strips exactly once.
   const filterFingerprint =
     searchQuery +
     "|" +
@@ -111,13 +128,17 @@ export function useCatalogFilters() {
     JSON.stringify(selectedAttributes) +
     "|" +
     sortBy;
-  const [lastFilterFingerprint, setLastFilterFingerprint] = useState(
-    filterFingerprint
-  );
-  if (filterFingerprint !== lastFilterFingerprint) {
-    setLastFilterFingerprint(filterFingerprint);
-    setPage(1);
-  }
+  const prevFingerprintRef = useRef(filterFingerprint);
+  useEffect(() => {
+    if (prevFingerprintRef.current === filterFingerprint) return;
+    prevFingerprintRef.current = filterFingerprint;
+    if (searchParams.get("page") !== null) {
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete("page");
+      const qs = next.toString();
+      router.replace(qs ? `/products?${qs}` : "/products", { scroll: false });
+    }
+  }, [filterFingerprint, searchParams, router]);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -179,6 +200,25 @@ export function useCatalogFilters() {
     setSortBy("newest");
   }, []);
 
+  /**
+   * Session 76 — build the real `<a>` href for a catalog page number,
+   * preserving every current URL param (seed params like category/brand/
+   * search/sort survive paging). The catalog component stays mounted across
+   * the client-side navigation, so the local filter state survives too.
+   */
+  const pageHref = useCallback(
+    (n: number) => {
+      const next = new URLSearchParams(searchParams.toString());
+      // Page 1 → the CLEAN /products URL (never a ?page=1 that would duplicate
+      // the canonical form); page 2+ carry ?page=N.
+      if (n === 1) next.delete("page");
+      else next.set("page", String(n));
+      const qs = next.toString();
+      return qs ? `/products?${qs}` : "/products";
+    },
+    [searchParams]
+  );
+
   return {
     searchQuery,
     setSearchQuery,
@@ -193,7 +233,7 @@ export function useCatalogFilters() {
     sortBy,
     setSortBy,
     page,
-    setPage,
+    pageHref,
     activeFilterCount,
     queryParams,
     clearFilters,

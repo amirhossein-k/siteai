@@ -1,15 +1,21 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { getState, createCategory, type E2EState } from "./helpers/fixtures";
+import {
+  getState,
+  createCategory,
+  createProduct,
+  type E2EState,
+} from "./helpers/fixtures";
 
 /**
- * Journey 20 — catalog listing SEO (Session 74).
+ * Journey 20 — catalog listing SEO (Sessions 74 + 76).
  *
- * The /products page is now a Server Component whose `generateMetadata`
+ * The /products page is a Server Component whose `generateMetadata`
  * (delegating to src/lib/catalog-seo.ts) emits title, description, canonical,
  * Open Graph, Twitter and robots in the INITIAL HTML. This spec verifies the
  * policy with raw HTTP (no client JavaScript — exactly what Googlebot
  * receives on first crawl):
  *
+ * Session 74 (unchanged):
  *   - `/products` (clean)              → indexable, self-canonical, NO noindex
  *   - `/products?search=…`             → noindex,follow, canonical → /products
  *   - `/products?sort=…`               → noindex,follow, canonical → /products
@@ -17,8 +23,18 @@ import { getState, createCategory, type E2EState } from "./helpers/fixtures";
  *   - `/products?attributes[color]=…`  → noindex,follow, canonical → /products
  *   - `/products?category=<id>`        → noindex,follow, canonical → /categories/<slug>
  *
+ * Session 76 (URL-driven pagination) — 21 products seeded so the base
+ * catalog actually has ≥ 2 pages (page-only `?page=N` must reflect real
+ * content, not a thin page):
+ *   - `/products?page=2`               → index,follow, SELF-canonical ?page=2
+ *   - `/products?page=1`               → indexable, canonical → clean /products
+ *   - `/products?page=0` / `?page=abc` → indexable (page-1 content), canonical → clean
+ *   - `/products?page=999` (out of range) → noindex,follow, canonical → clean
+ *   - `/products?sort=…&page=2`        → noindex,follow, canonical → /products
+ *   - `/products?category=<id>&page=2` → noindex,follow, canonical → /categories/<slug>
+ *
  * Plus a browser smoke proving the interactive catalog still hydrates and
- * fetches (the Session 74 page refactor must preserve functionality).
+ * fetches (the refactors must preserve functionality).
  */
 test.describe("catalog listing SEO policy", () => {
   let state: E2EState;
@@ -38,11 +54,26 @@ test.describe("catalog listing SEO policy", () => {
     // `${prefix}cat-${index}`.
     categoryId = await createCategory(adminCtx, state.prefix, 12);
     categorySlug = `${state.prefix}cat-12`;
+
+    // Session 76 — seed 21 ACTIVE in-stock products so the base catalog has
+    // ≥ 2 pages (the page-only `?page=N` indexability policy must reflect a
+    // REAL page, not a thin one). Prefix-slugged → global-teardown cleans them.
+    for (let i = 1; i <= 21; i++) {
+      await createProduct(adminCtx, {
+        slug: `${state.prefix}seo-prod-${i}`,
+        name: `محصول لیستینگ SEO ${state.prefix}${i}`,
+        categoryId,
+        supplierId: state.supplierId,
+        price: 100_000 * i,
+        supplierPrice: 80_000 * i,
+        stock: 5,
+      });
+    }
   });
 
   test.afterAll(async () => {
-    // cleanupByPrefix in global-teardown removes the category (slug carries
-    // the prefix); nothing per-test to delete here.
+    // cleanupByPrefix in global-teardown removes the category + products
+    // (slugs carry the prefix); nothing per-test to delete here.
     await adminCtx.dispose();
   });
 
@@ -136,6 +167,101 @@ test.describe("catalog listing SEO policy", () => {
     const foreignCanonicals = canonicalHrefs(foreignHtml);
     expect(foreignCanonicals).toHaveLength(1);
     expect(foreignCanonicals[0]).toBe(`${state.baseURL}/products`);
+  });
+
+  test("Session 76: /products?page=2 is index,follow with a SELF-canonical ?page=2", async ({
+    request,
+  }) => {
+    const res = await request.get("/products?page=2");
+    expect(res.status()).toBe(200);
+    const html = await res.text();
+
+    // index,follow — exactly one robots meta.
+    const robots = html.match(
+      /<meta name="robots" content="([^"]*)"/g
+    ) as string[] | null;
+    expect(robots).not.toBeNull();
+    expect(robots!.length).toBe(1);
+    expect(robots![0]).toContain('content="index, follow"');
+
+    // EXACTLY one canonical → the self ?page=2 form.
+    const canonicals = canonicalHrefs(html);
+    expect(canonicals).toHaveLength(1);
+    expect(canonicals[0]).toBe(`${state.baseURL}/products?page=2`);
+    // No noindex anywhere.
+    expect(html).not.toContain('content="noindex');
+  });
+
+  test("Session 76: ?page=1 and invalid page values canonicalize to the clean /products", async ({
+    request,
+  }) => {
+    const cases = [
+      ["page=1", "/products?page=1"],
+      ["page=0", "/products?page=0"],
+      ["page=abc", "/products?page=abc"],
+      ["page=-2", "/products?page=-2"],
+    ] as const;
+    for (const [label, url] of cases) {
+      const res = await request.get(url);
+      expect(res.status(), `${label}: ${url}`).toBe(200);
+      const html = await res.text();
+      // indexable (content = page 1) — no noindex.
+      expect(html, label).not.toContain('content="noindex');
+      // exactly one canonical → clean /products.
+      const canonicals = canonicalHrefs(html);
+      expect(canonicals, `${label}: exactly one canonical`).toHaveLength(1);
+      expect(canonicals[0], label).toBe(`${state.baseURL}/products`);
+    }
+  });
+
+  test("Session 76: out-of-range page-only URL is noindex,follow with canonical to clean /products", async ({
+    request,
+  }) => {
+    // 21 seeded products → totalPages = 2 → page=999 is beyond range.
+    const res = await request.get("/products?page=999");
+    expect(res.status()).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('content="noindex, follow"');
+    const canonicals = canonicalHrefs(html);
+    expect(canonicals).toHaveLength(1);
+    expect(canonicals[0]).toBe(`${state.baseURL}/products`);
+  });
+
+  test("Session 76: filtered + page stays noindex with the Session 74 canonical", async ({
+    request,
+  }) => {
+    // Filter param + page → noindex,follow → base /products.
+    const filtered = await request.get("/products?sort=price_desc&page=2");
+    const filteredHtml = await filtered.text();
+    expect(filteredHtml).toContain('content="noindex, follow"');
+    expect(canonicalHrefs(filteredHtml)).toEqual([`${state.baseURL}/products`]);
+
+    // Category param + page → noindex,follow → the /categories/<slug> route.
+    const categoryFiltered = await request.get(
+      `/products?category=${categoryId}&page=2`
+    );
+    const catHtml = await categoryFiltered.text();
+    expect(catHtml).toContain('content="noindex, follow"');
+    expect(canonicalHrefs(catHtml)).toEqual([
+      `${state.baseURL}/categories/${encodeURIComponent(categorySlug)}`,
+    ]);
+  });
+
+  test("Session 76: a direct ?page=2 URL load KEEPS the page (no mount-time strip)", async ({
+    page,
+  }) => {
+    // The catalog derives `page` from the URL; the filter-reset effect must
+    // NOT strip ?page on mount (regression caught in review: a fresh ?page=N
+    // load bounced to page 1). Assert the URL survives AND the API fetch
+    // actually targets page 2.
+    const apiReq = page.waitForRequest((r) => {
+      if (!r.url().includes("/api/products")) return false;
+      const u = new URL(r.url());
+      return u.searchParams.get("page") === "2";
+    });
+    await page.goto("/products?page=2");
+    await apiReq;
+    await expect(page).toHaveURL(/\/products\?page=2/);
   });
 
   test("the interactive catalog still hydrates and fetches products", async ({
