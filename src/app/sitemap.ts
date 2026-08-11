@@ -3,7 +3,9 @@ import { APP_URL } from "@/lib/constants";
 import { dbConnect } from "@/lib/dbConnect";
 import Product from "@/models/Product";
 import Supplier from "@/models/Supplier";
+import Category from "@/models/Category";
 import { buildProductUrl } from "@/lib/product-slug";
+import { buildCategoryUrl } from "@/lib/category-url";
 
 // Next 16 docs: sitemap.ts is a special Route Handler that is CACHED BY
 // DEFAULT unless it opts into a Request-time API or a dynamic config option.
@@ -92,5 +94,37 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     console.error("Error generating product sitemap entries:", error);
   }
 
-  return [...staticPages, ...supplierPages, ...productPages];
+  // Dynamic CATEGORY pages (Session 75) — every indexable category: active +
+  // non-empty slug. URL = the same buildCategoryUrl used by the canonical +
+  // breadcrumbs + ItemList so the sitemap, canonical and structured data
+  // always point at the identical resource (Unicode Persian slugs stay
+  // human-readable; the XML is UTF-8). lastModified = updatedAt (falls back
+  // to createdAt). Defensive dedupe — the unique slug index makes duplicates
+  // impossible, but the Set below protects against legacy data.
+  const categoryPages: MetadataRoute.Sitemap = [];
+  try {
+    await dbConnect();
+    const categories = await Category.find({
+      isActive: true,
+      slug: { $exists: true, $ne: "" },
+    })
+      .select("slug updatedAt createdAt")
+      .sort({ updatedAt: -1 })
+      .lean();
+    const seen = new Set<string>();
+    for (const c of categories) {
+      if (!c.slug || seen.has(c.slug)) continue;
+      seen.add(c.slug);
+      categoryPages.push({
+        url: buildCategoryUrl(baseUrl, c.slug),
+        lastModified: c.updatedAt || c.createdAt || new Date(),
+        changeFrequency: "weekly" as const,
+        priority: 0.6,
+      });
+    }
+  } catch (error) {
+    console.error("Error generating category sitemap entries:", error);
+  }
+
+  return [...staticPages, ...supplierPages, ...productPages, ...categoryPages];
 }

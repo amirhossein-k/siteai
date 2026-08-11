@@ -10,11 +10,13 @@ import { SectionHeader } from "@/components/storefront/home/section-header";
 import type { HomepageSectionRendererProps } from "@/types";
 
 /**
- * Quick Categories (Session 50).
+ * Quick Categories (Session 50, links upgraded Session 75).
  * Desktop: dense responsive grid of rounded tiles. Mobile: horizontal
  * scroll-snap row (independent layout, not a squeezed grid). Each tile links
- * to the catalog with the category pre-selected (useCatalogFilters reads the
- * ?category= URL param once on mount).
+ * to the REAL indexable category page /categories/<slug> (Session 75) — the
+ * category's canonical URL. A slug-less category (legacy data) falls back to
+ * the interactive catalog filter /products?category=<id> (never a fabricated
+ * /categories URL), preserving the pre-Session-75 behavior for that edge.
  */
 export function QuickCategories({ section }: HomepageSectionRendererProps) {
   const { data: categories, isLoading, isError } = usePublicCategories();
@@ -50,10 +52,13 @@ export function QuickCategories({ section }: HomepageSectionRendererProps) {
             const categoryImage = isAllowedImageSrc(category.image)
               ? category.image
               : "";
+            const categoryHref = category.slug
+              ? `/categories/${category.slug}`
+              : `/products?category=${category._id}`;
             return (
               <Link
                 key={category._id}
-                href={`/products?category=${category._id}`}
+                href={categoryHref}
                 className="group flex w-[23%] shrink-0 snap-start flex-col items-center gap-2 sm:w-[16%] md:w-auto"
               >
                 <span className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-muted to-muted/60 text-lg font-bold text-muted-foreground shadow-sm ring-1 ring-border transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-20 sm:w-20 sm:rounded-3xl">

@@ -4,11 +4,14 @@ import { breadcrumbSchema } from "@/lib/schemas/json-ld";
 
 /**
  * Session 72 — breadcrumb trail + BreadcrumbList JSON-LD (hermetic).
+ * Updated Session 75: category breadcrumb URLs use the real indexable
+ * category pages `/categories/<slug>` (buildCategoryUrl) instead of the
+ * noindex filter surface `/products?category=<id>`.
  *
  * `buildProductBreadcrumbTrail` is the single source for both the visible
  * UI and the structured data, so its shape (no fabricated levels, product
- * = current page with NO url, category URLs from the storefront's real
- * /products?category=<id> convention) is the contract under test.
+ * = current page with NO url, category URLs = /categories/<slug>) is the
+ * contract under test.
  */
 const BASE = "https://mystore.com";
 
@@ -23,7 +26,7 @@ describe("buildProductBreadcrumbTrail", () => {
     });
     expect(trail).toEqual([
       { name: "صفحه اصلی", url: BASE },
-      { name: "الکترونیک", url: `${BASE}/products?category=c1` },
+      { name: "الکترونیک", url: `${BASE}/categories/slug-c1` },
       { name: "هدفون بیسیم" }, // current page — no url
     ]);
   });
@@ -43,8 +46,8 @@ describe("buildProductBreadcrumbTrail", () => {
       "مردانه",
       "پیراهن آکسفورد",
     ]);
-    expect(trail[1].url).toBe(`${BASE}/products?category=p1`);
-    expect(trail[2].url).toBe(`${BASE}/products?category=c2`);
+    expect(trail[1].url).toBe(`${BASE}/categories/slug-p1`);
+    expect(trail[2].url).toBe(`${BASE}/categories/slug-c2`);
     expect(trail[3].url).toBeUndefined();
   });
 
@@ -68,9 +71,9 @@ describe("buildProductBreadcrumbTrail", () => {
     });
     expect(trail[1].name).toBe("کالای دیجیتال");
     expect(trail[2].name).toBe("هدفون بیسیم بلوتوثی");
-    // Category URL is id-based (the real storefront convention) — no
-    // transliteration or slug guesswork anywhere.
-    expect(trail[1].url).toBe(`${BASE}/products?category=c1`);
+    // Category URL is slug-based — the real indexable /categories/<slug>
+    // page (Session 75). No transliteration or id-based URLs anywhere.
+    expect(trail[1].url).toBe(`${BASE}/categories/slug-c1`);
   });
 
   it("Latin legacy product names work unchanged", () => {
@@ -88,7 +91,7 @@ describe("breadcrumbSchema (BreadcrumbList JSON-LD)", () => {
   it("emits sequential 1-based positions and absolute item URLs", () => {
     const schema = breadcrumbSchema([
       { name: "صفحه اصلی", url: BASE },
-      { name: "الکترونیک", url: `${BASE}/products?category=c1` },
+      { name: "الکترونیک", url: `${BASE}/categories/slug-c1` },
       { name: "هدفون بیسیم" }, // final — no url
     ]);
     expect(schema["@type"]).toBe("BreadcrumbList");
@@ -100,7 +103,7 @@ describe("breadcrumbSchema (BreadcrumbList JSON-LD)", () => {
     }>;
     expect(elements.map((e) => e.position)).toEqual([1, 2, 3]);
     expect(elements[0].item).toBe(BASE);
-    expect(elements[1].item).toBe(`${BASE}/products?category=c1`);
+    expect(elements[1].item).toBe(`${BASE}/categories/slug-c1`);
     // Google: item is optional on the FINAL (current page) element.
     expect(elements[2].item).toBeUndefined();
     expect(elements[2].name).toBe("هدفون بیسیم");
@@ -123,7 +126,7 @@ describe("breadcrumbSchema (BreadcrumbList JSON-LD)", () => {
     const { serializeJsonLd } = await import("@/lib/schemas/json-ld");
     const schema = breadcrumbSchema([
       { name: "صفحه اصلی", url: BASE },
-      { name: "محصول </script><script>alert(1)</script>", url: `${BASE}/products?category=c1` },
+      { name: "محصول </script><script>alert(1)</script>", url: `${BASE}/categories/slug-c1` },
       { name: "قیمت <و> & تست" },
     ]);
     const json = serializeJsonLd(schema);

@@ -5,14 +5,10 @@ import {
   productSchema,
   faqSchema,
   articleSchema,
+  itemListSchema,
   serializeJsonLd,
 } from "@/lib/schemas/json-ld";
 import { APP_URL } from "@/lib/constants";
-
-interface JsonLdScriptProps {
-  type: "organization" | "website" | "breadcrumb" | "product" | "faq" | "article";
-  data: Record<string, unknown>;
-}
 
 function JsonLdScript({ data }: { data: Record<string, unknown> }) {
   return (
@@ -64,6 +60,14 @@ export function BreadcrumbJsonLd({
   items: Array<{ name: string; url?: string }>;
 }) {
   return <JsonLdScript data={breadcrumbSchema(items)} />;
+}
+
+export function ItemListJsonLd({
+  items,
+}: {
+  items: Array<{ name: string; url: string }>;
+}) {
+  return <JsonLdScript data={itemListSchema(items)} />;
 }
 
 export function ProductJsonLd({ data }: { data: Parameters<typeof productSchema>[0] }) {

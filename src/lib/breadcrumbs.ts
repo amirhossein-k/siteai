@@ -1,10 +1,12 @@
 import { dbConnect } from "@/lib/dbConnect";
 import Category from "@/models/Category";
+import { buildCategoryUrl } from "@/lib/category-url";
 
 /**
- * Breadcrumb data layer (Session 72) — shared by the visible server-rendered
- * Breadcrumbs component and the BreadcrumbList JSON-LD on the product page,
- * so the structured data always matches what the user sees.
+ * Breadcrumb data layer (Session 72, category URLs upgraded Session 75) —
+ * shared by the visible server-rendered Breadcrumbs component and the
+ * BreadcrumbList JSON-LD, so the structured data always matches what the
+ * user sees.
  *
  * Hierarchy (real navigational structure, nothing invented):
  *   Home → [Parent Category → … →] Category → Product
@@ -13,6 +15,10 @@ import Category from "@/models/Category";
  * self-reference (root-first). The Product detail loader populates the
  * product's `category` (name/slug) but NOT its ancestors, so the chain is
  * walked here with bounded indexed `_id` lookups.
+ *
+ * Category breadcrumb URLs are the real indexable category pages
+ * `/categories/<slug>` (Session 75) via the single buildCategoryUrl helper —
+ * never the noindex filter surface `/products?category=<id>`.
  */
 
 export interface BreadcrumbItem {
@@ -72,10 +78,8 @@ export async function getCategoryAncestors(
  *
  * URL conventions (single source — reused by the visible UI and JSON-LD):
  *   - Home → `${baseUrl}` (same origin as canonical/OG/JSON-LD),
- *   - category → `${baseUrl}/products?category=<id>` — the storefront's real
- *     category-browse URL (categories have no dedicated [slug] route; the
- *     catalog filter is the canonical navigational target, and existing
- *     category links across the storefront use the same ?category=<id> form),
+ *   - category → `${baseUrl}/categories/<slug>` — the real indexable
+ *     category page (Session 75) via buildCategoryUrl,
  *   - product → the current page: name only, NO url → not a link in the UI
  *     and no `item` in the JSON-LD (Google: optional on the final element).
  *
@@ -95,7 +99,7 @@ export function buildProductBreadcrumbTrail({
   for (const cat of categoryChain) {
     items.push({
       name: cat.name,
-      url: `${baseUrl}/products?category=${cat._id}`,
+      url: buildCategoryUrl(baseUrl, cat.slug),
     });
   }
   items.push({ name: productName }); // current page — no url, no link

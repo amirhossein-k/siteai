@@ -150,10 +150,14 @@ test.describe("Persian product name auto-slug", () => {
     await expect(homeLink).toHaveAttribute("href", state.baseURL);
     const categoryLink = breadcrumb.getByRole("link", { name: categoryName });
     await expect(categoryLink).toBeVisible();
-    // Category link is an absolute URL (from APP_URL).
+    // Session 75 — category breadcrumb links point to the REAL indexable
+    // category page /categories/<slug> (createCategory builds the slug as
+    // `${prefix}cat-<index>`), never the noindex filter surface. Absolute
+    // URL (from APP_URL).
+    const categorySlug = `${state.prefix}cat-11`;
     await expect(categoryLink).toHaveAttribute(
       "href",
-      `${state.baseURL}/products?category=${categoryId}`
+      `${state.baseURL}/categories/${categorySlug}`
     );
     // The product name is the FINAL breadcrumb item — plain text with aria-current.
     const productCrumb = breadcrumb.getByText(persianName, { exact: true });
@@ -211,9 +215,10 @@ test.describe("Persian product name auto-slug", () => {
     expect((elements[2] as { position: number }).position).toBe(3);
     // First item = Home (absolute URL).
     expect((elements[0] as { item: string }).item).toBe(state.baseURL);
-    // Second item = Category (absolute URL).
+    // Second item = Category (absolute URL — the /categories/<slug> page,
+    // Session 75).
     expect((elements[1] as { item: string }).item).toBe(
-      `${state.baseURL}/products?category=${categoryId}`
+      `${state.baseURL}/categories/${state.prefix}cat-11`
     );
     // Third item = Product (the current page) — no `item` per Google guidance.
     expect((elements[2] as { item?: string }).item).toBeUndefined();

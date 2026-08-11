@@ -222,6 +222,29 @@ export function productSchema({
 }
 
 /**
+ * ItemList Schema (Session 75) — category-page first-page products.
+ *
+ * Only FACTUAL fields that already exist on the product are emitted:
+ * `position` (1-based, sequential), `name` and `url`. No price, rating,
+ * review count or availability is ever fabricated for the structured data.
+ * ItemList here describes the visible list (the products actually rendered
+ * on the page) — it is not a product-collection shortcut for the Product
+ * schema on the detail pages.
+ */
+export function itemListSchema(items: Array<{ name: string; url: string }>) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    itemListElement: items.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.name,
+      url: item.url,
+    })),
+  };
+}
+
+/**
  * FAQPage Schema
  */
 export function faqSchema(questions: Array<{ question: string; answer: string }>) {
