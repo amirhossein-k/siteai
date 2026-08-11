@@ -23,6 +23,7 @@ const COMPONENT_OPTIONS = [
   "quick-categories",
   "campaign-banner",
   "special-picks",
+  "discounted-products",
   "newest-products",
   "premium-collection",
   "popular-brands",

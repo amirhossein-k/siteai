@@ -149,6 +149,26 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
       },
     },
   },
+  // Session 77 — «محصولات تخفیف‌دار». sortOrder 4.5 (between best-sellers and
+  // newest-products) keeps existing-DB seeding deterministic: seedHomepageContent
+  // only inserts MISSING sections, so an already-seeded database gets this row
+  // at 4.5 — exactly after best-sellers — without renumbering any existing
+  // section or disturbing admin reordering. Fresh DBs render the same order.
+  {
+    slug: "discounted-products",
+    sortOrder: 4.5,
+    component: "discounted-products",
+    title: "",
+    subtitle: "",
+    presentation: {
+      appearance: defaultAppearance(),
+      behavior: {
+        ...defaultBehavior(),
+        maxItems: 12,
+        layoutVariant: "carousel",
+      },
+    },
+  },
   {
     slug: "newest-products",
     sortOrder: 5,
@@ -225,6 +245,7 @@ export const HOMEPAGE_COMPONENTS = [
   "campaign-banner",
   "special-picks",
   "best-sellers",
+  "discounted-products",
   "newest-products",
   "premium-collection",
   "popular-brands",
