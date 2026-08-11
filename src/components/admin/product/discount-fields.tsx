@@ -109,6 +109,7 @@ export function DiscountFields({
           type="button"
           role="switch"
           aria-checked={enabled}
+          aria-label="فعال‌سازی تخفیف محصول"
           onClick={() => {
             setTouched(true);
             onChange(

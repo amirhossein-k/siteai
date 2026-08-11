@@ -1,4 +1,4 @@
-name: Regression (39 suites)
+name: Regression (41 suites)
 
 # Session 60 — the full real-API regression (`scripts/run-regression.js`, 33
 # sequential suites) as a NON-gating nightly / on-demand workflow. Session 62
@@ -6,6 +6,8 @@ name: Regression (39 suites)
 # Session 64 added `verify-session-security` → 36.
 # Session 66 added `verify-suppliers-onboarding` → 37.
 # Session 67 added `verify-supplier-applications` → 38.
+# Session 68 added `verify-customer-support` → 39.
+# Session 77 added `verify-product-discounts` → 41.
 #
 # Unlike `ci.yml` (hermetic, zero secrets), these suites exercise the REAL
 # Zarinpal sandbox, the real Liara S3 uploads, and the real Telegram bot — so
