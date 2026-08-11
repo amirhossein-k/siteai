@@ -39,6 +39,10 @@ import {
   type VariantDraft,
 } from "@/components/admin/variant-builder";
 import { DescriptionEditorWithPreview } from "@/components/admin/product/description-editor-with-preview";
+import {
+  DiscountFields,
+  type DiscountDraft,
+} from "@/components/admin/product/discount-fields";
 import { slugify } from "@/lib/utils";
 import type { RichDescriptionNode } from "@/types";
 
@@ -76,6 +80,19 @@ export function ProductForm({
   const [descriptionRich, setDescriptionRich] = useState<
     RichDescriptionNode[] | undefined
   >((defaultValues as any)?.descriptionRich);
+  // Admin-only product discount (server-validated on save). The draft keeps
+  // datetime-local strings; the submit payload converts them to UTC ISO.
+  const [discount, setDiscount] = useState<DiscountDraft | null>(() => {
+    const d = (defaultValues as any)?.discount;
+    if (!d) return null;
+    return {
+      type: d.type === "fixed" ? "fixed" : "percent",
+      value: d.value != null ? String(d.value) : "",
+      startsAt: d.startsAt || "",
+      endsAt: d.endsAt || "",
+      isActive: d.isActive !== false,
+    };
+  });
 
   const form = useForm<ProductFormData>({
     resolver: zodResolver(productSchema),
@@ -109,6 +126,13 @@ export function ProductForm({
   const formErrors = form.formState.errors;
 
   const handleFormSubmit = async (data: ProductFormData) => {
+    // Local datetime strings → UTC ISO (server stores/evaluates in UTC; the
+    // form edits in the browser's local timezone — the app-wide convention).
+    const toIso = (v: string) => {
+      if (!v) return null;
+      const d = new Date(v);
+      return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    };
     await onSubmit({
       ...data,
       images: productImages,
@@ -116,6 +140,15 @@ export function ProductForm({
       hasVariants,
       variants,
       descriptionRich,
+      discount: discount
+        ? {
+            type: discount.type,
+            value: Number(discount.value) || 0,
+            startsAt: toIso(discount.startsAt),
+            endsAt: toIso(discount.endsAt),
+            isActive: discount.isActive,
+          }
+        : null,
       // Session 70 — autoSlug tells the server this slug was derived from the
       // name (NOT manually edited), so a collision gets a deterministic
       // suffix (base-2, …). A manually-entered slug is authoritative (409 on
@@ -262,6 +295,23 @@ export function ProductForm({
                   prev.filter((url) => !url.includes(key))
                 )
               }
+            />
+          </CardContent>
+        </Card>
+
+        {/* Product Discount (admin-only — the supplier form never renders this) */}
+        <Card>
+          <CardHeader>
+            <CardTitle>تخفیف محصول</CardTitle>
+            <CardDescription>
+              برای مدت مشخص، قیمت فروش را کاهش دهید (درصدی یا مبلغ ثابت)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DiscountFields
+              value={discount}
+              onChange={setDiscount}
+              basePrice={Number(form.watch("price")) || 0}
             />
           </CardContent>
         </Card>

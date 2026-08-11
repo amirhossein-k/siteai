@@ -17,6 +17,7 @@ import { sanitizePlainText } from "@/lib/sanitize";
 import { prepareVariantsForSave } from "@/lib/product-variants";
 import { prepareRichDescription } from "@/lib/product-description";
 import { createWithUniqueSlug } from "@/lib/product-slug";
+import { parseProductDiscount } from "@/lib/product-pricing";
 // Note: All models are registered globally via dbConnect.js — no side-effect imports needed here
 
 export async function GET(req: NextRequest) {
@@ -118,6 +119,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: rich.error }, { status: 400 });
     }
 
+    // Product discount — ADMIN-only (this route is admin-gated), validated
+    // server-side against the single source (src/lib/product-pricing.ts). The
+    // applicable base price is the min active variant price for variant
+    // products, the submitted price otherwise (the fixed < price rule).
+    const discountResult = parseProductDiscount(
+      body.discount,
+      prepared.hasVariants ? prepared.price : body.price
+    );
+    if (!discountResult.ok) {
+      return NextResponse.json(
+        { error: discountResult.error },
+        { status: 400 }
+      );
+    }
+
     // Session 70 — an AUTO-GENERATED slug (autoSlug: true, derived from the
     // name) that collides gets a deterministic suffix (base-2, base-3, …) via
     // the DB unique index retry; a manually-entered slug is authoritative and
@@ -141,6 +157,9 @@ export async function POST(req: NextRequest) {
       hasVariants: prepared.hasVariants,
       variants: prepared.variants,
       isActive: body.isActive ?? true,
+      // undefined (field omitted) → absent discount; null → explicitly cleared;
+      // object → validated config. Supplier routes never map this field.
+      discount: discountResult.value,
     };
     const slugResult = await createWithUniqueSlug(
       body.slug,
@@ -207,6 +226,19 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: rich.error }, { status: 400 });
     }
 
+    // Product discount — same admin-only validation as POST. basePrice = min
+    // active variant price (variants) or the submitted price (simple).
+    const discountResult = parseProductDiscount(
+      body.discount,
+      prepared.hasVariants ? prepared.price : body.price
+    );
+    if (!discountResult.ok) {
+      return NextResponse.json(
+        { error: discountResult.error },
+        { status: 400 }
+      );
+    }
+
     const update: Record<string, unknown> = {
       name: sanitizePlainText(body.name),
       slug: body.slug,
@@ -230,6 +262,11 @@ export async function PUT(req: NextRequest) {
       variants: prepared.variants,
       isActive: body.isActive,
     };
+    // discount is undefined when the field was omitted (backward compat with
+    // legacy API clients) → keep the stored value; null → cleared; object → set.
+    if (discountResult.value !== undefined) {
+      update.discount = discountResult.value;
+    }
 
     // Same auto-slug collision handling as POST: auto-generated slugs get a
     // deterministic suffix; user-entered slugs keep the 409 behavior.

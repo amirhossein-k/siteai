@@ -150,6 +150,37 @@ const ProductSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Product discount / sale pricing (optional embedded subdocument).
+    // ABSENT on all pre-discount products — zero migration. Admin-only write
+    // (the supplier product routes never map it). Pricing math + validation
+    // live in src/lib/product-pricing.ts (single source of truth); this is
+    // storage only. Public shapes NEVER expose the raw subdoc — only the
+    // active-only metadata computed by getEffectivePrice/toPublicDiscount.
+    discount: {
+      type: new mongoose.Schema(
+        {
+          type: {
+            type: String,
+            enum: ["percent", "fixed"],
+            required: true,
+          },
+          // percent → discount percent (1–90); fixed → whole toman amount
+          value: {
+            type: Number,
+            required: true,
+            min: 1,
+          },
+          startsAt: { type: Date, default: null },
+          endsAt: { type: Date, default: null },
+          isActive: {
+            type: Boolean,
+            default: true,
+          },
+        },
+        { _id: false }
+      ),
+      default: undefined,
+    },
     // Session 56 — Best-Sellers: total units SOLD (paid, non-refunded).
     // Incremented at payment verify (pending→paid claim) and decremented at
     // admin refund (paid→refunded claim) — both exactly-once by construction.
@@ -179,6 +210,15 @@ ProductSchema.index({ "variants.sku": 1 }, { unique: true, sparse: true });
 // Non-unique; serves the public sort=best_selling path. soldCount is internal
 // (excluded from public responses) — the index only powers the sort.
 ProductSchema.index({ soldCount: -1, createdAt: -1 });
+
+// Active-discount queries (homepage «محصولات تخفیف‌دار» rail): filters
+// discount.isActive + startsAt/endsAt window at request time. Non-unique;
+// catalog size is small — the index is cheap insurance, not a dependency.
+ProductSchema.index({
+  "discount.isActive": 1,
+  "discount.startsAt": 1,
+  "discount.endsAt": 1,
+});
 
 // Auto-increment stockVersion whenever stock changes (via save)
 ProductSchema.pre("save", function (next) {

@@ -112,6 +112,10 @@ export type ProductFormData = z.infer<typeof productSchema> & {
    * edited): a server-side collision then gets a deterministic -2/-3 suffix
    * instead of the manual-slug 409. */
   autoSlug?: boolean;
+  /** Product discount (admin-only). Shape-agnostic on the client — the
+   * SERVER-side validation (parseProductDiscount in src/lib/product-pricing.ts)
+   * is authoritative; optional so legacy products round-trip untouched. */
+  discount?: unknown;
 };
 
 /**
