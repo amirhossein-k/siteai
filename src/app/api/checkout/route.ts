@@ -10,6 +10,7 @@ import { notifyOrderEvent } from "@/lib/notifications";
 import { requestPayment } from "@/lib/zarinpal";
 import { reserveStock, restoreStock } from "@/lib/inventory";
 import { claimCouponForOrder, releaseCouponClaim } from "@/lib/coupons";
+import { getEffectivePrice } from "@/lib/product-pricing";
 
 interface CheckoutItem {
   id: string;
@@ -179,8 +180,17 @@ export async function POST(req: NextRequest) {
             )
           : null;
 
-        const effectivePrice =
+        // Session 77 — the SERVER recomputes the effective (post-discount)
+        // unit price from the freshly reserved product; the client cart price
+        // must equal it EXACTLY. A stale ORIGINAL price (discount now active)
+        // and a manipulated discounted price (no active discount) BOTH fail
+        // here → 409. The client can never determine the payable price.
+        const unitPrice =
           cartItem.variantId && variant ? variant.price : productAny.price;
+        const effectivePrice = getEffectivePrice(
+          unitPrice,
+          productAny.discount
+        ).finalPrice;
 
         // Verify price hasn't changed since added to cart
         if (effectivePrice !== cartItem.price) {
@@ -254,6 +264,14 @@ export async function POST(req: NextRequest) {
           }
         | null;
 
+      // Session 77 — server-authoritative discounted unit price:
+      // price = the ACTUAL effective unit price paid (getEffectivePrice),
+      // originalPrice = pre-discount snapshot, discountAmount = per-unit
+      // reduction (0 when no discount was active). Immutable — later discount
+      // changes or expiration never touch existing orders.
+      const unitPrice = (variant?.price ?? productAny.price) as number;
+      const effective = getEffectivePrice(unitPrice, productAny.discount);
+
       const orderItem = {
         product: String(productAny._id),
         supplier: supplierId,
@@ -265,13 +283,15 @@ export async function POST(req: NextRequest) {
           (productAny.images?.[0] as string | undefined) ||
           "",
         name: productAny.name as string,
-        price: (variant?.price ?? productAny.price) as number,
+        price: effective.finalPrice,
+        originalPrice: unitPrice,
+        discountAmount: effective.discountAmount,
         supplierPrice: (variant?.supplierPrice ?? productAny.supplierPrice) as number,
         quantity,
       };
 
       orderItems.push(orderItem);
-      totalAmount += (variant?.price ?? productAny.price) * quantity;
+      totalAmount += effective.finalPrice * quantity;
 
       if (!supplierItemsMap[supplierId]) {
         supplierItemsMap[supplierId] = [];

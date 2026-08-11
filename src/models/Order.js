@@ -23,7 +23,15 @@ const OrderItemSchema = new mongoose.Schema(
     image: { type: String, default: "" },
     // اسنپ‌شات از اطلاعات لحظه‌ی خرید، تا اگه بعدا محصول تغییر کرد سفارش قدیمی خراب نشه
     name: { type: String, required: true },
-    price: { type: Number, required: true }, // قیمت واحد به مشتری
+    // قیمت واحدی که مشتری واقعاً پرداخت کرده (برای تخفیف‌دارها = قیمت نهایی بعد از تخفیف)
+    price: { type: Number, required: true },
+    // --- Discount snapshot (Session 77 — additive, absent on old orders) ---
+    // price = ACTUAL effective unit price paid; originalPrice = pre-discount
+    // unit price (== price when no discount was active); discountAmount =
+    // originalPrice − price (0 when no discount). Immutable — later discount
+    // changes or expiration never alter existing orders.
+    originalPrice: { type: Number, default: null },
+    discountAmount: { type: Number, default: 0 },
     supplierPrice: { type: Number, required: true }, // قیمت واحد از فروشنده
     quantity: { type: Number, required: true, min: 1 },
   },

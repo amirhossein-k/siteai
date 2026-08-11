@@ -631,7 +631,12 @@ export interface AdminOrderItem {
   variantLabel?: string;
   image?: string;
   name: string;
+  /** Actual effective unit price the customer paid (Session 77 — == original when no discount). */
   price: number;
+  /** Pre-discount unit price snapshot (Session 77 — additive; absent on old orders). */
+  originalPrice?: number | null;
+  /** Per-unit toman reduction applied at purchase (Session 77 — 0/absent when none). */
+  discountAmount?: number;
   supplierPrice: number;
   quantity: number;
 }
