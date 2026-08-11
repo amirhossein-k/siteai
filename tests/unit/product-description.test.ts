@@ -209,6 +209,90 @@ describe("validateRichDescription", () => {
     }
   });
 
+  // ─── Pasted links (the @platejs/link HTML deserializer) ───────────────
+  // The LinkPlugin paste deserializer ALWAYS emits `target` on `a` nodes
+  // (element.getAttribute("target") || "_blank"). The allowlist must accept
+  // exactly that value and reject everything else — `target` remains the
+  // only additional key allowed on links, and it never reaches the renderer
+  // as an attribute (the closed-set renderer hardcodes target/_blank + rel).
+  it("accepts the exact paste-deserializer shape (a + target \"_blank\")", () => {
+    const pasted: RichDescriptionNode[] = [
+      {
+        type: "a",
+        url: "https://example.com/fa",
+        target: "_blank", // emitted by @platejs/link on every pasted <a>
+        children: [{ text: "لینک چسبانده‌شده" }],
+      },
+    ];
+    expect(validateRichDescription(pasted)).toEqual({ ok: true });
+  });
+
+  it("rejects any non-_blank target value on link nodes", () => {
+    for (const target of [
+      "_self",
+      "_parent",
+      "_top",
+      "framename",
+      "_blank ",
+      " _blank",
+      "\" onmouseover=\"alert(1)",
+      "",
+      42,
+      true,
+      null,
+    ]) {
+      expect(
+        validateRichDescription([
+          {
+            type: "a",
+            url: "https://example.com",
+            target,
+            children: [{ text: "l" }],
+          },
+        ]),
+        `target=${String(target)}`
+      ).toMatchObject({ ok: false });
+    }
+  });
+
+  it("keeps the closed set: target is allowed ONLY on a nodes, no other keys", () => {
+    // Links without target (toolbar-created) still pass.
+    expect(
+      validateRichDescription([
+        { type: "a", url: "https://example.com", children: [{ text: "لینک" }] },
+      ])
+    ).toEqual({ ok: true });
+
+    // target on a non-a element stays rejected (closed set).
+    expect(
+      validateRichDescription([
+        { type: "p", target: "_blank", children: [{ text: "x" }] },
+      ])
+    ).toMatchObject({ ok: false });
+
+    // rel/href/style on a stay rejected — only url + target are allowed.
+    expect(
+      validateRichDescription([
+        {
+          type: "a",
+          url: "https://example.com",
+          rel: "noopener",
+          children: [{ text: "l" }],
+        },
+      ])
+    ).toMatchObject({ ok: false });
+    expect(
+      validateRichDescription([
+        {
+          type: "a",
+          url: "https://example.com",
+          style: "color:red",
+          children: [{ text: "l" }],
+        },
+      ])
+    ).toMatchObject({ ok: false });
+  });
+
   // ─── Images ───────────────────────────────────────────────────────────
   it("accepts same-origin and allowed-host images", () => {
     expect(
@@ -639,6 +723,24 @@ describe("ProductDescription renderer", () => {
     );
     expect(html).toContain('rel="noopener noreferrer nofollow"');
     expect(html).toContain('target="_blank"');
+  });
+
+  it("renders pasted links carrying the deserializer target key safely", () => {
+    // Stored trees may contain `target: "_blank"` from the paste
+    // deserializer — the renderer must ignore it and emit its own
+    // hardcoded safe attributes (never the stored value).
+    const html = render([
+      {
+        type: "a",
+        url: "https://example.com/pasted",
+        target: "_blank",
+        children: [{ text: "لینک چسبانده‌شده" }],
+      },
+    ]);
+    expect(html).toContain('<a href="https://example.com/pasted"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer nofollow"');
+    expect(html).toContain("لینک چسبانده‌شده");
   });
 
   it("NEVER renders unsafe links as anchors (inert text instead)", () => {

@@ -1,4 +1,6 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import mongoose from "mongoose";
+import { connectDb, disconnectDb } from "./helpers/db";
 import {
   getState,
   createCategory,
@@ -40,6 +42,33 @@ test.describe("Rich product description", () => {
     adminCtx = await playwright.request.newContext({
       storageState: state.adminStatePath,
     });
+
+    // Idempotency guard — Playwright restarts the worker after a FAILED test
+    // (failure isolation), re-running this beforeAll with the same per-run
+    // prefix. The seeded slugs below would then 409 (unique index) unless the
+    // leftover rows are removed first. The delete is scoped to THIS spec's
+    // exact slugs only — never the broad run prefix (other spec files share
+    // the prefix in a full suite run and must not be touched).
+    await connectDb();
+    const db = mongoose.connection.db;
+    if (!db) throw new Error("Not connected to MongoDB");
+    await db.collection("categories").deleteOne({ slug: `${state.prefix}cat-10` });
+    // Also pre-delete the UI-created slugs (editor + paste tests): on a CI
+    // retry (retries=2) the worker restarts and beforeAll re-runs — a leftover
+    // product from the failed attempt would 409 the retried form submit.
+    await db.collection("products").deleteMany({
+      slug: {
+        $in: [
+          `${uiPrefix()}${legacySlug}`,
+          `${state.prefix}${apiRichSlug}`,
+          `${uiPrefix()}rich-conflict`,
+          `${uiPrefix()}${editorRichSlug}`,
+          `${uiPrefix()}rich-paste`,
+        ],
+      },
+    });
+    await disconnectDb();
+
     // Index 10 is free (1=product-search, 2=product-detail, 3=cart desktop,
     // 4=checkout, 5=coupon, 6=payment, 7=order-tracking, 8=admin-order-workflow,
     // 9=supplier-workflow, 33=cart mobile, 99=accessibility). 3 collides with
@@ -97,6 +126,19 @@ test.describe("Rich product description", () => {
     };
     const res = await adminCtx.post("/api/admin/products", { data: richBody });
     expect(res.ok()).toBeTruthy();
+
+    // Conflict-slug product for the "editor stays editable after a
+    // server-side error" test — a duplicate MANUAL slug triggers the
+    // deterministic 409 (autoSlug=false keeps the slug authoritative).
+    await createProduct(adminCtx, {
+      slug: `${uiPrefix()}rich-conflict`,
+      name: `محصول تضاد ${state.prefix}اسلاگ`,
+      categoryId,
+      supplierId: state.supplierId,
+      price,
+      supplierPrice: 900_000,
+      stock: 5,
+    });
   });
 
   test("legacy plain-text product still renders with the fallback", async ({
@@ -266,10 +308,151 @@ test.describe("Rich product description", () => {
     ).toBeVisible();
   });
 
-  test("legacy edit: saving without touching the editor preserves plain text", async ({
+  test("pasted HTML link survives the full flow (deserializer target)", async ({
     page,
   }) => {
-    // Session 69 QA — a legacy product (description only) opened in the edit
+    // Session regression — pasting an <a> from another site produced a Slate
+    // node with `target: "_blank"` (the @platejs/link deserializer emits it
+    // on EVERY pasted link). The server allowlist used to reject the unknown
+    // key, so the save 400'd. The pasted node must now be accepted and the
+    // storefront must render it as a safe anchor.
+    const uiSlug = `${uiPrefix()}rich-paste`;
+    await page.goto("/admin/products/new");
+    await expect(
+      page.getByRole("heading", { name: "افزودن محصول جدید" })
+    ).toBeVisible();
+
+    await page
+      .getByLabel("نام محصول")
+      .fill(`محصول چسبانی ${state.prefix}لینک`);
+    await page.getByLabel("اسلاگ (لینک)").fill(uiSlug);
+    await page.getByLabel("دسته‌بندی").selectOption({ index: 1 });
+    await page.getByLabel("فروشنده (تأمین‌کننده)").selectOption({ index: 1 });
+
+    const editor = page.getByLabel("توضیحات محصول");
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await page.keyboard.type("مقدمه ");
+
+    // Paste real HTML containing an <a> — Plate's LinkPlugin deserializer
+    // turns it into a Slate node carrying `target: "_blank"`. Use the REAL
+    // browser clipboard (HTML + plain) + Ctrl+V — a faithful reproduction of
+    // a user pasting from another site (synthetic ClipboardEvents do not
+    // reach Plate's deserializer).
+    await page.context().grantPermissions(
+      ["clipboard-read", "clipboard-write"],
+      { origin: "http://localhost:3000" }
+    );
+    await page.evaluate(async () => {
+      const html =
+        '<a href="https://example.com/pasted">لینک چسبانده‌شده</a>';
+      const plain = "لینک چسبانده‌شده";
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+        }),
+      ]);
+    });
+    await page.keyboard.press("Control+V");
+    await expect(editor).toContainText("لینک چسبانده‌شده");
+
+    await page.getByLabel("قیمت فروش (تومان)").fill(String(price));
+    await page.getByLabel("قیمت تأمین (تومان)").fill("900000");
+    await page.getByLabel("موجودی").fill("7");
+
+    await page.getByRole("button", { name: "ایجاد محصول" }).click();
+    await expect(page.getByText("محصول با موفقیت ایجاد شد")).toBeVisible();
+
+    // The stored tree must contain the deserializer shape (url + target).
+    const listRes = await adminCtx.get(
+      `/api/admin/products?search=${encodeURIComponent(uiSlug)}`
+    );
+    expect(listRes.ok()).toBeTruthy();
+    const product = (
+      (await listRes.json()) as {
+        data: {
+          _id: string;
+          descriptionRich?: { type?: string; url?: string; target?: string }[];
+        }[];
+      }
+    ).data[0];
+    // Inline links nest inside their paragraph — search the tree recursively.
+    const findNode = (
+      nodes: { type?: string; url?: string; target?: string; children?: unknown[] }[] | undefined,
+      t: string
+    ): { type?: string; url?: string; target?: string } | undefined => {
+      for (const n of nodes || []) {
+        if (n.type === t) return n;
+        const found = findNode((n.children || []) as { type?: string }[], t);
+        if (found) return found;
+      }
+      return undefined;
+    };
+    const aNode = findNode(product.descriptionRich, "a");
+    expect(aNode).toBeTruthy();
+    expect(aNode?.url).toBe("https://example.com/pasted");
+    expect(aNode?.target).toBe("_blank");
+
+    // Storefront renders it as a safe external anchor.
+    await page.goto(`/products/${uiSlug}`);
+    const link = page.getByRole("link", { name: "لینک چسبانده‌شده" });
+    await expect(link).toHaveAttribute("href", "https://example.com/pasted");
+    await expect(link).toHaveAttribute("rel", /noopener/);
+  });
+
+  test("editor stays editable (Backspace) after a server-side submit error", async ({
+    page,
+  }) => {
+    // Issue-2 regression — after a SERVER-side error (slug 409) the form's
+    // isSubmitting toggles, which used to flip the Plate editor's readOnly
+    // and drop its internal selection — dead-locking Backspace/Delete. The
+    // editor must remain fully editable after the error.
+    const conflictSlug = `${uiPrefix()}rich-conflict`;
+    await page.goto("/admin/products/new");
+    await expect(
+      page.getByRole("heading", { name: "افزودن محصول جدید" })
+    ).toBeVisible();
+
+    await page
+      .getByLabel("نام محصول")
+      .fill(`محصول ادیتور ${state.prefix}خطا`);
+    // Manual slug → dirty → autoSlug=false → the server keeps it authoritative
+    // and the duplicate returns the deterministic 409.
+    await page.getByLabel("اسلاگ (لینک)").fill(conflictSlug);
+
+    const editor = page.getByLabel("توضیحات محصول");
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await page.keyboard.type("متن قابل حذف");
+
+    await page.getByLabel("دسته‌بندی").selectOption({ index: 1 });
+    await page.getByLabel("فروشنده (تأمین‌کننده)").selectOption({ index: 1 });
+    await page.getByLabel("قیمت فروش (تومان)").fill(String(price));
+    await page.getByLabel("قیمت تأمین (تومان)").fill("900000");
+    await page.getByLabel("موجودی").fill("7");
+
+    await page.getByRole("button", { name: "ایجاد محصول" }).click();
+    // Server-side 409 → error toast; the form must stay on the page.
+    await expect(
+      page.getByText("محصولی با این اسلاگ قبلاً وجود دارد")
+    ).toBeVisible();
+    await expect(page).toHaveURL(/\/admin\/products\/new$/);
+
+    // Editor still holds its content and remains fully editable: put the
+    // caret at the end and delete — the text must shorten.
+    await expect(editor).toContainText("متن قابل حذف");
+    await editor.click();
+    await page.keyboard.press("End");
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("Backspace");
+    await expect(editor).not.toContainText("حذف");
+    await expect(editor).toContainText("متن قابل");
+  });
+
+  test("legacy edit: saving without touching the editor preserves plain text", async ({
+    page,
+  }) => {    // Session 69 QA — a legacy product (description only) opened in the edit
     // form must survive a save untouched: no descriptionRich is introduced and
     // the plain-text description is preserved byte-for-byte.
     const res = await adminCtx.get(

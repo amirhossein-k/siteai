@@ -251,10 +251,18 @@ export function ProductDescriptionEditor({
   return (
     <div
       dir="rtl"
+      aria-disabled={disabled || undefined}
       className={cn(
         "w-full overflow-hidden rounded-md border border-input bg-background",
         "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
-        disabled && "cursor-not-allowed opacity-60"
+        // Issue 2 — `disabled` must stay a VISUAL affordance only. Forwarding
+        // it to PlateContent maps to contentEditable readOnly, and toggling
+        // readOnly mid-edit (e.g. when a submit fails server-side and
+        // isSubmitting flips) drops the DOM selection — Plate's editor.selection
+        // goes stale and Backspace/Delete silently no-op afterwards. pointer-
+        // events + opacity give the same disabled UX without touching the
+        // editable's readOnly state.
+        disabled && "pointer-events-none cursor-not-allowed opacity-60"
       )}
     >
       {/* Toolbar */}
@@ -438,7 +446,13 @@ export function ProductDescriptionEditor({
           placeholder={placeholder}
           aria-label="توضیحات محصول"
           className="min-h-[160px] px-3 py-2 text-sm leading-7 focus-visible:outline-none [&_[data-slate-placeholder]]:text-muted-foreground"
-          disabled={disabled}
+          onFocus={() => {
+            // Issue 2 — after an external re-render (e.g. a failed submit) the
+            // editor's internal selection can be null, which dead-locks
+            // Backspace/Delete (deleteBackward/deleteForward no-op without a
+            // selection). Re-sync Plate's selection with the DOM on focus.
+            if (!editor.selection) editor.tf.focus();
+          }}
         />
       </Plate>
     </div>

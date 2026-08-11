@@ -198,7 +198,11 @@ export function validateRichDescription(
       // NOTE: `id` is emitted by the editor on every node (Plate's stable node
       // ids, e.g. "O2hJtHdg9F") — allowed everywhere but value-bounded below.
       const allowedElementKeys: string[] = ["type", "children", "id"];
-      if (type === "a") allowedElementKeys.push("url");
+      // Session (paste fix) — the @platejs/link HTML deserializer emits
+      // `target` on EVERY pasted <a> (element.getAttribute("target") ||
+      // "_blank"). The key is allowed, but the VALUE is bounded to "_blank"
+      // below — the only value the deserializer can produce.
+      if (type === "a") allowedElementKeys.push("url", "target");
       if (type === "img") allowedElementKeys.push("url");
       // Alignment may live on block-level elements (p, headings, blockquote, li, table cells).
       if (
@@ -269,11 +273,18 @@ export function validateRichDescription(
         }
       }
 
-      // Link URL: http/https only.
+      // Link URL: http/https only; `target` (paste deserializer key) only the
+      // exact "_blank" value — anything else (frame targets, style-smuggled
+      // values, empty) is rejected. The closed-set renderer never reads the
+      // stored target: it hardcodes target/_blank + rel noopener itself.
       if (type === "a") {
         const url = node.url;
         if (typeof url !== "string" || !/^https?:\/\/.+/.test(url)) {
           errors.push("لینک در توضیحات غنی فقط می‌تواند http/https باشد");
+          return;
+        }
+        if (node.target !== undefined && node.target !== "_blank") {
+          errors.push("ویژگی target در لینک فقط می‌تواند _blank باشد");
           return;
         }
       }

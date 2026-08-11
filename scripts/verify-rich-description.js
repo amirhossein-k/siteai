@@ -382,6 +382,74 @@ async function run() {
     }
   });
 
+  // --- TEST 10b: pasted-link `target` (the @platejs/link deserializer shape) ---
+  await testAsync("Pasted link target: _blank accepted (201), invalid targets -> 400", async () => {
+    // Real paste flow: the LinkPlugin deserializer emits `target` on every
+    // pasted <a> (nested inline inside its paragraph).
+    const okRes = await http("POST", "/api/admin/products", adminJar, {
+      name: "x",
+      slug: PREFIX + "pastelink_" + Math.random().toString(36).slice(2, 8),
+      category: String(category._id),
+      supplier: String(supplier._id),
+      price: 1000,
+      supplierPrice: 500,
+      stock: 5,
+      descriptionRich: [
+        {
+          type: "p",
+          children: [
+            { text: "مقدمه " },
+            {
+              type: "a",
+              url: "https://example.com/pasted",
+              target: "_blank",
+              children: [{ text: "لینک چسبانده‌شده" }],
+            },
+            { text: "" },
+          ],
+        },
+      ],
+    });
+    assert(
+      okRes.status === 201,
+      "pasted <a> with target=_blank expected 201, got " +
+        okRes.status +
+        " " +
+        JSON.stringify(okRes.data)
+    );
+    assert(
+      typeof okRes.data.description === "string" &&
+        okRes.data.description.includes("لینک چسبانده‌شده"),
+      "plain-text projection must include the pasted link text"
+    );
+
+    // Invalid target values are still rejected (closed set).
+    for (const target of ["_self", "framename", "_blank ", 42]) {
+      const badRes = await http("POST", "/api/admin/products", adminJar, {
+        name: "x",
+        slug:
+          PREFIX + "pastelink_bad_" + Math.random().toString(36).slice(2, 8),
+        category: String(category._id),
+        supplier: String(supplier._id),
+        price: 1000,
+        supplierPrice: 500,
+        stock: 5,
+        descriptionRich: [
+          {
+            type: "a",
+            url: "https://example.com/pasted",
+            target,
+            children: [{ text: "لینک" }],
+          },
+        ],
+      });
+      assert(
+        badRes.status === 400,
+        "target=" + String(target) + " expected 400, got " + badRes.status
+      );
+    }
+  });
+
   // --- TEST 11: unsafe image sources ---
   await testAsync("Unsafe image sources (data:/foreign host) -> 400", async () => {
     for (const url of ["data:image/png;base64,AAAA", "https://evil.example.com/x.png"]) {

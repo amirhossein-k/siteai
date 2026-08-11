@@ -95,6 +95,8 @@ export type RichDescriptionNode = {
   type?: string;
   text?: string;
   url?: string;
+  /** Paste-deserializer key from @platejs/link (always "_blank" — server-bounded). */
+  target?: string;
   align?: string;
   /** Plate ListPlugin list style on blocks (bounded CSS values: ul/ol/disc/...). */
   listStyleType?: string;
