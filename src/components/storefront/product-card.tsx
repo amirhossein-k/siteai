@@ -12,6 +12,7 @@ import { cn, formatPrice, isAllowedImageSrc } from "@/lib/utils";
 import { useCartStore } from "@/stores/cart-store";
 import { showToast } from "@/components/ui/toast";
 import { useWishlistIds, useToggleWishlist } from "@/hooks/use-wishlist";
+import { DiscountCountdown } from "@/components/storefront/discount-countdown";
 import type { Product } from "@/types";
 
 interface ProductCardProps {
@@ -62,6 +63,11 @@ export function ProductCard({ product, className }: ProductCardProps) {
   const hasActiveDiscount =
     !!product.discount && effectivePrice < product.price;
   const discountPercent = product.discount?.percent ?? 0;
+  // Session 78 — the server-returned active-only summary decides the countdown:
+  // finite endsAt → chip under the price; endsAt null (open-ended) → no chip.
+  const discountEndsAt = hasActiveDiscount
+    ? product.discount?.endsAt ?? null
+    : null;
 
   const firstImage = product.images?.[0];
   // Session 61 — next/image throws on unconfigured hosts (native <img> just
@@ -203,6 +209,16 @@ export function ProductCard({ product, className }: ProductCardProps) {
             </Link>
           )}
         </div>
+
+        {/* Discount countdown (Session 78) — only while the server reports an
+            ACTIVE discount with a finite end. Presentation only; the server
+            remains authoritative for pricing. Placed under the price row so
+            the badge/price layout above is untouched. */}
+        {discountEndsAt && (
+          <div className="mb-2">
+            <DiscountCountdown endsAt={discountEndsAt} compact />
+          </div>
+        )}
 
         {/* Add to cart button — z-10 lifts it above the stretched product
             overlay so adding to cart never triggers product navigation. */}

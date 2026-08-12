@@ -26,6 +26,7 @@ import { ImageLightbox } from "@/components/storefront/image-lightbox";
 import { VariantSelector } from "@/components/storefront/variant-selector";
 import { ReviewsSection } from "@/components/storefront/reviews-section";
 import { ProductDescription } from "@/components/storefront/product-description";
+import { DiscountCountdown } from "@/components/storefront/discount-countdown";
 import { useWishlistIds, useToggleWishlist } from "@/hooks/use-wishlist";
 import type { Product, ProductVariant } from "@/types";
 
@@ -54,6 +55,11 @@ export function ProductDetailView({ product }: { product: Product }) {
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(
     null
   );
+  // Session 78 — presentation-only expiry flag: set when the visible countdown
+  // reaches zero while the page stays open. Hides the stale badge/
+  // strikethrough and restores the original price LOCALLY. The server stays
+  // authoritative — checkout re-reads the DB product and 409s on mismatch.
+  const [discountExpiredLocally, setDiscountExpiredLocally] = useState(false);
 
   const addItem = useCartStore((s) => s.addItem);
   const { data: wishlist } = useWishlistIds();
@@ -97,11 +103,23 @@ export function ProductDetailView({ product }: { product: Product }) {
   const displayOriginalPrice = activeVariant
     ? activeVariant.price
     : product.price;
-  const displayPrice = activeVariant
+  const serverEffectivePrice = activeVariant
     ? activeVariant.effectivePrice ?? activeVariant.price
     : product.effectivePrice ?? product.price;
+  // Once the countdown expired locally, show the original price only (the
+  // discount window has closed server-side too by the same clock).
+  const displayPrice = discountExpiredLocally
+    ? displayOriginalPrice
+    : serverEffectivePrice;
   const hasActiveDiscount =
-    !!product.discount && displayPrice < displayOriginalPrice;
+    !!product.discount &&
+    serverEffectivePrice < displayOriginalPrice &&
+    !discountExpiredLocally;
+  // Session 78 — chip next to the badge only for a finite, currently-active
+  // end (the server-returned active-only summary decides).
+  const discountEndsAt = hasActiveDiscount
+    ? product.discount?.endsAt ?? null
+    : null;
   // Badge percent: configured value (percent type) at product level; for a
   // selected variant the per-variant reduction is computed from the pair.
   const discountPercent = hasActiveDiscount
@@ -291,6 +309,13 @@ export function ProductDetailView({ product }: { product: Product }) {
                 <Badge className="bg-rose-600 text-white">
                   ٪{discountPercent} تخفیف
                 </Badge>
+                {discountEndsAt && (
+                  <DiscountCountdown
+                    endsAt={discountEndsAt}
+                    compact
+                    onExpire={() => setDiscountExpiredLocally(true)}
+                  />
+                )}
               </>
             )}
             {hasVariants && !activeVariant && (
