@@ -7,6 +7,8 @@ import {
 import Supplier from "@/models/Supplier";
 import Transaction from "@/models/Transaction";
 import SupplierOrder from "@/models/SupplierOrder";
+import User from "@/models/User";
+import { notifyOrderEvent } from "@/lib/notifications";
 
 export async function GET(req: NextRequest) {
   const { token, error } = await requireRoleOrError(req, ["supplier"]);
@@ -156,10 +158,11 @@ export async function POST(req: NextRequest) {
 
     const balance = claimed.balance || 0;
 
+    let payoutTxn: { _id: unknown } | null = null;
     try {
       // Create a PENDING payout request (balance NOT debited yet — an admin
       // must approve it). balanceAfter snapshots the CURRENT balance (pre-approval).
-      await Transaction.create({
+      payoutTxn = await Transaction.create({
         supplier: supplier._id,
         type: "payout",
         amount: -amount,
@@ -174,6 +177,32 @@ export async function POST(req: NextRequest) {
         { $inc: { pendingReserve: -amount } }
       );
       throw err;
+    }
+
+    // Session 80 — notify every active admin about the new payout request
+    // (the sole approver). Best-effort and AFTER the pending transaction
+    // committed; a notification failure can never fail the payout request.
+    try {
+      const admins = await User.find({ role: "admin", isActive: true })
+        .select("_id")
+        .lean();
+      for (const admin of admins) {
+        await notifyOrderEvent({
+          recipient: String(admin._id),
+          type: "payout_requested",
+          category: "payout",
+          message: `درخواست تسویه جدید از «${
+            supplier.businessName || "فروشنده"
+          }» به مبلغ ${new Intl.NumberFormat("fa-IR").format(amount)} تومان`,
+          link: "/admin/payouts",
+          notificationKey: `payout_${String(payoutTxn?._id)}_requested`,
+        });
+      }
+    } catch (err) {
+      console.error(
+        "[Wallet] Admin payout notification failed (non-blocking):",
+        err
+      );
     }
 
     // claimed has { new: true } → pendingReserve ALREADY includes amount

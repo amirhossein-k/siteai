@@ -5,6 +5,7 @@ import Order from "@/models/Order";
 import Product from "@/models/Product";
 import Supplier from "@/models/Supplier";
 import SupplierOrder from "@/models/SupplierOrder";
+import User from "@/models/User";
 import { sendNewOrderNotification, sendAdminNewOrderNotification } from "@/lib/telegram";
 import { notifyOrderEvent } from "@/lib/notifications";
 import { requestPayment } from "@/lib/zarinpal";
@@ -450,6 +451,39 @@ export async function POST(req: NextRequest) {
       totalAmount,
       `${shippingAddress.fullName} - ${shippingAddress.address}`
     );
+
+    // Session 80 — in-app notification to every active admin (the Telegram
+    // alert above stays; in-app is the source of truth for the admin bell).
+    // Fire-and-forget like the supplier loop below — the order already
+    // committed and a notification can never delay the payment redirect nor
+    // fail the checkout. Templated message, no customer PII. Per-admin dedupe
+    // via notificationKey.
+    void (async () => {
+      try {
+        const admins = await User.find({ role: "admin", isActive: true })
+          .select("_id")
+          .lean();
+        for (const admin of admins) {
+          await notifyOrderEvent({
+            recipient: String(admin._id),
+            type: "new_order",
+            category: "order",
+            message: `سفارش جدید #${orderShortId.slice(
+              -8
+            )} ثبت شد (${orderItems.length} قلم کالا).`,
+            relatedOrder: String(order._id),
+            link: `/admin/orders/${order._id}`,
+            notificationKey: `order_${order._id}_admin_new_order`,
+          });
+        }
+      } catch (err) {
+        // Don't fail the checkout — notifications are best-effort
+        console.error(
+          "[Checkout] Admin notification failed:",
+          err
+        );
+      }
+    })();
 
     // Notify each supplier about their items (in-app = source of truth,
     // telegram = best-effort adapter)

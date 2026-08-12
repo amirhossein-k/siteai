@@ -25,6 +25,7 @@ const NotificationSchema = new mongoose.Schema(
         "payout_sent", // برای فروشنده: پول واریز شد
         "payout_approved", // برای فروشنده: درخواست تسویه تأیید شد (Session 45)
         "payout_rejected", // برای فروشنده: درخواست تسویه رد شد (Session 45)
+        "payout_requested", // برای ادمین: درخواست تسویه جدید از فروشنده (Session 80)
         "new_review", // برای فروشنده: دیدگاه جدیدی برای محصولش ثبت شد (Session 45)
         "supplier_application", // برای ادمین: درخواست جدید فروشندگی (Session 67)
         "supplier_approved", // برای متقاضی: درخواست فروشندگی تأیید شد (Session 67)

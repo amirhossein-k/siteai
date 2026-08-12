@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import { dbConnect } from "@/lib/dbConnect";
 import Order from "@/models/Order";
 import Product from "@/models/Product";
+import User from "@/models/User";
 import { verifyPayment } from "@/lib/zarinpal";
 import {
   notifyOrderEvent,
@@ -213,6 +214,33 @@ export async function GET(req: NextRequest) {
             link: `/orders/${String(orderId)}`,
             notificationKey: `order_${orderId}_payment_failed`,
           });
+        }
+
+        // Session 80 — notify every active admin (money-at-risk event). Runs
+        // AFTER the failure state committed; a notification failure can never
+        // affect the redirect. Templated message, no customer PII.
+        try {
+          const admins = await User.find({ role: "admin", isActive: true })
+            .select("_id")
+            .lean();
+          for (const admin of admins) {
+            await safeNotifyOrderEvent({
+              recipient: String(admin._id),
+              type: "payment_failed",
+              category: "payment",
+              message: `پرداخت سفارش #${String(orderId).slice(
+                -8
+              )} ناموفق بود.`,
+              relatedOrder: String(orderId),
+              link: `/admin/orders/${String(orderId)}`,
+              notificationKey: `order_${orderId}_admin_payment_failed`,
+            });
+          }
+        } catch (err) {
+          console.error(
+            "[Payment] Admin failure notification failed (non-blocking):",
+            err
+          );
         }
       }
 
