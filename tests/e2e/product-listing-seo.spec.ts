@@ -3,6 +3,7 @@ import {
   getState,
   createCategory,
   createProduct,
+  expectOk,
   type E2EState,
 } from "./helpers/fixtures";
 
@@ -280,6 +281,237 @@ test.describe("catalog listing SEO policy", () => {
     await expect(page.getByRole("heading", { name: "محصولات" })).toBeVisible();
     await expect(
       page.getByRole("button", { name: /فیلترها/ })
+    ).toBeVisible();
+  });
+});
+
+/**
+ * Session 79 — the discounted catalog lens at /products?discounted=true.
+ *
+ * The client catalog now honors the URL-derived lens (previously the page
+ * silently showed the FULL catalog). Fixtures: one currently-discounted
+ * product (finite endsAt ~10 min out — no real-time expiry wait), one plain
+ * product, one future-discount product. The discounted membership rules are
+ * the server's (verify-product-discounts.js covers them at the API level —
+ * NOT duplicated here); this journey proves the CATALOG renders the lens,
+ * the SEO head stays noindex,follow → /products, pagination keeps the lens,
+ * and the exit link restores the full catalog.
+ */
+test.describe("Session 79 — discounted catalog lens", () => {
+  let state: E2EState;
+  let adminCtx: APIRequestContext;
+  let categoryId: string;
+  let categorySlug: string;
+  const lensSlug = (n: number) => `${state.prefix.replace(/_/g, "-")}dccat-${n}`;
+
+  const canonicalHrefs = (html: string): string[] =>
+    [...html.matchAll(/rel="canonical" href="([^"]*)"/g)].map((m) => m[1]);
+
+  test.beforeAll(async ({ playwright }) => {
+    state = getState();
+    adminCtx = await playwright.request.newContext({
+      storageState: state.adminStatePath,
+    });
+
+    // Reuse the listing-SEO category when the whole file runs; create one
+    // when this describe runs in isolation (-g filter). Idempotent either way.
+    categorySlug = `${state.prefix}cat-12`;
+    const catsRes = await adminCtx.get("/api/admin/categories");
+    expect(catsRes.ok()).toBeTruthy();
+    const cats = (await catsRes.json()) as Array<{ _id: string; slug: string }>;
+    categoryId = cats.find((c) => c.slug === categorySlug)?._id ?? "";
+    if (!categoryId) {
+      for (let idx = 14; idx < 40; idx++) {
+        try {
+          categoryId = await createCategory(adminCtx, state.prefix, idx);
+          categorySlug = `${state.prefix}cat-${idx}`;
+          break;
+        } catch (e) {
+          // Duplicate-slug 409 → try the next index; anything else fails loudly.
+          if (!String(e).includes("409")) throw e;
+        }
+      }
+    }
+    expect(categoryId).toBeTruthy();
+
+    // Idempotent seeding: reuse a fixture left behind by a failed earlier run.
+    const ensureProduct = async (seed: {
+      slug: string;
+      name: string;
+      price: number;
+      stock: number;
+      discount?: unknown;
+    }): Promise<void> => {
+      const search = await adminCtx.get(
+        `/api/admin/products?search=${encodeURIComponent(seed.slug)}`
+      );
+      expect(search.ok()).toBeTruthy();
+      const existing = (
+        (await search.json()) as { data: Array<{ slug: string }> }
+      ).data.find((p) => p.slug === seed.slug);
+      if (existing) return;
+      const res = await adminCtx.post("/api/admin/products", {
+        data: {
+          name: seed.name,
+          slug: seed.slug,
+          description: "محصول E2E — حذف میشود",
+          images: [],
+          category: categoryId,
+          supplier: state.supplierId,
+          supplierPrice: Math.round(seed.price * 0.6),
+          price: seed.price,
+          stock: seed.stock,
+          hasVariants: false,
+          variants: [],
+          isActive: true,
+          discount: seed.discount,
+        },
+      });
+      await expectOk(res, `seed ${seed.slug}`);
+    };
+
+    const t = Date.now();
+    await ensureProduct({
+      slug: lensSlug(1),
+      name: `هدفون تخفیف‌دار کاتالوگ ${state.prefix}`,
+      price: 1_000_000,
+      stock: 10,
+      discount: {
+        type: "percent",
+        value: 20,
+        startsAt: null,
+        endsAt: new Date(t + 600_000).toISOString(), // +10 min — no real-time wait
+        isActive: true,
+      },
+    });
+    await ensureProduct({
+      slug: lensSlug(2),
+      name: `محصول عادی کاتالوگ ${state.prefix}`,
+      price: 500_000,
+      stock: 10,
+    });
+    await ensureProduct({
+      slug: lensSlug(3),
+      name: `تخفیف آینده کاتالوگ ${state.prefix}`,
+      price: 700_000,
+      stock: 10,
+      discount: {
+        type: "percent",
+        value: 30,
+        startsAt: new Date(t + 3_600_000).toISOString(), // +1h — future, NOT active
+        endsAt: null,
+        isActive: true,
+      },
+    });
+  });
+
+  test.afterAll(async () => {
+    // cleanupByPrefix (global-teardown) removes prefix-slugged products +
+    // categories; nothing per-test to delete here.
+    await adminCtx.dispose();
+  });
+
+  test("raw HTTP: the discounted lens stays noindex,follow canonical /products (initial HTML)", async ({
+    request,
+  }) => {
+    const cases: Array<[string, string]> = [
+      ["discounted", "/products?discounted=true"],
+      ["discounted+page", "/products?discounted=true&page=2"],
+    ];
+    for (const [label, url] of cases) {
+      const res = await request.get(url);
+      expect(res.status(), `${label}: ${url}`).toBe(200);
+      const html = await res.text();
+      const robots = html.match(/<meta name="robots" content="([^"]*)"/g);
+      expect(robots, `${label}: exactly one robots meta`).not.toBeNull();
+      expect(robots!.length, `${label}: exactly one robots meta`).toBe(1);
+      expect(robots![0]).toContain('content="noindex, follow"');
+      expect(canonicalHrefs(html), `${label}: exactly one canonical`).toEqual([
+        `${state.baseURL}/products`,
+      ]);
+    }
+
+    // discounted + category respects the existing category canonical rule.
+    const catRes = await request.get(
+      `/products?discounted=true&category=${categoryId}`
+    );
+    expect(catRes.status()).toBe(200);
+    const catHtml = await catRes.text();
+    expect(catHtml).toContain('content="noindex, follow"');
+    expect(canonicalHrefs(catHtml)).toEqual([
+      `${state.baseURL}/categories/${encodeURIComponent(categorySlug)}`,
+    ]);
+  });
+
+  test("the discounted lens renders only active discounted products, keeps the lens on page 2, and the exit link restores the full catalog", async ({
+    page,
+  }) => {
+    // 1. Direct load of the lens (the homepage rail's «مشاهده همه» target).
+    await page.goto("/products?discounted=true");
+    // Tolerant of the نیم‌فاصله variant: the H1 is «محصولات تخفیف‌دار» (ZWNJ)
+    // to match the homepage section title exactly.
+    await expect(
+      page.getByRole("heading", { name: /محصولات تخفیف[\u200C]?دار/ })
+    ).toBeVisible();
+
+    // Exit chip present and pointing at the clean catalog.
+    const exit = page.getByRole("link", { name: "مشاهده همه محصولات" });
+    await expect(exit).toBeVisible();
+    await expect(exit).toHaveAttribute("href", "/products");
+
+    // Membership: discounted product present; plain + future-discount absent.
+    await expect(
+      page.getByRole("link", {
+        name: new RegExp(`هدفون تخفیف‌دار کاتالوگ ${state.prefix}`),
+      })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", {
+        name: new RegExp(`محصول عادی کاتالوگ ${state.prefix}`),
+      })
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("link", {
+        name: new RegExp(`تخفیف آینده کاتالوگ ${state.prefix}`),
+      })
+    ).toHaveCount(0);
+
+    // Discount presentation on the card: badge, effective price, struck
+    // through original, countdown chip (20% of 1,000,000 = 800,000).
+    await expect(page.getByText("٪20 تخفیف")).toBeVisible();
+    await expect(page.getByText(/۸۰۰٬۰۰۰/)).toBeVisible();
+    const original = page.getByText(/۱٬۰۰۰٬۰۰۰/);
+    await expect(original).toBeVisible();
+    await expect(original).toHaveClass(/line-through/);
+    await expect(page.getByText(/باقی مانده/).first()).toBeVisible();
+
+    // 2. Pagination preserves the lens: ?discounted=true&page=2 still
+    // requests discounted=true and keeps the lens H1.
+    const apiReq = page.waitForRequest((r) => {
+      if (!r.url().includes("/api/products")) return false;
+      const u = new URL(r.url());
+      return (
+        u.searchParams.get("discounted") === "true" &&
+        u.searchParams.get("page") === "2"
+      );
+    });
+    await page.goto("/products?discounted=true&page=2");
+    await apiReq;
+    await expect(page).toHaveURL(/\/products\?discounted=true&page=2/);
+    await expect(
+      page.getByRole("heading", { name: /محصولات تخفیف[\u200C]?دار/ })
+    ).toBeVisible();
+
+    // 3. The exit link returns to the full catalog (plain product now shown).
+    await page.getByRole("link", { name: "مشاهده همه محصولات" }).click();
+    await expect(page).toHaveURL(/\/products$/);
+    await expect(
+      page.getByRole("heading", { name: "محصولات", exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", {
+        name: new RegExp(`محصول عادی کاتالوگ ${state.prefix}`),
+      })
     ).toBeVisible();
   });
 });

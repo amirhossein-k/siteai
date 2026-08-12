@@ -59,6 +59,12 @@ export function useCatalogFilters() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const page = parsePageParam(searchParams.get("page"));
+  // Session 79 — discounted catalog lens. URL-DERIVED (like `page`): only the
+  // exact string "true" activates the lens; absent / false / 1 = the normal
+  // full catalog. Deliberately NOT local state and NOT in the one-time seed
+  // effect below — the URL is the single source of truth for the lens, so
+  // direct loads, back/forward and the homepage rail link all work natively.
+  const isDiscounted = searchParams.get("discounted") === "true";
 
   // Debounce the search term (Session 48): commit the query value 300ms after
   // the last keystroke (timer effect — the async commit in the callback is
@@ -166,6 +172,9 @@ export function useCatalogFilters() {
       tag: selectedTag || undefined,
       sort: sortBy,
     };
+    // Session 79 — forward the URL-derived discounted lens to the API (the
+    // server stays authoritative for active-window membership).
+    if (isDiscounted) params.discounted = "true";
     // Attribute facets serialize as nested attributes[<slug>]=<value> params.
     for (const [slug, value] of Object.entries(selectedAttributes)) {
       if (value) params[`attributes[${slug}]`] = value;
@@ -178,6 +187,7 @@ export function useCatalogFilters() {
     selectedTag,
     selectedAttributes,
     sortBy,
+    isDiscounted,
   ]);
 
   /** Set/clear one attribute value (empty value clears the selection). */
@@ -198,7 +208,14 @@ export function useCatalogFilters() {
     setSelectedTag("");
     setSelectedAttributes({});
     setSortBy("newest");
-  }, []);
+    // Session 79 — clearing filters also EXITS the discounted lens: the lens
+    // lives in the URL (not local state), so navigating to the clean
+    // /products URL is the only way to leave it. Per-chip partial clears stay
+    // inside the lens (they never call clearFilters).
+    if (searchParams.get("discounted") === "true") {
+      router.replace("/products", { scroll: false });
+    }
+  }, [searchParams, router]);
 
   /**
    * Session 76 — build the real `<a>` href for a catalog page number,
@@ -234,6 +251,7 @@ export function useCatalogFilters() {
     setSortBy,
     page,
     pageHref,
+    isDiscounted,
     activeFilterCount,
     queryParams,
     clearFilters,

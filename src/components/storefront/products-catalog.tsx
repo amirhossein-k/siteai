@@ -2,7 +2,8 @@
 
 import { SearchSuggestions } from "@/components/storefront/search-suggestions";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Search,
   SlidersHorizontal,
@@ -43,6 +44,12 @@ const sortOptions = [
  * React Query data fetching, filters, sorting and pagination behave exactly
  * as before. The page renders it server-side; the initial HTML carries the
  * SEO head while the product grid still hydrates client-side.
+ *
+ * Session 79 — /products?discounted=true is now a REAL discounted catalog
+ * lens: the URL-derived isDiscounted (from useCatalogFilters) drives the
+ * H1/exit chip, the honest lens empty state, and the deduplicated
+ * countdown-expiry refetch. The server stays authoritative for membership
+ * and pricing; this component only renders what the API returns.
  */
 export default function ProductsCatalogPage() {
   const {
@@ -60,6 +67,7 @@ export default function ProductsCatalogPage() {
     setSortBy,
     page,
     pageHref,
+    isDiscounted,
     activeFilterCount,
     queryParams,
     clearFilters,
@@ -83,6 +91,22 @@ export default function ProductsCatalogPage() {
   const totalProducts = paged?.total || 0;
   const totalPages = paged?.totalPages || 1;
 
+  // Session 79 — discounted-catalog countdown expiry: every card's countdown
+  // reports through ProductCard.onCountdownExpire; cards sharing the same
+  // endsAt collapse into exactly ONE refetch (the same dedupe pattern as the
+  // homepage rail). No polling, no per-card requests; endsAt:null cards never
+  // fire. Wired only on the lens so the full catalog keeps its exact behavior.
+  const lastExpiredTargetRef = useRef<number | null>(null);
+  const handleCountdownExpire = useCallback(
+    (endsAt: string) => {
+      const ms = new Date(endsAt).getTime();
+      if (!Number.isFinite(ms) || lastExpiredTargetRef.current === ms) return;
+      lastExpiredTargetRef.current = ms;
+      void refetch();
+    },
+    [refetch]
+  );
+
   const categoryName = (id: string) =>
     categories?.find((c) => c._id === id)?.name || "دسته";
   const brandName = (id: string) =>
@@ -99,12 +123,27 @@ export default function ProductsCatalogPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">محصولات</h1>
-        <p className="mt-2 text-muted-foreground">
-          {isLoading ? "..." : `${totalProducts} محصول در فروشگاه`}
-        </p>
+      {/* Page Header — Session 79: the discounted lens gets its own H1 + an
+          exit link back to the full catalog (count/subtitle unchanged). */}
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {/* \u200C = نیم‌فاصله — same «محصولات تخفیف‌دار» spelling as the
+                homepage section title (consistent Persian typography). */}
+            {isDiscounted ? "محصولات تخفیف\u200Cدار" : "محصولات"}
+          </h1>
+          <p className="mt-2 text-muted-foreground">
+            {isLoading ? "..." : `${totalProducts} محصول در فروشگاه`}
+          </p>
+        </div>
+        {isDiscounted && (
+          <Link
+            href="/products"
+            className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+          >
+            مشاهده همه محصولات
+          </Link>
+        )}
       </div>
 
       {/* Search & Filter Bar */}
@@ -407,23 +446,54 @@ export default function ProductsCatalogPage() {
       ) : !products || products.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Package className="mb-3 h-12 w-12 text-muted-foreground" />
-          <h3 className="mb-2 text-lg font-semibold">محصولی یافت نشد</h3>
-          <p className="mb-4 text-sm text-muted-foreground">
-            {hasActiveFilters
-              ? "هیچ محصولی با فیلترهای انتخاب شده یافت نشد"
-              : "هنوز محصولی در فروشگاه ثبت نشده است"}
-          </p>
-          {hasActiveFilters && (
-            <Button variant="outline" onClick={clearFilters}>
-              پاک کردن فیلترها
-            </Button>
+          {/* Session 79 — honest lens empty state: only when the server
+              returned ZERO matches (total === 0) AND no other filter could
+              be responsible. A filtered search or an out-of-range page keeps
+              the existing messaging. */}
+          {isDiscounted && !hasActiveFilters && totalProducts === 0 ? (
+            <>
+              <h3 className="mb-2 text-lg font-semibold">
+                در حال حاضر تخفیف فعالی وجود ندارد
+              </h3>
+              <p className="mb-4 text-sm text-muted-foreground">
+                {/* JS string literal (NOT JSX text) so the \u200C نیم‌فاصله
+                    escape is processed — JSX text would print it literally. */}
+                {"برای مشاهده تخفیف\u200Cهای آینده، بعداً دوباره سر بزنید"}
+              </p>
+              <Link
+                href="/products"
+                className="inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+              >
+                مشاهده همه محصولات
+              </Link>
+            </>
+          ) : (
+            <>
+              <h3 className="mb-2 text-lg font-semibold">محصولی یافت نشد</h3>
+              <p className="mb-4 text-sm text-muted-foreground">
+                {hasActiveFilters
+                  ? "هیچ محصولی با فیلترهای انتخاب شده یافت نشد"
+                  : "هنوز محصولی در فروشگاه ثبت نشده است"}
+              </p>
+              {hasActiveFilters && (
+                <Button variant="outline" onClick={clearFilters}>
+                  پاک کردن فیلترها
+                </Button>
+              )}
+            </>
           )}
         </div>
       ) : (
         <>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {products.map((product) => (
-              <ProductCard key={product._id} product={product} />
+              <ProductCard
+                key={product._id}
+                product={product}
+                onCountdownExpire={
+                  isDiscounted ? handleCountdownExpire : undefined
+                }
+              />
             ))}
           </div>
 

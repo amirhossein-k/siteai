@@ -242,6 +242,58 @@ describe("buildCatalogMetadata", () => {
   });
 });
 
+
+describe("Session 79 — discounted=true lens (approved policy, now locked by tests)", () => {
+  it("discounted=true is never indexable (parameterized variant)", () => {
+    expect(isIndexableCatalogUrl({ discounted: "true" })).toBe(false);
+    expect(isIndexableCatalogUrl({ discounted: "true", page: "2" })).toBe(false);
+    expect(isIndexableCatalogUrl({ discounted: "1" })).toBe(false);
+    expect(isIndexableCatalogUrl({ discounted: "false" })).toBe(false);
+  });
+
+  it("robots: noindex,follow for the discounted lens", () => {
+    expect(getCatalogRobots({ discounted: "true" })).toEqual({
+      index: false,
+      follow: true,
+    });
+    expect(getCatalogRobots({ discounted: "true", page: "2" })).toEqual({
+      index: false,
+      follow: true,
+    });
+  });
+
+  it("canonical: discounted=true → clean /products (never ?page=1 or ?page=N)", () => {
+    expect(getCatalogCanonicalUrl({ discounted: "true" })).toBe(PRODUCTS_URL);
+    expect(getCatalogCanonicalUrl({ discounted: "true", page: "1" })).toBe(
+      PRODUCTS_URL
+    );
+    expect(getCatalogCanonicalUrl({ discounted: "true", page: "2" })).toBe(
+      PRODUCTS_URL
+    );
+    expect(getCatalogCanonicalUrl({ discounted: "true", search: "x" })).toBe(
+      PRODUCTS_URL
+    );
+  });
+
+  it("canonical: discounted + category respects the existing category rule", () => {
+    expect(
+      getCatalogCanonicalUrl({ discounted: "true", category: "c1" }, "الکترونیک")
+    ).toBe(`${BASE}/categories/الکترونیک`);
+    // unresolvable category slug → falls back to /products (never fabricated)
+    expect(
+      getCatalogCanonicalUrl({ discounted: "true", category: "c1" }, null)
+    ).toBe(PRODUCTS_URL);
+  });
+
+  it("buildCatalogMetadata: noindex + canonical /products, no duplicate sources", () => {
+    const meta = buildCatalogMetadata({ discounted: "true" });
+    expect(meta.robots).toEqual({ index: false, follow: true });
+    expect(meta.alternates.canonical).toBe(PRODUCTS_URL);
+    expect(meta.openGraph.url).toBe(PRODUCTS_URL);
+    expect(meta.title).toBe(CATALOG_TITLE);
+  });
+});
+
 describe("resolveCategorySlug", () => {
   // Hermetic unit-test boundary (repo convention): ONLY the DB-free path is
   // tested here. The real-DB paths — a resolvable category slug and the
