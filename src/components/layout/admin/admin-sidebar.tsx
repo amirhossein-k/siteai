@@ -23,6 +23,7 @@ import {
   FileUp,
   LayoutTemplate,
   MessageSquareText,
+  Bell,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,12 @@ const navItems = [
     title: "داشبورد",
     href: "/admin/dashboard",
     icon: LayoutDashboard,
+  },
+  {
+    // Session 80 — full notification inbox (the header bell links here too).
+    title: "اعلان‌ها",
+    href: "/admin/notifications",
+    icon: Bell,
   },
   {
     title: "گزارش‌ها",

@@ -1,10 +1,11 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { Menu, Bell, Search } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAppStore } from "@/stores";
+import { AdminNotificationBell } from "./admin-notification-bell";
 
 export function AdminHeader() {
   const { data: session } = useSession();
@@ -35,12 +36,8 @@ export function AdminHeader() {
 
       {/* Right section */}
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
-            3
-          </span>
-        </Button>
+        {/* Session 80 — real notification bell (badge + dropdown panel). */}
+        <AdminNotificationBell />
 
         <div className="flex items-center gap-3 border-r pr-4">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">

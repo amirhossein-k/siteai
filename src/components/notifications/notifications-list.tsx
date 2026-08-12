@@ -2,16 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Bell,
-  CheckCheck,
-  CreditCard,
-  Inbox,
-  MessageSquareText,
-  Package,
-  Send,
-  Wallet,
-} from "lucide-react";
+import { CheckCheck, Inbox, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { PaginationControls } from "@/components/ui/pagination";
@@ -20,6 +11,9 @@ import {
   useMarkRead,
   useMarkAllRead,
 } from "@/hooks/use-notifications";
+// Session 80 — category icons/labels + relative time are shared with the
+// admin header bell (one source of truth, no duplicated formatting).
+import { CATEGORY_META, timeAgo } from "./notification-ui";
 import type { NotificationCategory, NotificationItem } from "@/types";
 
 const CATEGORY_TABS: Array<{ key: NotificationCategory | "all"; label: string }> = [
@@ -30,26 +24,6 @@ const CATEGORY_TABS: Array<{ key: NotificationCategory | "all"; label: string }>
   // Session 68 — support-message notifications tab.
   { key: "support", label: "پشتیبانی" },
 ];
-
-const CATEGORY_META: Record<NotificationCategory, { icon: typeof Package; label: string }> = {
-  order: { icon: Package, label: "سفارش" },
-  payment: { icon: CreditCard, label: "پرداخت" },
-  payout: { icon: Wallet, label: "کیف پول" },
-  system: { icon: Bell, label: "سیستم" },
-  support: { icon: MessageSquareText, label: "پشتیبانی" },
-};
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "همین حالا";
-  if (mins < 60) return `${mins} دقیقه پیش`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} ساعت پیش`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} روز پیش`;
-  return new Intl.DateTimeFormat("fa-IR").format(new Date(iso));
-}
 
 /**
  * Shared notifications inbox. Works in both the storefront (customer) and
