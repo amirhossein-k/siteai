@@ -286,6 +286,9 @@ async function run() {
     assert(a.price === 1000000, "original price must stay 1000000, got " + a.price);
     assert(a.effectivePrice === 750000, "25% of 1M should be 750000, got " + a.effectivePrice);
     assert(a.discount && a.discount.type === "percent" && a.discount.percent === 25 && a.discount.amount === 250000, "bad discount summary");
+    // Session 78 — the countdown consumes endsAt: open-ended discounts must
+    // expose it as null (no chip); finite ones as a valid ISO string.
+    assert(a.discount.endsAt === null, "open-ended discount must expose endsAt:null");
     assert(b && b.effectivePrice === 850000, "fixed discount math wrong");
     assert(b.discount.percent === 15, "fixed discount computed percent should be 15");
     // LEAK SCAN — raw stored config keys never appear on public shapes
@@ -307,6 +310,9 @@ async function run() {
     const w = await http("GET", "/api/products?slug=" + encodeURIComponent(PREFIX + "windowed"), null);
     assert(w.data.effectivePrice === 900000, "windowed effective wrong: " + w.data.effectivePrice);
     assert(w.data.discount.percent === 25, "windowed discount missing");
+    // Session 78 — active discount with a finite end must carry a valid endsAt
+    // (the exact field the storefront countdown renders from).
+    assert(typeof w.data.discount.endsAt === "string" && !Number.isNaN(new Date(w.data.discount.endsAt).getTime()), "active windowed discount must expose a valid endsAt");
   });
 
   await testAsync("discounted=true returns ONLY currently-active in-stock active products", async () => {
