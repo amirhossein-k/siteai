@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { BadgePercent } from "lucide-react";
 import { usePublicProducts } from "@/hooks/use-public-products";
 import { ProductRail } from "@/components/storefront/home/product-rail";
@@ -51,11 +51,24 @@ export function DiscountedProducts({
   // child), so no memoization is needed.
   const nearestEndsAt = findNearestDiscountEndsAt(products);
 
-  // Exactly ONE refetch per expiry event (the chip latches per target, so a
-  // refetch that returns the same past endsAt can never loop).
-  const handleExpire = useCallback(() => {
-    void refetch();
-  }, [refetch]);
+  // Session 78.1 — exactly ONE refetch per expiry EVENT, keyed by the expired
+  // target: the aside chip AND every rail card's own countdown report through
+  // this handler, and any number of chips hitting the same end time collapse
+  // into a single refetch. After the refetch the expired product leaves the
+  // list (server recomputes the window at request time), the next target
+  // becomes current and the cycle continues — no per-second polling, no
+  // per-product requests.
+  const lastExpiredTargetRef = useRef<number | null>(null);
+  const handleExpire = useCallback(
+    (endsAt: number | string) => {
+      const ms =
+        typeof endsAt === "number" ? endsAt : new Date(endsAt).getTime();
+      if (!Number.isFinite(ms) || lastExpiredTargetRef.current === ms) return;
+      lastExpiredTargetRef.current = ms;
+      void refetch();
+    },
+    [refetch]
+  );
 
   return (
     <ProductRail
@@ -68,13 +81,14 @@ export function DiscountedProducts({
           <DiscountCountdown
             endsAt={nearestEndsAt}
             compact
-            onExpire={handleExpire}
+            onExpire={() => handleExpire(nearestEndsAt)}
           />
         ) : undefined
       }
       products={products}
       loading={isLoading}
       error={isError}
+      onCardCountdownExpire={handleExpire}
     />
   );
 }

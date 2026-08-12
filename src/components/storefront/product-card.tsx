@@ -18,9 +18,20 @@ import type { Product } from "@/types";
 interface ProductCardProps {
   product: Product;
   className?: string;
+  /**
+   * Session 78.1 — optional hook fired when THIS card's countdown reaches
+   * zero (the discounted rail wires it to its single refetch so card expiry is
+   * handled even independently of the section-level chip). Other consumers
+   * omit it — default behavior unchanged. `endsAt` is the expired target.
+   */
+  onCountdownExpire?: (endsAt: string) => void;
 }
 
-export function ProductCard({ product, className }: ProductCardProps) {
+export function ProductCard({
+  product,
+  className,
+  onCountdownExpire,
+}: ProductCardProps) {
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const router = useRouter();
@@ -216,7 +227,11 @@ export function ProductCard({ product, className }: ProductCardProps) {
             the badge/price layout above is untouched. */}
         {discountEndsAt && (
           <div className="mb-2">
-            <DiscountCountdown endsAt={discountEndsAt} compact />
+            <DiscountCountdown
+              endsAt={discountEndsAt}
+              compact
+              onExpire={() => onCountdownExpire?.(discountEndsAt)}
+            />
           </div>
         )}
 

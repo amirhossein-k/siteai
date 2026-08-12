@@ -17,6 +17,12 @@ interface ProductRailProps {
   icon?: ReactNode;
   /** Extra node rendered in the header (e.g. countdown chip) */
   aside?: ReactNode;
+  /**
+   * Session 78.1 — optional hook forwarded to every card's countdown expiry
+   * (the discounted rail refetches once per expired target). Omit for the
+   * default (cards just hide their chip on expiry).
+   */
+  onCardCountdownExpire?: (endsAt: string) => void;
   products: Product[];
   loading?: boolean;
   error?: boolean;
@@ -36,6 +42,7 @@ export function ProductRail({
   linkLabel,
   icon,
   aside,
+  onCardCountdownExpire,
   products,
   loading = false,
   error = false,
@@ -122,7 +129,11 @@ export function ProductRail({
                 key={product._id}
                 className="w-[44%] shrink-0 snap-start sm:w-[30%] md:w-auto"
               >
-                <ProductCard product={product} className="h-full" />
+                <ProductCard
+                  product={product}
+                  className="h-full"
+                  onCountdownExpire={onCardCountdownExpire}
+                />
               </div>
             ))}
           </div>
