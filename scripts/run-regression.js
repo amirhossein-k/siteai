@@ -67,6 +67,7 @@ const suites = [
   "verify-logout", // Session 63 — logout/session termination (real API: signout redirect, session clear, re-login; creates + deletes one customer)
   "verify-session-security", // Session 64 — tokenVersion enforcement (change-password / logout-all / admin revoke; requires SMS_MOCK=1 for the OTP-registered user)
   "verify-telegram-alerts",
+  "verify-reports", // Session 81 — accounting-ready reports subsystem (dashboard/sales/orders/payments/refunds/coupons/customers/inventory/P&L + styled multi-sheet xlsx exports; self-cleaning PREFIX'd fixtures)
 ];
 
 // Same env-loading convention as the verify suites (no dotenv dependency):

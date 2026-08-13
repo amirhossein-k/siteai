@@ -1137,3 +1137,230 @@ export interface ProductImportReport {
   failed: number;
   results: ProductImportRowResult[];
 }
+
+// ---------------------------------------------------------------------------
+// Admin Reports (Session 81) — accounting-aware reporting subsystem
+// ---------------------------------------------------------------------------
+
+/** Date-range presets understood by the reports API (custom = explicit from/to). */
+export type ReportPreset =
+  | "today"
+  | "yesterday"
+  | "week"
+  | "month"
+  | "lastMonth"
+  | "year"
+  | "custom";
+
+/** Validated filter inputs for every report endpoint (server-parsed, whitelisted). */
+export interface ReportFilters {
+  preset: ReportPreset | null;
+  /** YYYY-MM-DD (UTC day start) — inclusive. */
+  from: string | null;
+  /** YYYY-MM-DD (UTC day start) — inclusive. */
+  to: string | null;
+  productId?: string;
+  categoryId?: string;
+  customerId?: string;
+  orderStatus?: string;
+  paymentStatus?: string;
+  paymentMethod?: string;
+  coupon?: string;
+  q?: string;
+  page: number;
+  limit: number;
+}
+
+/** KPI summary shared by the dashboard, P&L and per-report summary sheets. */
+export interface ReportSummary {
+  from: string;
+  to: string;
+  preset: ReportPreset | null;
+  orders: number;
+  unitsSold: number;
+  grossSales: number;
+  productDiscount: number;
+  couponDiscount: number;
+  netSales: number;
+  cogs: number;
+  grossProfit: number;
+  grossMargin: number | null;
+  refundedOrders: number;
+  refunds: number;
+  paidAmount: number;
+  pendingAmount: number;
+  outstandingAmount: number;
+  avgOrderValue: number;
+  inventoryValue: number;
+  inventoryCost: number;
+}
+
+/** Generic envelope returned by GET /api/admin/reports/[report]. */
+export interface ReportEnvelope<T> {
+  report: string;
+  filters: ReportFilters;
+  summary: ReportSummary;
+  rows: T[];
+  total: number;
+  totals: Record<string, number>;
+  page: number;
+  limit: number;
+  truncated: boolean;
+  generatedAt: string;
+}
+
+/** Product-level sales line (aggregated from immutable order-item snapshots). */
+export interface SalesReportRow {
+  productId: string;
+  name: string;
+  sku: string;
+  category: string;
+  quantity: number;
+  /** Weighted average net unit price (Σ net / Σ qty) — historical, per order line. */
+  avgUnitPrice: number;
+  grossSales: number;
+  productDiscount: number;
+  couponDiscount: number;
+  netSales: number;
+  cogs: number;
+  returnedQuantity: number;
+  returnedAmount: number;
+  netQuantity: number;
+  netSalesAfterReturns: number;
+  firstSaleAt: string | null;
+  lastSaleAt: string | null;
+}
+
+export interface OrdersReportRow {
+  _id: string;
+  orderNo: string;
+  createdAt: string;
+  customer: { name: string; phone: string } | null;
+  status: string;
+  paymentStatus: string;
+  paymentMethod: string;
+  itemsCount: number;
+  grossAmount: number;
+  productDiscount: number;
+  couponDiscount: number;
+  netAmount: number;
+  paidAmount: number;
+  refundedAmount: number;
+  outstandingAmount: number;
+}
+
+export interface PaymentsReportRow {
+  _id: string;
+  orderNo: string;
+  createdAt: string;
+  paidAt: string | null;
+  customer: { name: string; phone: string } | null;
+  method: string;
+  status: string;
+  refId: string;
+  authority: string;
+  amount: number;
+  paidAmount: number;
+  refundedAmount: number;
+  outstandingAmount: number;
+}
+
+export interface RefundsReportRow {
+  _id: string;
+  orderNo: string;
+  createdAt: string;
+  refundedAt: string | null;
+  customer: { name: string; phone: string } | null;
+  products: string;
+  refundAmount: number;
+  reason: string;
+  refundedBy: string;
+  paymentRefId: string;
+}
+
+export interface CouponReportRow {
+  code: string;
+  type: string;
+  value: number;
+  isActive: boolean;
+  usedCount: number;
+  uses: number;
+  orders: number;
+  grossSales: number;
+  totalDiscount: number;
+  netSales: number;
+  avgOrderValue: number;
+  firstUseAt: string | null;
+  lastUseAt: string | null;
+  endsAt: string | null;
+}
+
+export interface CustomerSalesRow {
+  customerId: string;
+  name: string;
+  phone: string;
+  orders: number;
+  units: number;
+  grossSales: number;
+  discounts: number;
+  netSales: number;
+  refunds: number;
+  netRevenue: number;
+  avgOrderValue: number;
+  firstOrderAt: string | null;
+  lastOrderAt: string | null;
+}
+
+export interface InventoryReportRow {
+  productId: string;
+  sku: string;
+  name: string;
+  category: string;
+  currentStock: number;
+  salesQuantity: number;
+  returnedQuantity: number;
+  openingStock: number;
+  unitCost: number;
+  inventoryValue: number;
+  retailValue: number;
+  stockStatus: "in_stock" | "low_stock" | "out_of_stock";
+  movement: "fast" | "slow" | "no_movement";
+  lastSaleAt: string | null;
+}
+
+/** One line of the P&L statement (label → amount → %). */
+export interface PnlStatementRow {
+  key: string;
+  label: string;
+  amount: number | null;
+  /** % of gross sales (top section) or % of net sales (COGS/profit section). */
+  percent: number | null;
+  /** true when the metric cannot be computed from stored data. */
+  unavailable?: boolean;
+}
+
+export interface PnlPeriod {
+  summary: ReportSummary;
+  rows: PnlStatementRow[];
+}
+
+export interface ProfitLossReport {
+  current: PnlPeriod;
+  previous: PnlPeriod | null;
+  /** Same-window-vs-previous-window % change for the headline metrics. */
+  change: {
+    netSales: number | null;
+    grossProfit: number | null;
+    orders: number | null;
+  };
+}
+
+export interface DashboardReport {
+  summary: ReportSummary;
+  byDay: Array<{ date: string; orders: number; netSales: number }>;
+  topProducts: Array<{ name: string; quantity: number; netSales: number }>;
+  ordersByStatus: Array<{ status: string; label: string; count: number; amount: number }>;
+  paymentsSplit: Array<{ status: string; label: string; count: number; amount: number }>;
+  pnl: ProfitLossReport;
+  reportLinks: Array<{ report: string; title: string }>;
+}

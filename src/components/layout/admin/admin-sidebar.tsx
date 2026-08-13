@@ -42,8 +42,11 @@ const navItems = [
     icon: Bell,
   },
   {
+    // Session 81 — expanded reports subsystem (dashboard + sales/orders/
+    // payments/refunds/coupons/customers/inventory/pnl + Excel exports).
+    // The legacy 7/30/90-day analytics page stays at /admin/analytics.
     title: "گزارش‌ها",
-    href: "/admin/analytics",
+    href: "/admin/reports",
     icon: BarChart3,
   },
   {

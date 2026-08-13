@@ -57,6 +57,12 @@ export async function expectOk(
   throw new Error(`${label} → ${code}: ${body.slice(0, 300)}`);
 }
 
+/**
+ * Create a category via the admin API. IDEMPOTENT: if a category with the
+ * same slug already exists (e.g. the describe `beforeAll` re-ran after a
+ * failed sibling test in the same run), the existing row is reused instead
+ * of failing with 409 — fixtures must never leave partial state behind.
+ */
 export async function createCategory(
   admin: APIRequestContext,
   prefix: string,
@@ -66,9 +72,21 @@ export async function createCategory(
   const res = await admin.post("/api/admin/categories", {
     data: { name: `دسته E2E ${prefix}${index}`, slug, isActive: true },
   });
-  await expectOk(res, "createCategory");
-  const body = (await res.json()) as { _id: string };
-  return body._id;
+  const code =
+    typeof res.status === "function" ? res.status() : (res as never as { status: number }).status;
+  if (code >= 200 && code < 300) {
+    const body = (await res.json()) as { _id: string };
+    return body._id;
+  }
+  if (code === 409) {
+    const existing = await admin.get("/api/admin/categories?all=true");
+    await expectOk(existing, "listCategories");
+    const rows = (await existing.json()) as Array<{ _id: string; slug: string }>;
+    const found = rows.find((r) => r.slug === slug);
+    if (found) return found._id;
+  }
+  const body = await res.text();
+  throw new Error(`createCategory → ${code}: ${body.slice(0, 300)}`);
 }
 
 export interface ProductSeed {
@@ -81,6 +99,11 @@ export interface ProductSeed {
   stock: number;
 }
 
+/**
+ * Create a product via the admin API. IDEMPOTENT: if a product with the same
+ * slug already exists (e.g. a re-ran `beforeAll`), the existing row is reused
+ * instead of failing — fixtures must never leave partial state behind.
+ */
 export async function createProduct(
   admin: APIRequestContext,
   seed: ProductSeed
@@ -101,9 +124,30 @@ export async function createProduct(
       isActive: true,
     },
   });
-  await expectOk(res, "createProduct");
-  const body = (await res.json()) as { _id: string };
-  return body._id;
+  const code =
+    typeof res.status === "function" ? res.status() : (res as never as { status: number }).status;
+  if (code >= 200 && code < 300) {
+    const body = (await res.json()) as { _id: string };
+    return body._id;
+  }
+  if (code === 409) {
+    // Duplicate slug (auto-unique append would be wrong for idempotency):
+    // reuse the existing product by exact slug.
+    const existing = await admin.get(
+      `/api/admin/products?search=${encodeURIComponent(seed.slug)}&limit=50`
+    );
+    await expectOk(existing, "listProducts");
+    const body = (await existing.json()) as {
+      products?: Array<{ _id: string; slug: string }>;
+      items?: Array<{ _id: string; slug: string }>;
+      data?: Array<{ _id: string; slug: string }>;
+    };
+    const rows = body.products ?? body.items ?? body.data ?? [];
+    const found = rows.find((r) => r.slug === seed.slug);
+    if (found) return found._id;
+  }
+  const body = await res.text();
+  throw new Error(`createProduct → ${code}: ${body.slice(0, 300)}`);
 }
 
 /** Create an Attribute then a 2-variant product (for the variant journey). */

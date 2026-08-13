@@ -149,6 +149,12 @@ export const CONVERSATION_MESSAGE_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/** Admin report export: 10 per admin per 15 minutes — expensive downloads (Session 81). */
+export const REPORT_EXPORT_LIMIT: RateLimitConfig = {
+  max: 10,
+  windowMs: 15 * 60 * 1000,
+};
+
 // ============================================================
 // Core
 // ============================================================

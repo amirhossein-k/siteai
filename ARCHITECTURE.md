@@ -26,7 +26,7 @@ The application follows **Next.js 16 App Router** conventions with a **monolithi
 │  │  Customer: /api/products, /api/categories               │
 │  │           /api/checkout, /api/orders, /api/profile      │
 │  │  Auth:     /api/auth/*, /api/register                   │
-│  │  Admin:    /api/admin/* (6 routes)                      │
+│  │  Admin:    /api/admin/* (12+ routes)                    │
 │  │  Supplier: /api/supplier/* (5 routes)                   │
 │  └─────────────────────────────────────────────────────────┘
 │  ┌─────────────────────────────────────────────────────────┐
@@ -109,6 +109,8 @@ Telegram (fire-and-forget):
 | `/api/admin/categories` | GET | admin, supplier | Simple list for dropdowns |
 | `/api/admin/suppliers` | GET | admin | Active suppliers list for dropdowns |
 | `/api/admin/supplier-applications` | GET, PATCH | admin | Public supplier-application queue (Session 67). GET: pending-first with populated applicant. PATCH: **atomic approve/reject** — approve seeds the Supplier doc from the application (businessName/description), flips the applicant's role to supplier, bumps tokenVersion + evicts the cache (old customer sessions revoked), sets decidedBy/decidedAt, notifies the applicant; reject leaves the role untouched. Only `pending` decidable (400); malformed ObjectId → 400, unknown → 404 |
+| `/api/admin/reports/[report]` | GET | admin | Accounting-ready reporting services (Session 81): `dashboard`, `sales`, `orders`, `payments`, `refunds`, `coupons`, `customer-sales`, `inventory`, `profit-loss`. Bounded `from`/`to` (invalid → 400), typed per-report filters, server-side pagination; sales/COGS/profit from immutable Order/OrderItem snapshots (`price`/`originalPrice`/`discountAmount`/`supplierPrice` = historical COGS, a fixed per-sale cost snapshot) — never current product prices (inventory value is the documented exception: current stock × current supplierPrice, a current-cost approximation); coupon discounts allocated proportionally by line so Σ line net = Σ order totalAmount; unknown report → 404 |
+| `/api/admin/reports/[report]/export` | GET | admin | Same filters → real multi-sheet `.xlsx` workbook (exceljs): Summary + report sheet, Persian names, styled headers + freeze panes + auto-filter + column widths + number/date/percent formats + totals; rate-limited `REPORT_EXPORT_LIMIT` 10/actor/15min; unsupported metrics labeled «در دسترس نیست» (no fake zeros) |
 
 ### Public Supplier Application Routes (Session 67)
 | Route | Methods | Auth | Description |
@@ -274,7 +276,7 @@ pending → failed (on cancel)
 - `/api/profile`
 - `/api/products`
 - `/api/categories`
-- `/api/admin/*` (10 routes — incl. Session 68 `/api/admin/conversations*` × 4)
+- `/api/admin/*` (12 routes — incl. Session 68 `/api/admin/conversations*` × 4 and Session 81 `/api/admin/reports*` × 2)
 - `/api/supplier/*` (8 routes — incl. Session 68 `/api/supplier/conversations*` × 3)
 - `/api/conversations*` (6 customer routes, Session 68)
 
