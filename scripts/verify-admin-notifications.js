@@ -11,7 +11,9 @@
  *   5. Payment verification failure → every active admin gets payment_failed
  *      (bogus authority → verifyPayment returns null → failure branch)
  *   6. Supplier submits a payout request → every active admin gets
- *      payout_requested (link /admin/payouts)
+ *      payout_requested (link /admin/payouts). The request's transaction is
+ *      created with a PREFIX-scoped note and is deleted in cleanup, so the
+ *      suite never orphans a pending payout in the admin queue.
  *   7. unread-count reflects the admin events
  *   8. PUT /[id]/read → isRead + readAt; repeat → idempotent 200
  *   9. Cross-admin isolation: admin2 cannot read admin1's notification → 404
@@ -359,7 +361,7 @@ async function run() {
 
   // --- TEST 8: supplier payout request → admin gets payout_requested ---
   await testAsync("Supplier payout request -> admin gets payout_requested", async () => {
-    const res = await http("POST", "/api/supplier/wallet", supplierJar, { amount: 100000, note: "تسویه آزمایشی" });
+    const res = await http("POST", "/api/supplier/wallet", supplierJar, { amount: 100000, note: PREFIX + "payout-request" });
     assert(res.status === 200, "wallet expected 200, got " + res.status + " " + JSON.stringify(res.data).slice(0, 150));
 
     const notif = await waitFor(async () => {
@@ -447,9 +449,25 @@ async function run() {
   await db.collection("orders").deleteMany({ "items.name": { $regex: "^" + PREFIX } });
   await db.collection("supplierorders").deleteMany({ "items.name": { $regex: "^" + PREFIX } });
   await db.collection("categories").deleteMany({ slug: { $regex: "^" + PREFIX } });
+  // The payout request created by the wallet test lives in `transactions` —
+  // delete it too, scoped to this suite's PREFIX note only. Real/shared
+  // payout transactions never carry an "admnotif_*" note, so this can never
+  // touch them. Without it, deleting the supplier below would orphan the
+  // pending payout in the admin approval queue.
+  await db.collection("transactions").deleteMany({ note: { $regex: "^" + PREFIX } });
   await Supplier.deleteMany({ _id: suppDoc._id });
   await User.deleteMany({ _id: { $in: [admin2._id, customer._id, suppUser._id] } });
-  console.log("  Done");
+
+  // Regression: this suite must never leave its own payout transaction behind
+  // (the exact leak that orphaned a pending payout in the admin queue).
+  const leftoverPayout = await db.collection("transactions").findOne({ note: { $regex: "^" + PREFIX } });
+  assert(
+    !leftoverPayout,
+    "cleanup regression: suite left a payout transaction behind (" +
+      (leftoverPayout ? String(leftoverPayout._id) : "") +
+      ")"
+  );
+  console.log("  Done (no leftover payout transaction)");
 
   console.log("\n==================================================================");
   console.log("  RESULTS");
