@@ -24,6 +24,7 @@ import {
   LayoutTemplate,
   MessageSquareText,
   Bell,
+  BookOpenCheck,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,12 @@ const navItems = [
     title: "گزارش‌ها",
     href: "/admin/reports",
     icon: BarChart3,
+  },
+  {
+    // Session 82 — accounting cutover + opening-inventory FIFO initialization.
+    title: "حسابداری",
+    href: "/admin/accounting",
+    icon: BookOpenCheck,
   },
   {
     title: "صفحه اصلی",

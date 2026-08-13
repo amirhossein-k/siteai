@@ -51,6 +51,29 @@ const ProductVariantSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    // Session 82 — variant-level FIFO cost layers (store-owned inventory).
+    // Same rules as Product.costLayers; kept per-variant so a sale consumes
+    // exactly that variant's layers in the same single-document atomic update.
+    costLayers: {
+      type: [
+        new mongoose.Schema(
+          {
+            qty: { type: Number, required: true, min: 1 },
+            remaining: { type: Number, required: true, min: 0 },
+            unitCost: { type: Number, required: true, min: 0 },
+            acquiredAt: { type: Date, required: true },
+            source: {
+              type: String,
+              enum: ["opening", "receipt", "adjustment"],
+              required: true,
+            },
+            ref: { type: String, default: "" },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -149,6 +172,51 @@ const ProductSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    // Session 82 — inventory ownership/source mode. ONE mode per product at any
+    // time (the sourcing invariant): all units of a product share a single
+    // ownership source, so checkout can decide supplier-payout behavior from
+    // this field alone. Default "consignment" preserves every existing product
+    // byte-for-byte (marketplace flow: sale → SupplierOrder.amountOwed → payout).
+    // "purchased" products: stock is the store's own, backed by FIFO cost
+    // layers (Product.costLayers / variants.$[].costLayers); checkout consumes
+    // layers and creates NO SupplierOrder line for those units (supplier was
+    // already paid via the purchase). IMMUTABLE after creation: the admin
+    // update route never accepts it; conversions happen ONLY through the audited
+    // initialization wizard (creates confirmed opening layers covering 100% of
+    // on-hand stock + opening_balance movement). supplierPrice is the
+    // marketplace wholesale price and is NEVER an ownership signal.
+    sourcing: {
+      type: String,
+      enum: ["consignment", "purchased"],
+      default: "consignment",
+    },
+    // Session 82 — active FIFO inventory cost layers (store-owned inventory,
+    // i.e. sourcing="purchased" only). Embedded so that checkout can decrement
+    // stock AND consume layers in ONE single-document atomic update (Mongo
+    // serializes per-document writes; no multi-document transactions exist —
+    // the DB is a standalone node). Only layers with remaining > 0 are kept;
+    // fully-consumed layers are archived to the append-only InventoryMovement
+    // ledger. source: "opening" | "receipt" | "adjustment".
+    costLayers: {
+      type: [
+        new mongoose.Schema(
+          {
+            qty: { type: Number, required: true, min: 1 },
+            remaining: { type: Number, required: true, min: 0 },
+            unitCost: { type: Number, required: true, min: 0 },
+            acquiredAt: { type: Date, required: true },
+            source: {
+              type: String,
+              enum: ["opening", "receipt", "adjustment"],
+              required: true,
+            },
+            ref: { type: String, default: "" },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
     },
     // Product discount / sale pricing (optional embedded subdocument).
     // ABSENT on all pre-discount products — zero migration. Admin-only write

@@ -155,6 +155,18 @@ export const REPORT_EXPORT_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/** Admin accounting-config writes: 30 per actor per 15 minutes (Session 82). */
+export const ACCOUNTING_CONFIG_LIMIT: RateLimitConfig = {
+  max: 30,
+  windowMs: 15 * 60 * 1000,
+};
+
+/** Accounting initialization: 3 per actor per 15 minutes — one-shot financial event (Session 82). */
+export const ACCOUNTING_INIT_LIMIT: RateLimitConfig = {
+  max: 3,
+  windowMs: 15 * 60 * 1000,
+};
+
 // ============================================================
 // Core
 // ============================================================

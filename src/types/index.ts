@@ -1364,3 +1364,58 @@ export interface DashboardReport {
   pnl: ProfitLossReport;
   reportLinks: Array<{ report: string; title: string }>;
 }
+
+// ============================================================
+// Admin Accounting (Session 82 Phase A) — cutover + opening inventory
+// ============================================================
+
+/** Store-level accounting configuration (singleton doc `accounting`). */
+export interface AccountingConfig {
+  cutoverDate: string | null;
+  valuationMethod: "fifo";
+  inventoryInitialized: boolean;
+  initializedAt: string | null;
+  initializedBy: string | null;
+}
+
+/** One FIFO cost layer as returned to the admin UI. */
+export interface InventoryCostLayerView {
+  qty: number;
+  remaining: number;
+  unitCost: number;
+  acquiredAt: string;
+  source: "opening" | "receipt" | "adjustment";
+  ref: string;
+}
+
+/** A product (or variant) offered for opening-balance initialization. */
+export interface OpeningBalanceCandidate {
+  productId: string;
+  variantId?: string;
+  name: string;
+  variantLabel?: string;
+  stock: number;
+  /** Current supplierPrice shown only as a suggested default — never silently accepted. */
+  suggestedCost: number;
+  sourcing: "consignment" | "purchased";
+}
+
+/** Payload row for POST /api/admin/accounting/initialize. */
+export interface OpeningBalanceItemInput {
+  productId: string;
+  variantId?: string;
+  /** REQUIRED when stock > 0 — the admin-confirmed opening unit cost. */
+  openingCost?: number;
+  /** Optional per-product opening date (defaults to the cutover date). */
+  openingDate?: string;
+}
+
+/** Response of POST /api/admin/accounting/initialize. */
+export interface InitializeAccountingResponse {
+  initialized: boolean;
+  cutoverDate: string;
+  productsInitialized: number;
+  layersCreated: number;
+  totalValue: number;
+  skipped: Array<{ productId: string; reason: string }>;
+}

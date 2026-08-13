@@ -32,6 +32,8 @@ import "@/models/CouponUsage";
 import "@/models/OtpCode";
 import "@/models/SupplierApplication";
 import "@/models/CustomerConversation";
+import "@/models/InventoryMovement";
+import "@/models/AccountingConfig";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 

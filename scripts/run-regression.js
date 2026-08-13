@@ -68,6 +68,7 @@ const suites = [
   "verify-session-security", // Session 64 — tokenVersion enforcement (change-password / logout-all / admin revoke; requires SMS_MOCK=1 for the OTP-registered user)
   "verify-telegram-alerts",
   "verify-reports", // Session 81 — accounting-ready reports subsystem (dashboard/sales/orders/payments/refunds/coupons/customers/inventory/P&L + styled multi-sheet xlsx exports; self-cleaning PREFIX'd fixtures)
+  "verify-accounting", // Session 82 Phase A — accounting cutover + opening-balance FIFO initialization (consignment→purchased conversion, confirmed opening cost layers + movements, idempotency, authz, rate limits)
 ];
 
 // Same env-loading convention as the verify suites (no dotenv dependency):
@@ -98,7 +99,7 @@ async function clearLoginRateLimits() {
     const res = await mongoose.connection.db
       .collection("ratelimits")
       .deleteMany({
-        _id: { $regex: "^rl:(login|login_ip|otp_request|otp_request_ip|otp_verify|conversation-create|conversation-msg):" },
+        _id: { $regex: "^rl:(login|login_ip|otp_request|otp_request_ip|otp_verify|conversation-create|conversation-msg|accounting-init|accounting-config):" },
       });
     console.log(`  [clean] login/OTP rate-limit state cleared (${res.deletedCount} docs)`);
     await mongoose.disconnect();
