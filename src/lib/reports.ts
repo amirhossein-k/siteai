@@ -3,8 +3,8 @@
  *
  * Sales, COGS and profit figures are computed from the order ITEM SNAPSHOTS
  * (immutable at purchase time) or the order/payment/coupon documents — never
- * from the current Product price. Inventory VALUE is the one documented
- * exception (current stock × current supplierPrice). Order-level coupon
+ * from the current Product price. Inventory VALUE comes from the FIFO cost
+ * layers for post-cutover purchased inventory (see below). Order-level coupon
  * discounts are allocated to lines proportionally to line net so every report
  * reconciles to `totalAmount`.
  *
@@ -16,13 +16,18 @@
  *    proportionally to line net (sums exactly to the order total).
  *  - "Opening stock" is reconstructed (current + sold − returned) — stock
  *    edits/restocks within the window are not recorded.
- *  - COGS uses the historical item.supplierPrice snapshot captured at each
- *    sale (a fixed per-sale cost snapshot — NOT FIFO/weighted-average purchase
- *    costing; no procurement ledger exists).
- *  - Inventory VALUE is current stock × CURRENT product/variant supplierPrice
- *    — a current-cost approximation, NOT an accounting-grade inventory
- *    valuation (cost layers are not recorded; revaluing a product's
- *    supplierPrice revalues all remaining stock).
+ *  - COGS (Session 82 Phase C): purchased-sourcing sales after the accounting
+ *    cutover use the item.fifoUnitCost snapshot — the exact weighted FIFO cost
+ *    consumed from the inventory layers at checkout. All other sales
+ *    (consignment, pre-cutover) use the historical item.supplierPrice
+ *    snapshot. Both are immutable per order; later purchases/receipts or
+ *    supplierPrice changes never alter an existing order's COGS.
+ *  - Inventory VALUE (Session 82 Phase C): post-cutover purchased inventory is
+ *    valued from the product/variant FIFO cost layers (Σ remaining × unitCost).
+ *    Unlayered inventory (pre-cutover or consignment) keeps the current-cost
+ *    approximation (current stock × CURRENT supplierPrice — documented
+ *    limitation: revaluing such a product's supplierPrice revalues all its
+ *    remaining unlayered stock).
  *  - Expenses are not tracked → net profit (beyond gross profit) is N/A.
  */
 
@@ -30,6 +35,10 @@ import mongoose from "mongoose";
 import Order from "@/models/Order";
 import Product from "@/models/Product";
 import PurchaseOrder from "@/models/PurchaseOrder";
+import {
+  layersValue,
+  type InventoryCostLayer,
+} from "@/lib/inventory-layers";
 import Supplier from "@/models/Supplier";
 import User from "@/models/User";
 import {
@@ -170,25 +179,38 @@ async function buildLineMatch(filters: ReportFilters) {
 async function computeInventoryValue() {
   const products = await Product.find()
     .select(
-      "name price supplierPrice stock hasVariants variants.stock variants.supplierPrice variants.price"
+      "name price supplierPrice stock hasVariants sourcing costLayers variants.stock variants.supplierPrice variants.price variants.costLayers"
     )
     .lean();
   let cost = 0;
   let retail = 0;
   for (const p of products) {
     if (p.hasVariants && Array.isArray(p.variants) && p.variants.length > 0) {
-      const totalCost = p.variants.reduce(
-        (a, v) => a + (v.supplierPrice || 0) * (v.stock || 0),
-        0
-      );
       const totalRetail = p.variants.reduce(
         (a, v) => a + (v.price || 0) * (v.stock || 0),
         0
       );
-      cost += totalCost;
+      if (p.sourcing === "purchased") {
+        // Phase C: purchased (post-cutover) variants value from their FIFO
+        // layers (Σ remaining × unitCost) — never current supplierPrice.
+        cost += p.variants.reduce(
+          (a, v) =>
+            a + layersValue((v.costLayers ?? []) as InventoryCostLayer[]),
+          0
+        );
+      } else {
+        cost += p.variants.reduce(
+          (a, v) => a + (v.supplierPrice || 0) * (v.stock || 0),
+          0
+        );
+      }
       retail += totalRetail;
     } else {
-      cost += (p.supplierPrice || 0) * (p.stock || 0);
+      if (p.sourcing === "purchased") {
+        cost += layersValue((p.costLayers ?? []) as InventoryCostLayer[]);
+      } else {
+        cost += (p.supplierPrice || 0) * (p.stock || 0);
+      }
       retail += (p.price || 0) * (p.stock || 0);
     }
   }
@@ -263,7 +285,15 @@ async function computeSummary(match: Record<string, unknown>): Promise<ReportSum
           cogs: {
             $sum: {
               $multiply: [
-                { $ifNull: ["$items.supplierPrice", 0] },
+                // Phase C: purchased post-cutover items carry fifoUnitCost
+                // (exact FIFO layer cost at checkout); everything else falls
+                // back to the immutable supplierPrice snapshot.
+                {
+                  $ifNull: [
+                    { $ifNull: ["$items.fifoUnitCost", "$items.supplierPrice"] },
+                    0,
+                  ],
+                },
                 "$items.quantity",
               ],
             },
@@ -359,7 +389,10 @@ export async function getSalesReport(filters: ReportFilters) {
       ...baseStages,
       {
         $project: {
-          qty: 1,
+          // Pre-existing Session 81 bug: `qty: 1` projected a nonexistent
+          // top-level field (always undefined after $unwind) → summary
+          // unitsSold was permanently 0. Fixed to the unwound line quantity.
+          qty: "$items.quantity",
           gross: {
             $multiply: [
               { $ifNull: ["$items.originalPrice", "$items.price"] },
@@ -375,7 +408,14 @@ export async function getSalesReport(filters: ReportFilters) {
           lineNet: { $multiply: ["$items.price", "$items.quantity"] },
           cogsLine: {
             $multiply: [
-              { $ifNull: ["$items.supplierPrice", 0] },
+              // Phase C: fifoUnitCost (purchased post-cutover) → supplierPrice
+              // snapshot (consignment / pre-cutover).
+              {
+                $ifNull: [
+                  { $ifNull: ["$items.fifoUnitCost", "$items.supplierPrice"] },
+                  0,
+                ],
+              },
               "$items.quantity",
             ],
           },
@@ -484,7 +524,14 @@ export async function getSalesReport(filters: ReportFilters) {
           },
           cogsLine: {
             $multiply: [
-              { $ifNull: ["$items.supplierPrice", 0] },
+              // Phase C: fifoUnitCost (purchased post-cutover) → supplierPrice
+              // snapshot (consignment / pre-cutover).
+              {
+                $ifNull: [
+                  { $ifNull: ["$items.fifoUnitCost", "$items.supplierPrice"] },
+                  0,
+                ],
+              },
               "$items.quantity",
             ],
           },
@@ -1263,7 +1310,7 @@ export async function getInventoryReport(filters: ReportFilters) {
     Product.find(productQuery)
       .populate("category", "name")
       .select(
-        "name sku price supplierPrice stock hasVariants variants.sku variants.stock variants.supplierPrice variants.price isActive category"
+        "name sku price supplierPrice stock hasVariants sourcing costLayers variants.sku variants.stock variants.supplierPrice variants.price variants.costLayers isActive category"
       )
       .lean(),
     Order.aggregate<{ _id: mongoose.Types.ObjectId; sold: number; returned: number; lastSale: Date | null }>([
@@ -1302,19 +1349,28 @@ export async function getInventoryReport(filters: ReportFilters) {
       stock?: number;
       supplierPrice?: number;
       price?: number;
+      costLayers?: InventoryCostLayer[];
     }>;
     const hasVariants = p.hasVariants && variants.length > 0;
     const totalStock = hasVariants
       ? variants.reduce((a, v) => a + (v.stock || 0), 0)
       : (p.stock ?? 0);
-    const weightedCost =
-      hasVariants && totalStock > 0
-        ? variants.reduce(
-            (a, v) => a + (v.supplierPrice || 0) * (v.stock || 0),
-            0
-          ) / totalStock
-        : p.supplierPrice;
-    const unitCost = roundToman(weightedCost || 0);
+    // Phase C: purchased (post-cutover) products value from their FIFO cost
+    // layers (Σ remaining × unitCost) — never current supplierPrice. Unlayered
+    // inventory keeps the previous current-cost approximation.
+    const layers: InventoryCostLayer[] = hasVariants
+      ? variants.flatMap((v) => v.costLayers ?? [])
+      : ((p.costLayers ?? []) as InventoryCostLayer[]);
+    const costValue =
+      p.sourcing === "purchased" && layers.length > 0
+        ? layersValue(layers)
+        : hasVariants && totalStock > 0
+          ? variants.reduce(
+              (a, v) => a + (v.supplierPrice || 0) * (v.stock || 0),
+              0
+            )
+          : (p.supplierPrice || 0) * (p.stock ?? 0);
+    const unitCost = roundToman(totalStock > 0 ? costValue / totalStock : 0);
     const sold = sales?.sold ?? 0;
     const returned = sales?.returned ?? 0;
     const retailValue = hasVariants
@@ -1333,7 +1389,7 @@ export async function getInventoryReport(filters: ReportFilters) {
       returnedQuantity: returned,
       openingStock: totalStock + sold - returned,
       unitCost,
-      inventoryValue: roundToman(totalStock * unitCost),
+      inventoryValue: roundToman(costValue),
       retailValue: roundToman(retailValue),
       stockStatus:
         totalStock <= 0

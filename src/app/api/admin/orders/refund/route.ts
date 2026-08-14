@@ -100,7 +100,9 @@ export async function POST(req: NextRequest) {
     // --- Restore stock exactly once (idempotent via the stockRestored claim) ---
     // If stock was already restored, restoreOrderStock() no-ops — a refund
     // never increases stock twice. Variant items restore via their variantId.
-    await restoreOrderStock(orderId);
+    // Phase C: `return_restock` movement type — purchased items also restore
+    // their exact FIFO layers at the snapshot cost (fifoUnitCost).
+    await restoreOrderStock(orderId, "return_restock");
 
     // Session 56 — reverse the best-sellers counter. The paid→refunded claim
     // above is exactly-once (double refund → 400), so refunded units are

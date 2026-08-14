@@ -70,6 +70,7 @@ const suites = [
   "verify-reports", // Session 81 — accounting-ready reports subsystem (dashboard/sales/orders/payments/refunds/coupons/customers/inventory/P&L + styled multi-sheet xlsx exports; self-cleaning PREFIX'd fixtures)
   "verify-accounting", // Session 82 Phase A — accounting cutover + opening-balance FIFO initialization (consignment→purchased conversion, confirmed opening cost layers + movements, idempotency, authz, rate limits)
   "verify-purchases", // Session 82 Phase B — procurement (PurchaseOrder CRUD, order/receive/pay/cancel, partial+full receiving, exact FIFO cost layers + receipt movements, over-receive 409, idempotent retries, consignment rejection, purchases report)
+  "verify-fifo", // Session 82 Phase C — FIFO checkout integration (fifoUnitCost snapshots, purchased-vs-consignment payout safety, rollback/refund/cancel layer restoration, concurrency, variant isolation, fail-safe, report COGS + layer-based inventory valuation)
 ];
 
 // Same env-loading convention as the verify suites (no dotenv dependency):

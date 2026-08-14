@@ -638,6 +638,9 @@ export interface AdminOrderItem {
   /** Per-unit toman reduction applied at purchase (Session 77 — 0/absent when none). */
   discountAmount?: number;
   supplierPrice: number;
+  /** Exact weighted FIFO cost consumed at checkout (Session 82 Phase C —
+   * purchased-sourcing, post-cutover only; absent on consignment/pre-cutover). */
+  fifoUnitCost?: number | null;
   quantity: number;
 }
 

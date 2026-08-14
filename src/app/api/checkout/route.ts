@@ -10,6 +10,7 @@ import { sendNewOrderNotification, sendAdminNewOrderNotification } from "@/lib/t
 import { notifyOrderEvent } from "@/lib/notifications";
 import { requestPayment } from "@/lib/zarinpal";
 import { reserveStock, restoreStock } from "@/lib/inventory";
+import InventoryMovement from "@/models/InventoryMovement";
 import { claimCouponForOrder, releaseCouponClaim } from "@/lib/coupons";
 import { getEffectivePrice } from "@/lib/product-pricing";
 
@@ -44,18 +45,28 @@ interface ReservedEntry {
   product: any;
   quantity: number;
   variantId?: string;
+  /** Phase C: purchased-sourcing reservations carry the FIFO unit cost so a
+   * rollback restores the EXACT consumed layers (never current supplierPrice). */
+  fifoUnitCost?: number;
 }
 
 /**
  * Restore all reserved products, routing each item to the correct variant
  * (simple product vs variant) using the variantId recorded at reservation time.
+ * Phase C: purchased items restore their consumed FIFO layers at the snapshot
+ * cost (fifoUnitCost) — stock and layers always move together.
  */
 async function restoreReserved(
   reservedProducts: ReservedEntry[]
 ): Promise<void> {
   await Promise.all(
     reservedProducts.map((r) =>
-      restoreStock(String(r.product._id), r.quantity, r.variantId)
+      restoreStock(
+        String(r.product._id),
+        r.quantity,
+        r.variantId,
+        r.fifoUnitCost
+      )
     )
   );
 }
@@ -174,6 +185,14 @@ export async function POST(req: NextRequest) {
         // --- Resolve the effective price + variant for price validation ---
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const productAny: any = product;
+        // Session 82 Phase C — purchased-sourcing reservations carry the exact
+        // FIFO consumption snapshot (layers consumed + weighted unit cost).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fifoConsumption: any = (product as any)?.__fifoConsumption;
+        const fifoUnitCost =
+          typeof fifoConsumption?.fifoUnitCost === "number"
+            ? (fifoConsumption.fifoUnitCost as number)
+            : undefined;
         const variant = cartItem.variantId
           ? (productAny.variants || []).find(
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -196,7 +215,12 @@ export async function POST(req: NextRequest) {
         // Verify price hasn't changed since added to cart
         if (effectivePrice !== cartItem.price) {
           await restoreReserved(reservedProducts);
-          await restoreStock(cartItem.id, cartItem.quantity, cartItem.variantId);
+          await restoreStock(
+            cartItem.id,
+            cartItem.quantity,
+            cartItem.variantId,
+            fifoUnitCost
+          );
 
           return NextResponse.json(
             {
@@ -208,7 +232,12 @@ export async function POST(req: NextRequest) {
 
         if (productAny.isActive === false) {
           await restoreReserved(reservedProducts);
-          await restoreStock(cartItem.id, cartItem.quantity, cartItem.variantId);
+          await restoreStock(
+            cartItem.id,
+            cartItem.quantity,
+            cartItem.variantId,
+            fifoUnitCost
+          );
 
           return NextResponse.json(
             { error: `محصول "${productAny.name}" در دسترس نیست` },
@@ -220,6 +249,7 @@ export async function POST(req: NextRequest) {
           product,
           quantity: cartItem.quantity,
           variantId: cartItem.variantId,
+          fifoUnitCost,
         });
       }
     } catch (err) {
@@ -238,7 +268,7 @@ export async function POST(req: NextRequest) {
     const supplierItemsMap: Record<string, any[]> = {};
     let totalAmount = 0;
 
-    for (const { product, quantity, variantId } of reservedProducts) {
+    for (const { product, quantity, variantId, fifoUnitCost } of reservedProducts) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const productAny: any = product;
       const supplierId = String(productAny.supplier || "");
@@ -288,16 +318,28 @@ export async function POST(req: NextRequest) {
         originalPrice: unitPrice,
         discountAmount: effective.discountAmount,
         supplierPrice: (variant?.supplierPrice ?? productAny.supplierPrice) as number,
+        // Phase C: authoritative COGS snapshot for purchased-sourcing sales
+        // (absent on consignment / pre-cutover items).
+        fifoUnitCost: fifoUnitCost ?? null,
         quantity,
       };
 
       orderItems.push(orderItem);
       totalAmount += effective.finalPrice * quantity;
 
-      if (!supplierItemsMap[supplierId]) {
-        supplierItemsMap[supplierId] = [];
+      // Session 82 Phase C — supplier payout safety: purchased-sourcing units
+      // are the store's OWN inventory (the supplier was already paid via the
+      // purchase receipt); ONLY consignment units generate a SupplierOrder /
+      // amountOwed. A purchased sale must never create BOTH FIFO COGS AND a
+      // supplier payout for the same units.
+      const sourcing =
+        productAny.sourcing === "purchased" ? "purchased" : "consignment";
+      if (sourcing === "consignment") {
+        if (!supplierItemsMap[supplierId]) {
+          supplierItemsMap[supplierId] = [];
+        }
+        supplierItemsMap[supplierId].push(orderItem);
       }
-      supplierItemsMap[supplierId].push(orderItem);
     }
 
     // ============================================================
@@ -438,6 +480,38 @@ export async function POST(req: NextRequest) {
     // NOTE: Stock is ALREADY decremented at this point (reserved in Phase 1).
     // No additional stock decrement needed.
     // ============================================================
+
+    // ============================================================
+    // Session 82 Phase C — record FIFO sale movements (append-only ledger).
+    // The order + supplier orders are fully committed above, so a ledger
+    // write can never fail the checkout (fail-silent on error; the unique
+    // sourceRef partial index dedupes any retry). Negative quantity = the
+    // signed convention for outgoing (sale) movements.
+    // ============================================================
+    const saleMovementPromises = reservedProducts
+      .filter((r) => r.fifoUnitCost !== undefined)
+      .map((r) => {
+        const sourceRef = `sale-${order._id}-${String(r.product._id)}${
+          r.variantId ? "-" + String(r.variantId) : ""
+        }`;
+        return InventoryMovement.create({
+          product: String(r.product._id),
+          variantId: r.variantId ?? null,
+          type: "sale",
+          quantity: -r.quantity,
+          unitCost: Math.round(r.fifoUnitCost as number),
+          totalCost: Math.round((r.fifoUnitCost as number) * r.quantity),
+          sourceRef,
+          description: `فروش ${r.quantity} واحد (سفارش ${String(
+            order._id
+          ).slice(-8)})`,
+        }).catch((err) => {
+          if ((err as { code?: number })?.code !== 11000) {
+            console.error("[Checkout] Sale movement failed:", err);
+          }
+        });
+      });
+    await Promise.all(saleMovementPromises);
 
     // --- Send Telegram notifications (fire-and-forget) ---
     const customerName = (token as any)?.name || "مشتری";

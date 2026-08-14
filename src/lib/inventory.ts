@@ -19,6 +19,13 @@
 
 import Product from "@/models/Product";
 import Order from "@/models/Order";
+import InventoryMovement from "@/models/InventoryMovement";
+import {
+  consumeFifoLayers,
+  restoreLayers,
+  type ConsumeFifoLayersResult,
+  type InventoryCostLayer,
+} from "@/lib/inventory-layers";
 
 export interface ReservedItem {
   product: Record<string, unknown>;
@@ -26,49 +33,220 @@ export interface ReservedItem {
 }
 
 /**
+ * FIFO consumption snapshot attached to a successfully reserved product doc
+ * (purchased sourcing only). `null`/absent on consignment reservations.
+ * Checkout reads it to snapshot OrderItem.fifoUnitCost and to drive the sale
+ * movement ledger.
+ */
+export interface FifoConsumption extends ConsumeFifoLayersResult {
+  /** Exact weighted unit cost = consumedCost / quantity (whole toman rounding in reports). */
+  fifoUnitCost: number;
+}
+
+/** Number of optimistic-lock retries for the FIFO consumption path. */
+const FIFO_RESERVE_MAX_ATTEMPTS = 5;
+
+/**
  * Atomically reserve stock for a single product/variant.
+ *
+ * Session 82 Phase C: FIFO cost-layer consumption is folded into the SAME
+ * single-document atomic update for `sourcing: "purchased"` products — stock
+ * and layers move together, so a concurrent checkout can never consume the
+ * same FIFO quantity twice (Mongo serializes per-document writes; the
+ * stockVersion optimistic lock re-reads on conflict). Consignment products
+ * keep the EXACT pre-Phase-C path (stock-only $inc).
  *
  * For a simple product (no variantId):
  *   matches { _id, stock: { $gte: qty }, stockVersion: current }
  *   $inc { stock: -qty, stockVersion: 1 }
+ *   [+ $set costLayers for purchased products]
  *
  * For a variant (variantId provided):
- *   matches { _id, "variants._id": variantId, "variants.$.stock": { $gte: qty },
- *             "variants.$.stockVersion": current, "variants.$.isActive": true }
+ *   matches { _id, variants: { $elemMatch: { _id, isActive, stock: { $gte: qty },
+ *             stockVersion: current } } }
  *   $inc { "variants.$.stock": -qty, "variants.$.stockVersion": 1, stock: -qty }
+ *   [+ $set "variants.$.costLayers" for purchased products]
  *
  * Returns the updated product document (or null if the reservation failed).
- * The caller is responsible for checking product/variant price + isActive and
- * rolling back on any failure.
+ * For purchased products the returned doc carries `__fifoConsumption` (a
+ * FifoConsumption snapshot: consumed layers + fifoUnitCost). The caller is
+ * responsible for checking product/variant price + isActive and rolling back
+ * on any failure.
  */
 export async function reserveStock(
   productId: string,
   quantity: number,
   variantId?: string
 ): Promise<Record<string, unknown> | null> {
-  if (variantId) {
-    // Step 1: read the variant's current stockVersion (optimistic lock token)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const current: any = await Product.findOne(
-      { _id: productId, "variants._id": variantId },
-      { "variants.$": 1 }
+  if (variantId) return reserveVariant(productId, quantity, variantId);
+  return reserveSimple(productId, quantity);
+}
+
+/** Simple-product reservation (consignment byte-identical; purchased adds FIFO). */
+async function reserveSimple(
+  productId: string,
+  quantity: number
+): Promise<Record<string, unknown> | null> {
+  // Step 1: read current stockVersion + sourcing + layers (optimistic lock token)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const current: any = await Product.findById(productId)
+    .select("stock stockVersion sourcing costLayers")
+    .lean();
+
+  if (!current) return null;
+  if (current.stock < quantity) return null;
+
+  // Purchased → consume FIFO layers in the SAME atomic update (retry loop so
+  // two simultaneous checkouts each get their own layer — never oversold).
+  if (current.sourcing === "purchased") {
+    return reserveSimplePurchased(productId, quantity, current);
+  }
+
+  // --- Consignment: exact pre-Phase-C behavior ---
+  const currentVersion = current.stockVersion ?? 0;
+  const reserved = await Product.findOneAndUpdate(
+    {
+      _id: productId,
+      stock: { $gte: quantity },
+      stockVersion: currentVersion,
+    },
+    {
+      $inc: { stock: -quantity, stockVersion: 1 },
+    },
+    { new: true }
+  ).lean();
+
+  return reserved as Record<string, unknown> | null;
+}
+
+/** Purchased simple product — consume FIFO layers atomically with stock. */
+async function reserveSimplePurchased(
+  productId: string,
+  quantity: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  initial: any
+): Promise<Record<string, unknown> | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let current: any = initial;
+  for (let attempt = 0; attempt < FIFO_RESERVE_MAX_ATTEMPTS; attempt++) {
+    const consumption = consumeFifoLayers(
+      (current.costLayers ?? []) as InventoryCostLayer[],
+      quantity
+    );
+    // Insufficient FIFO layers → fail SAFELY (never invent cost from
+    // supplierPrice; the stock/layers invariant should make this unreachable).
+    if (!consumption) return null;
+
+    const fifo: FifoConsumption = {
+      ...consumption,
+      fifoUnitCost: consumption.consumedCost / quantity,
+    };
+    const currentVersion = current.stockVersion ?? 0;
+
+    const reserved = await Product.findOneAndUpdate(
+      {
+        _id: productId,
+        stock: { $gte: quantity },
+        stockVersion: currentVersion,
+      },
+      {
+        $inc: { stock: -quantity, stockVersion: 1 },
+        $set: { costLayers: consumption.layers },
+      },
+      { new: true }
     ).lean();
 
-    if (!current) return null;
-    const variant = current.variants?.[0];
-    if (!variant) return null;
-    if (variant.stock < quantity) return null;
-    if (variant.isActive === false) return null;
+    if (reserved) {
+      return {
+        ...(reserved as Record<string, unknown>),
+        __fifoConsumption: fifo,
+      };
+    }
 
+    // Version conflict (concurrent sale) → re-read fresh layers + retry.
+    current = await Product.findById(productId)
+      .select("stock stockVersion sourcing costLayers")
+      .lean();
+    if (!current || current.stock < quantity) return null;
+  }
+  return null;
+}
+
+/** Variant reservation (consignment byte-identical; purchased adds FIFO). */
+async function reserveVariant(
+  productId: string,
+  quantity: number,
+  variantId: string
+): Promise<Record<string, unknown> | null> {
+  // Step 1: read the variant's current stockVersion + product sourcing + layers
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const current: any = await Product.findOne(
+    { _id: productId, "variants._id": variantId },
+    { sourcing: 1, "variants.$": 1 }
+  ).lean();
+
+  if (!current) return null;
+  const variant = current.variants?.[0];
+  if (!variant) return null;
+  if (variant.stock < quantity) return null;
+  if (variant.isActive === false) return null;
+
+  // Purchased → consume the variant's own FIFO layers in the SAME atomic
+  // update (per-variant layers — one variant can never consume another's).
+  if (current.sourcing === "purchased") {
+    return reserveVariantPurchased(productId, quantity, variantId, variant);
+  }
+
+  // --- Consignment: exact pre-Phase-C behavior ---
+  const currentVersion = variant.stockVersion ?? 0;
+  const reserved = await Product.findOneAndUpdate(
+    {
+      _id: productId,
+      variants: {
+        $elemMatch: {
+          _id: variantId,
+          isActive: true,
+          stock: { $gte: quantity },
+          stockVersion: currentVersion,
+        },
+      },
+    },
+    {
+      $inc: {
+        "variants.$.stock": -quantity,
+        "variants.$.stockVersion": 1,
+        stock: -quantity, // keep top-level summary in sync atomically
+      },
+    },
+    { new: true }
+  ).lean();
+
+  return reserved as Record<string, unknown> | null;
+}
+
+/** Purchased variant — consume that variant's FIFO layers atomically with stock. */
+async function reserveVariantPurchased(
+  productId: string,
+  quantity: number,
+  variantId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  initialVariant: any
+): Promise<Record<string, unknown> | null> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let variant: any = initialVariant;
+  for (let attempt = 0; attempt < FIFO_RESERVE_MAX_ATTEMPTS; attempt++) {
+    const consumption = consumeFifoLayers(
+      (variant.costLayers ?? []) as InventoryCostLayer[],
+      quantity
+    );
+    if (!consumption) return null;
+
+    const fifo: FifoConsumption = {
+      ...consumption,
+      fifoUnitCost: consumption.consumedCost / quantity,
+    };
     const currentVersion = variant.stockVersion ?? 0;
 
-    // Step 2: atomically reserve ONLY if the variant version still matches.
-    // IMPORTANT: $elemMatch is required here — MongoDB does NOT allow the
-    // positional $ operator in the QUERY filter, so plain "variants.$.stock"
-    // predicates never match. $elemMatch binds ALL conditions to the SAME
-    // array element (the target variant), then "variants.$" in the update
-    // operates on that matched element. This preserves the exact optimistic
-    // concurrency semantics as the simple-product path.
     const reserved = await Product.findOneAndUpdate(
       {
         _id: productId,
@@ -85,39 +263,32 @@ export async function reserveStock(
         $inc: {
           "variants.$.stock": -quantity,
           "variants.$.stockVersion": 1,
-          stock: -quantity, // keep top-level summary in sync atomically
+          stock: -quantity,
         },
+        $set: { "variants.$.costLayers": consumption.layers },
       },
       { new: true }
     ).lean();
 
-    return reserved as Record<string, unknown> | null;
+    if (reserved) {
+      return {
+        ...(reserved as Record<string, unknown>),
+        __fifoConsumption: fifo,
+      };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fresh: any = await Product.findOne(
+      { _id: productId, "variants._id": variantId },
+      { sourcing: 1, "variants.$": 1 }
+    ).lean();
+    if (!fresh) return null;
+    variant = fresh.variants?.[0];
+    if (!variant || variant.stock < quantity || variant.isActive === false) {
+      return null;
+    }
   }
-
-  // --- Simple product (unchanged behavior) ---
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const current: any = await Product.findById(productId)
-    .select("stock stockVersion")
-    .lean();
-
-  if (!current) return null;
-  if (current.stock < quantity) return null;
-
-  const currentVersion = current.stockVersion ?? 0;
-
-  const reserved = await Product.findOneAndUpdate(
-    {
-      _id: productId,
-      stock: { $gte: quantity },
-      stockVersion: currentVersion,
-    },
-    {
-      $inc: { stock: -quantity, stockVersion: 1 },
-    },
-    { new: true }
-  ).lean();
-
-  return reserved as Record<string, unknown> | null;
+  return null;
 }
 
 /**
@@ -193,12 +364,23 @@ export async function setVariantStock(
  * Restore stock for a single product/variant (used during rollback).
  * Simple: $inc { stock: +qty, stockVersion: 1 }
  * Variant: $inc { "variants.$.stock": +qty, "variants.$.stockVersion": 1, stock: +qty }
+ *
+ * Session 82 Phase C: when `fifoUnitCost` is provided (a purchased-sourcing
+ * item whose sale consumed FIFO layers), the units are returned to the layers
+ * at their ORIGINAL unit cost via restoreLayers() — never at the current
+ * supplierPrice. The layer restore is folded into the same single-document
+ * update as the stock $inc (version-guarded re-read on conflict).
  */
 export async function restoreStock(
   productId: string,
   quantity: number,
-  variantId?: string
+  variantId?: string,
+  fifoUnitCost?: number
 ): Promise<void> {
+  if (fifoUnitCost !== undefined && fifoUnitCost > 0) {
+    await restoreStockWithLayers(productId, quantity, variantId, fifoUnitCost);
+    return;
+  }
   if (variantId) {
     await Product.findOneAndUpdate(
       { _id: productId, "variants._id": variantId },
@@ -217,6 +399,85 @@ export async function restoreStock(
   });
 }
 
+/** Restore stock AND return units to their FIFO layer at the snapshot cost. */
+async function restoreStockWithLayers(
+  productId: string,
+  quantity: number,
+  variantId: string | undefined,
+  fifoUnitCost: number
+): Promise<void> {
+  const MAX_ATTEMPTS = 5;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let current: any = null;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    // The snapshot fifoUnitCost can be fractional (multi-layer sale); the
+    // layer model requires whole-toman costs — round to the nearest toman
+    // (matches the movement ledger's unitCost rounding).
+    const roundedCost = Math.round(fifoUnitCost);
+    if (variantId) {
+      current = await Product.findOne(
+        { _id: productId, "variants._id": variantId },
+        { "variants.$": 1 }
+      ).lean();
+      const variant = current?.variants?.[0];
+      if (!variant) return;
+      const currentVersion = variant.stockVersion ?? 0;
+      const newLayers = restoreLayers(
+        (variant.costLayers ?? []) as InventoryCostLayer[],
+        quantity,
+        roundedCost,
+        { source: "adjustment" }
+      );
+      const updated = await Product.findOneAndUpdate(
+        {
+          _id: productId,
+          variants: {
+            $elemMatch: { _id: variantId, stockVersion: currentVersion },
+          },
+        },
+        {
+          $inc: {
+            "variants.$.stock": quantity,
+            "variants.$.stockVersion": 1,
+            stock: quantity,
+          },
+          $set: { "variants.$.costLayers": newLayers },
+        },
+        { new: true }
+      ).lean();
+      if (updated) return;
+    } else {
+      current = await Product.findById(productId)
+        .select("stock stockVersion costLayers")
+        .lean();
+      if (!current) return;
+      const currentVersion = current.stockVersion ?? 0;
+      const newLayers = restoreLayers(
+        (current.costLayers ?? []) as InventoryCostLayer[],
+        quantity,
+        roundedCost,
+        { source: "adjustment" }
+      );
+      const updated = await Product.findOneAndUpdate(
+        {
+          _id: productId,
+          stockVersion: currentVersion,
+        },
+        {
+          $inc: { stock: quantity, stockVersion: 1 },
+          $set: { costLayers: newLayers },
+        },
+        { new: true }
+      ).lean();
+      if (updated) return;
+    }
+    // Version conflict → re-read + retry.
+  }
+  console.error(
+    `[Inventory] Failed to restore FIFO layers for ${productId}${variantId ? " v" + variantId : ""} after ${MAX_ATTEMPTS} attempts`
+  );
+}
+
 /**
  * Restore stock for an entire order (failed/cancelled payment, admin cancel).
  *
@@ -225,7 +486,10 @@ export async function restoreStock(
  * and skip. Variant-aware: each item's variantId (if present) routes the
  * restoration to the variant stock.
  */
-export async function restoreOrderStock(orderId: string): Promise<void> {
+export async function restoreOrderStock(
+  orderId: string,
+  movementType: "cancellation_restock" | "return_restock" = "cancellation_restock"
+): Promise<void> {
   try {
     // Atomic claim: only restore if stockRestored is still false
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -244,13 +508,32 @@ export async function restoreOrderStock(orderId: string): Promise<void> {
 
     if (!claimed || !claimed.items?.length) return;
 
-    const stockUpdates = claimed.items.map(
-      (item: {
-        product: string;
-        quantity: number;
-        variantId?: string;
-      }) => restoreStock(item.product, item.quantity, item.variantId)
-    );
+    const stockUpdates = claimed.items.map((item: {
+      product: string;
+      quantity: number;
+      variantId?: string;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      [k: string]: any;
+    }) => {
+      // Phase C: purchased items carry fifoUnitCost (snapshot at checkout) —
+      // restore stock AND the exact FIFO cost; record the compensating
+      // movement. Consignment/pre-cutover items (no fifoUnitCost) keep the
+      // stock-only restore (byte-identical behavior).
+      const fifoUnitCost =
+        typeof item.fifoUnitCost === "number" ? item.fifoUnitCost : undefined;
+      void recordRestoreMovement(
+        orderId,
+        item,
+        fifoUnitCost,
+        movementType
+      );
+      return restoreStock(
+        item.product,
+        item.quantity,
+        item.variantId,
+        fifoUnitCost
+      );
+    });
 
     await Promise.all(stockUpdates);
     console.log(
@@ -261,5 +544,39 @@ export async function restoreOrderStock(orderId: string): Promise<void> {
       `[Inventory] Failed to restore stock for order ${orderId}:`,
       error
     );
+  }
+}
+
+/** Append-only restock movement for a FIFO restore (unique per order+item). */
+async function recordRestoreMovement(
+  orderId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  item: any,
+  fifoUnitCost: number | undefined,
+  movementType: "cancellation_restock" | "return_restock"
+): Promise<void> {
+  if (fifoUnitCost === undefined) return; // consignment/pre-cutover — no layer restore
+  try {
+    const sourceRef = `${movementType}-${orderId}-${String(item.product)}${item.variantId ? "-" + String(item.variantId) : ""}`;
+    const exists = await InventoryMovement.exists({ sourceRef });
+    if (exists) return;
+    await InventoryMovement.create({
+      product: item.product,
+      variantId: item.variantId ?? null,
+      type: movementType,
+      quantity: item.quantity,
+      unitCost: Math.round(fifoUnitCost),
+      totalCost: Math.round(fifoUnitCost * item.quantity),
+      sourceRef,
+      description:
+        movementType === "return_restock"
+          ? `بازگشت کالا به انبار (بازپرداخت سفارش ${String(orderId).slice(-8)})`
+          : `بازگشت موجودی به انبار (لغو/عدم پرداخت سفارش ${String(orderId).slice(-8)})`,
+    });
+  } catch (err) {
+    // Fail-silent: a ledger write must never break a committed restoration.
+    if ((err as { code?: number })?.code !== 11000) {
+      console.error("[Inventory] Restock movement failed:", err);
+    }
   }
 }

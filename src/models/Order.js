@@ -33,6 +33,15 @@ const OrderItemSchema = new mongoose.Schema(
     originalPrice: { type: Number, default: null },
     discountAmount: { type: Number, default: 0 },
     supplierPrice: { type: Number, required: true }, // قیمت واحد از فروشنده
+    // --- FIFO unit cost snapshot (Session 82 Phase C — additive, absent on
+    // pre-cutover and consignment orders) ---
+    // For purchased-sourcing products sold AFTER the accounting cutover, this
+    // is the authoritative COGS snapshot: the exact weighted FIFO cost consumed
+    // from the inventory layers at checkout (consumedCost / quantity).
+    // supplierPrice stays untouched for historical compatibility. Reports use
+    // fifoUnitCost when present, else the supplierPrice snapshot. Immutable —
+    // later purchases/receipts never alter an existing order.
+    fifoUnitCost: { type: Number, default: null },
     quantity: { type: Number, required: true, min: 1 },
   },
   { _id: false }
