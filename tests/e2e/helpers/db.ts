@@ -199,6 +199,31 @@ export async function cleanupByPrefix(prefix: string): Promise<void> {
     deletes.push(db.collection("products").deleteMany({ _id: { $in: productIds } }));
   }
 
+  // Session 82 Phase B — purchases of the run's PREFIX'd products: purchase
+  // order lines snapshot the product name (which carries the run prefix), so
+  // purchaseorders are resolved through the item-name regex (they are never
+  // directly product-referenced for cleanup safety). Their receipts created
+  // InventoryMovement rows (product ref) + FIFO cost layers (embedded — deleted
+  // with the product doc).
+  if (productIds.length > 0) {
+    deletes.push(
+      db.collection("purchaseorders").deleteMany({ "items.product": { $in: productIds } }),
+      db.collection("inventorymovements").deleteMany({ product: { $in: productIds } })
+    );
+  }
+
+  // Session 82 — the accounting-init wizard upserts the GLOBAL `accounting`
+  // config singleton when the journey converts a product to `sourcing:
+  // purchased`. The E2E run overwrote/stamped it, so teardown restores the
+  // pre-run state (absent) — the exact convention verify-accounting.js uses
+  // in its own sweep + cleanup.
+  // The config singleton has a STRING _id ("accounting") — type the
+  // collection explicitly so the filter type-checks (default Document assumes
+  // an ObjectId _id).
+  deletes.push(
+    db.collection<{ _id: string }>("accountingconfigs").deleteMany({ _id: "accounting" })
+  );
+
   // Slug-prefixed catalogs (anchored — slugs start with the run prefix).
   deletes.push(
     db.collection("categories").deleteMany({ slug: { $regex: anchoredRe } }),
@@ -225,7 +250,7 @@ export async function clearRateLimiterKeys(): Promise<void> {
   await db.collection<{ _id: string }>("ratelimits").deleteMany({
     _id: {
       $regex:
-        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify|supplier-apply|supplier-application-decide|conversation-create|conversation-msg):",
+        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify|supplier-apply|supplier-application-decide|conversation-create|conversation-msg|purchase-write|accounting-init|accounting-config):",
     },
   });
 }

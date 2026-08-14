@@ -293,6 +293,23 @@ const CUSTOMERS_COLUMNS: Column[] = [
   { header: "آخرین سفارش", key: "lastOrderAt", width: 18 },
 ];
 
+const PURCHASES_COLUMNS: Column[] = [
+  { header: "شماره خرید", key: "number", width: 20 },
+  { header: "تاریخ خرید", key: "purchaseDate", width: 18 },
+  { header: "تأمین‌کننده", key: "supplierName", width: 26 },
+  { header: "وضعیت", key: "status", width: 14 },
+  { header: "وضعیت پرداخت", key: "paymentStatus", width: 14 },
+  { header: "سفارش‌شده", key: "totalOrdered", width: 10, numFmt: INTEGER, align: "right" },
+  { header: "دریافت‌شده", key: "totalReceived", width: 10, numFmt: INTEGER, align: "right" },
+  { header: "باقیمانده", key: "totalOutstanding", width: 10, numFmt: INTEGER, align: "right" },
+  { header: "جمع جزء", key: "subtotal", width: 14, numFmt: MONEY, align: "right" },
+  { header: "تخفیف", key: "discount", width: 12, numFmt: MONEY, align: "right" },
+  { header: "هزینه اضافی", key: "additionalCosts", width: 13, numFmt: MONEY, align: "right" },
+  { header: "جمع کل", key: "total", width: 14, numFmt: MONEY, align: "right" },
+  { header: "پرداخت‌شده", key: "amountPaid", width: 14, numFmt: MONEY, align: "right" },
+  { header: "مانده", key: "amountOutstanding", width: 14, numFmt: MONEY, align: "right" },
+];
+
 const INVENTORY_COLUMNS: Column[] = [
   { header: "شناسه محصول", key: "productId", width: 26 },
   { header: "SKU", key: "sku", width: 20 },
@@ -365,7 +382,11 @@ export function buildReportWorkbook<T>(
 ): ExcelJS.Workbook {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "فروشگاه من";
-  writeSummarySheet(workbook, REPORT_TITLES[slug] ?? slug, filters, data.summary);
+  // The purchases report gets its own purchase-labeled summary sheet below —
+  // the generic (order-labeled) sheet would mislabel procurement KPIs.
+  if (slug !== "purchases") {
+    writeSummarySheet(workbook, REPORT_TITLES[slug] ?? slug, filters, data.summary);
+  }
 
   let columns: Column[] = [];
   let sheetName = "";
@@ -407,6 +428,17 @@ export function buildReportWorkbook<T>(
       writePnlSheet(workbook, pnl);
       return workbook;
     }
+    case "purchases": {
+      writePurchaseSummarySheet(workbook, filters, data.summary);
+      writeDetailSheet(
+        workbook,
+        "خریدها",
+        PURCHASES_COLUMNS,
+        flattenRows(data.rows as Array<Record<string, unknown>>, PURCHASES_COLUMNS),
+        data.totals
+      );
+      return workbook;
+    }
     default:
       return workbook;
   }
@@ -419,6 +451,59 @@ export function buildReportWorkbook<T>(
     data.totals
   );
   return workbook;
+}
+
+/** Purchase-labeled summary sheet (Session 82 Phase B) — procurement KPIs. */
+function writePurchaseSummarySheet(
+  workbook: ExcelJS.Workbook,
+  filters: ReportFilters,
+  summary: ReportSummary
+): ExcelJS.Worksheet {
+  const sheet = workbook.addWorksheet("خلاصه");
+  sheet.columns = [{ width: 42 }, { width: 20 }];
+
+  sheet.mergeCells("A1:B1");
+  const titleCell = sheet.getCell("A1");
+  titleCell.value = REPORT_TITLES.purchases;
+  titleCell.font = { bold: true, size: 14 };
+  sheet.mergeCells("A2:B2");
+  sheet.getCell("A2").value = `بازه گزارش: ${filters.from ?? "—"} تا ${filters.to ?? "—"}`;
+  sheet.getCell("A2").font = { italic: true };
+  sheet.mergeCells("A3:B3");
+  sheet.getCell("A3").value = `تولید شده در: ${iso(new Date().toISOString())}`;
+  sheet.getCell("A3").font = { italic: true };
+
+  const rows: KpiValue[] = [
+    kpi("تعداد خرید", summary.orders, "count"),
+    kpi("واحد سفارش‌شده", summary.unitsSold, "count"),
+    kpi("جمع جزء (subtotal)", summary.grossSales, "money"),
+    kpi("تخفیف", summary.productDiscount, "money"),
+    kpi("هزینه‌های اضافی", summary.netSales - summary.grossSales + summary.productDiscount, "money"),
+    kpi("جمع کل خرید", summary.netSales, "money"),
+    kpi("پرداخت‌شده به تأمین‌کننده", summary.paidAmount, "money"),
+    kpi("مانده پرداخت", summary.outstandingAmount, "money"),
+  ];
+
+  let r = 5;
+  for (const item of rows) {
+    sheet.getCell(`A${r}`).value = item.label;
+    const vCell = sheet.getCell(`B${r}`);
+    if (item.kind === "number") {
+      vCell.value = item.value;
+      vCell.numFmt = item.numFmt;
+    } else {
+      vCell.value = item.value;
+    }
+    r++;
+  }
+
+  sheet.mergeCells(`A${r + 1}:B${r + 1}`);
+  sheet.getCell(`A${r + 1}`).value =
+    "یادداشت: این گزارش خرید/تدارکات است — هیچ مبلغی به‌عنوان سود فروش یا COGS محسوب نمی‌شود.";
+  sheet.getCell(`A${r + 1}`).font = { italic: true, size: 9 };
+  sheet.getCell(`A${r + 1}`).alignment = { wrapText: true };
+
+  return sheet;
 }
 
 /** P&L sheet — a statement (title / section / amount / %) with previous period. */

@@ -167,6 +167,12 @@ export const ACCOUNTING_INIT_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/** Purchase writes (create/update/receive/pay/cancel): 60 per actor per 15 minutes (Session 82 Phase B). */
+export const PURCHASE_WRITE_LIMIT: RateLimitConfig = {
+  max: 60,
+  windowMs: 15 * 60 * 1000,
+};
+
 // ============================================================
 // Core
 // ============================================================

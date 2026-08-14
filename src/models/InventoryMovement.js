@@ -86,7 +86,15 @@ const InventoryMovementSchema = new mongoose.Schema(
 // Per-product history (movements query + FIFO audit), type filters, source lookups
 InventoryMovementSchema.index({ product: 1, createdAt: 1 });
 InventoryMovementSchema.index({ type: 1, createdAt: -1 });
-InventoryMovementSchema.index({ sourceRef: 1 });
+
+// UNIQUE partial index on sourceRef — hard-enforces at-most-once for every
+// financial/inventory event that references a source (opening balances,
+// receipts by `receipt-<purchase>-<key>-<item>`, later sales/adjustments).
+// Empty sourceRefs (plain movements without a source) are exempt.
+InventoryMovementSchema.index(
+  { sourceRef: 1 },
+  { unique: true, partialFilterExpression: { sourceRef: { $type: "string", $ne: "" } } }
+);
 
 export default mongoose.models.InventoryMovement ||
   mongoose.model("InventoryMovement", InventoryMovementSchema);

@@ -44,6 +44,18 @@ export const PAYMENT_STATUSES = [
 
 export const PAYMENT_METHODS = ["zarinpal", "manual"] as const;
 
+/** Purchase statuses (Session 82 Phase B) — the purchases report's status filter. */
+export const PURCHASE_STATUSES = [
+  "draft",
+  "ordered",
+  "partially_received",
+  "received",
+  "cancelled",
+] as const;
+
+/** Purchase payment statuses — the purchases report's payment filter. */
+export const PURCHASE_PAYMENT_STATUSES = ["unpaid", "partial", "paid"] as const;
+
 /** Low-stock threshold — the Product model has no minStock field (documented). */
 export const LOW_STOCK_THRESHOLD = 5;
 
@@ -217,7 +229,8 @@ function parsePaging(
  * Pure — takes an already-built Record (e.g. Object.fromEntries(searchParams)).
  */
 export function parseReportFilters(
-  params: Record<string, string | undefined>
+  params: Record<string, string | undefined>,
+  opts?: { kind?: "order" | "purchase" }
 ): { filters: ReportFilters } | { error: string } {
   const rawPreset = params.preset;
   let preset: ReportPreset | null = null;
@@ -256,16 +269,27 @@ export function parseReportFilters(
     return { error: "بازه زمانی گزارش مشخص نشده است" };
   }
 
+  const isPurchase = opts?.kind === "purchase";
+  const statusList = isPurchase
+    ? PURCHASE_STATUSES
+    : ORDER_STATUSES;
+  const paymentStatusList = isPurchase
+    ? PURCHASE_PAYMENT_STATUSES
+    : PAYMENT_STATUSES;
+  const statusLabel = isPurchase ? "وضعیت خرید" : "وضعیت سفارش";
+  const paymentLabel = isPurchase ? "وضعیت پرداخت خرید" : "وضعیت پرداخت";
+
   const orderStatus = parseBoundedString(params.status, 30);
-  if (orderStatus && !(ORDER_STATUSES as readonly string[]).includes(orderStatus)) {
-    return { error: "وضعیت سفارش نامعتبر است" };
+  if (orderStatus && !(statusList as readonly string[]).includes(orderStatus)) {
+    return { error: `${statusLabel} نامعتبر است` };
   }
+  const purchaseStatus = isPurchase ? orderStatus : undefined;
   const paymentStatus = parseBoundedString(params.paymentStatus, 30);
   if (
     paymentStatus &&
-    !(PAYMENT_STATUSES as readonly string[]).includes(paymentStatus)
+    !(paymentStatusList as readonly string[]).includes(paymentStatus)
   ) {
-    return { error: "وضعیت پرداخت نامعتبر است" };
+    return { error: `${paymentLabel} نامعتبر است` };
   }
   const paymentMethod = parseBoundedString(params.method, 30);
   if (
@@ -286,7 +310,8 @@ export function parseReportFilters(
       productId: parseOptionalId(params.product),
       categoryId: parseOptionalId(params.category),
       customerId: parseOptionalId(params.customer),
-      orderStatus,
+      orderStatus: isPurchase ? undefined : orderStatus,
+      purchaseStatus,
       paymentStatus,
       paymentMethod,
       coupon: parseBoundedString(params.coupon, 50),

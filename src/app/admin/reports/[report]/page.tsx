@@ -19,6 +19,7 @@ import { PnlView } from "@/components/reports/pnl-view";
 import {
   SummaryCards,
   summaryCardsFromSummary,
+  purchaseSummaryCardsFromSummary,
 } from "@/components/reports/summary-cards";
 import {
   buildReportQuery,
@@ -143,9 +144,15 @@ export default function ReportDetailPage() {
           ) : (
             <>
               <SummaryCards
-                items={summaryCardsFromSummary(
-                  (data as ReportEnvelope<Record<string, unknown>>).summary
-                )}
+                items={
+                  report === "purchases"
+                    ? purchaseSummaryCardsFromSummary(
+                        (data as ReportEnvelope<Record<string, unknown>>).summary
+                      )
+                    : summaryCardsFromSummary(
+                        (data as ReportEnvelope<Record<string, unknown>>).summary
+                      )
+                }
               />
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between">

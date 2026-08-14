@@ -18,6 +18,8 @@ export interface AdminProductFilters {
   page?: number;
   limit?: number;
   search?: string;
+  /** Session 82 Phase B — the purchase form restricts the picker to purchased products. */
+  sourcing?: "purchased" | "consignment";
 }
 
 const fetchAdminProducts = async (
@@ -27,6 +29,7 @@ const fetchAdminProducts = async (
   if (filters.page) params.set("page", String(filters.page));
   if (filters.limit) params.set("limit", String(filters.limit));
   if (filters.search) params.set("search", filters.search);
+  if (filters.sourcing) params.set("sourcing", filters.sourcing);
   const qs = params.toString();
   const { data } = await axios.get(`/api/admin/products${qs ? `?${qs}` : ""}`);
   return data;

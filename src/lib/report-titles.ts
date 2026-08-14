@@ -9,4 +9,5 @@ export const REPORT_TITLES: Record<string, string> = {
   customers: "گزارش مشتریان",
   inventory: "گزارش موجودی",
   pnl: "سود و زیان",
+  purchases: "گزارش خرید",
 };

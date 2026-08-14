@@ -57,6 +57,12 @@ const navItems = [
     icon: BookOpenCheck,
   },
   {
+    // Session 82 Phase B — procurement (PurchaseOrder + receiving + FIFO layers).
+    title: "خریدها",
+    href: "/admin/purchases",
+    icon: FileUp,
+  },
+  {
     title: "صفحه اصلی",
     href: "/admin/homepage",
     icon: LayoutTemplate,

@@ -1163,6 +1163,8 @@ export interface ReportFilters {
   categoryId?: string;
   customerId?: string;
   orderStatus?: string;
+  /** Purchase status (draft/ordered/…/cancelled) — only for the purchases report. */
+  purchaseStatus?: string;
   paymentStatus?: string;
   paymentMethod?: string;
   coupon?: string;
@@ -1418,4 +1420,96 @@ export interface InitializeAccountingResponse {
   layersCreated: number;
   totalValue: number;
   skipped: Array<{ productId: string; reason: string }>;
+}
+
+// ============================================================
+// Admin Purchases (Session 82 Phase B) — procurement
+// ============================================================
+
+export type PurchaseStatus =
+  | "draft"
+  | "ordered"
+  | "partially_received"
+  | "received"
+  | "cancelled";
+
+export type PurchasePaymentStatus = "unpaid" | "partial" | "paid";
+
+export interface PurchaseItemInput {
+  product: string;
+  variantId?: string;
+  quantity: number;
+  unitCost: number;
+}
+
+/** One received-quantity line of a purchase item (as stored). */
+export interface PurchaseItemView {
+  id: string;
+  product: string;
+  variantId: string | null;
+  name: string;
+  variantLabel: string;
+  quantity: number;
+  receivedQuantity: number;
+  outstanding: number;
+  unitCost: number;
+  lineTotal: number;
+}
+
+export interface PurchaseOrderView {
+  id: string;
+  number: string;
+  supplier: string;
+  supplierName?: string;
+  purchaseDate: string;
+  reference: string;
+  notes: string;
+  status: PurchaseStatus;
+  subtotal: number;
+  discount: number;
+  additionalCosts: number;
+  total: number;
+  paymentStatus: PurchasePaymentStatus;
+  amountPaid: number;
+  amountOutstanding: number;
+  items: PurchaseItemView[];
+  totalOrdered: number;
+  totalReceived: number;
+  totalOutstanding: number;
+  receipts: Array<{
+    key: string;
+    items: Array<{ itemId: string; quantity: number }>;
+    receivedAt: string;
+    receivedBy: string | null;
+  }>;
+  cancelledAt: string | null;
+  cancellationReason: string;
+  createdAt: string;
+}
+
+/** Row of the purchases report (Session 82 Phase B). */
+export interface PurchasesReportRow {
+  purchaseId: string;
+  number: string;
+  supplierName: string;
+  purchaseDate: string;
+  status: string;
+  paymentStatus: string;
+  totalOrdered: number;
+  totalReceived: number;
+  totalOutstanding: number;
+  subtotal: number;
+  discount: number;
+  additionalCosts: number;
+  total: number;
+  amountPaid: number;
+  amountOutstanding: number;
+}
+
+export interface PurchasesReport {
+  rows: PurchasesReportRow[];
+  summary: ReportSummary;
+  page: number;
+  totalPages: number;
+  total: number;
 }

@@ -181,6 +181,28 @@ export const REPORT_META: Record<string, ReportMeta> = {
       { key: "lastOrderAt", label: "آخرین سفارش", format: "date" },
     ],
   },
+  purchases: {
+    title: REPORT_TITLES.purchases,
+    description: "خریدهای ثبت‌شده با وضعیت دریافت و پرداخت — مبالغ از سند خرید است نه قیمت فعلی محصول",
+    filters: { preset: true, status: true, paymentStatus: true, q: true },
+    totalKeys: ["totalOrdered", "totalReceived", "totalOutstanding", "subtotal", "discount", "additionalCosts", "total", "amountPaid", "amountOutstanding"],
+    columns: [
+      { key: "number", label: "شماره", className: "font-mono text-xs" },
+      { key: "purchaseDate", label: "تاریخ خرید", format: "date" },
+      { key: "supplierName", label: "تأمین‌کننده" },
+      { key: "status", label: "وضعیت" },
+      { key: "paymentStatus", label: "پرداخت" },
+      { key: "totalOrdered", label: "سفارش‌شده", format: "count", align: "right" },
+      { key: "totalReceived", label: "دریافت‌شده", format: "count", align: "right" },
+      { key: "totalOutstanding", label: "باقیمانده", format: "count", align: "right" },
+      moneyColumn("subtotal", "جمع جزء"),
+      moneyColumn("discount", "تخفیف"),
+      moneyColumn("additionalCosts", "هزینه اضافی"),
+      moneyColumn("total", "جمع کل"),
+      moneyColumn("amountPaid", "پرداخت‌شده"),
+      moneyColumn("amountOutstanding", "مانده"),
+    ],
+  },
   inventory: {
     title: REPORT_TITLES.inventory,
     description: "موجودی فعلی، فروش بازه و ارزش موجودی (هزینه واحد فعلی — بازسازی موجودی ابتدای بازه تقریبی است)",
@@ -214,6 +236,7 @@ export const REPORT_NAV: Array<{ report: string; title: string }> = [
   { report: "customers", title: REPORT_TITLES.customers },
   { report: "inventory", title: REPORT_TITLES.inventory },
   { report: "pnl", title: REPORT_TITLES.pnl },
+  { report: "purchases", title: REPORT_TITLES.purchases },
 ];
 
 /** Build the canonical query string for a params object (empty values dropped). */

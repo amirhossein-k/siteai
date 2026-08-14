@@ -51,7 +51,16 @@ export async function GET(req: NextRequest) {
 
     // --- List products with search + pagination ---
     const search = searchParams.get("search");
+    // Session 82 Phase B — restrict to a sourcing mode (the purchase form picks
+    // only purchased products; the accounting init wizard shows both).
+    const sourcing = searchParams.get("sourcing");
     const filter: Record<string, unknown> = {};
+    if (
+      sourcing === "purchased" ||
+      sourcing === "consignment"
+    ) {
+      filter.sourcing = sourcing;
+    }
 
     // Search filter — matches name, slug, description, or category/brand/tag name.
     // category/brand/tags are ObjectId refs at query time, so resolve matching

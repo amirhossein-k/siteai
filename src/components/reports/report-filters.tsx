@@ -8,8 +8,11 @@ import {
   ORDER_STATUSES,
   PAYMENT_STATUSES,
   PAYMENT_METHODS,
+  PURCHASE_STATUSES,
+  PURCHASE_PAYMENT_STATUSES,
 } from "@/lib/report-utils";
 import type { ReportMeta } from "@/components/reports/report-config";
+import { REPORT_TITLES } from "@/lib/report-titles";
 import { cn } from "@/lib/utils";
 
 const PRESETS: Array<{ value: string; label: string }> = [
@@ -29,6 +32,10 @@ const STATUS_LABELS: Record<string, string> = {
   shipped: "ارسال شده",
   delivered: "تحویل شده",
   cancelled: "لغو شده",
+  draft: "پیش‌نویس",
+  ordered: "ثبت سفارش",
+  partially_received: "دریافت جزئی",
+  received: "دریافت کامل",
 };
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -37,7 +44,11 @@ const PAYMENT_LABELS: Record<string, string> = {
   failed: "ناموفق",
   canceled: "لغو شده",
   refunded: "بازپرداخت شده",
+  unpaid: "پرداخت نشده",
+  partial: "پرداخت جزئی",
 };
+
+const isPurchaseReport = (meta: ReportMeta) => meta.title === REPORT_TITLES.purchases;
 
 const METHOD_LABELS: Record<string, string> = {
   zarinpal: "زرین‌پال",
@@ -151,10 +162,12 @@ export function ReportFilters({ meta, params, onParamsChange }: ReportFiltersPro
               e.target.value ? set({ status: e.target.value }) : clear(["status"])
             }
             className="h-9 rounded-lg border bg-card px-2 text-sm"
-            aria-label="وضعیت سفارش"
+            aria-label="وضعیت"
           >
-            <option value="">وضعیت سفارش: همه</option>
-            {ORDER_STATUSES.map((s) => (
+            <option value="">
+              {isPurchaseReport(meta) ? "وضعیت خرید: همه" : "وضعیت سفارش: همه"}
+            </option>
+            {(isPurchaseReport(meta) ? PURCHASE_STATUSES : ORDER_STATUSES).map((s) => (
               <option key={s} value={s}>
                 {STATUS_LABELS[s] ?? s}
               </option>
@@ -172,7 +185,7 @@ export function ReportFilters({ meta, params, onParamsChange }: ReportFiltersPro
             aria-label="وضعیت پرداخت"
           >
             <option value="">وضعیت پرداخت: همه</option>
-            {PAYMENT_STATUSES.map((s) => (
+            {(isPurchaseReport(meta) ? PURCHASE_PAYMENT_STATUSES : PAYMENT_STATUSES).map((s) => (
               <option key={s} value={s}>
                 {PAYMENT_LABELS[s] ?? s}
               </option>

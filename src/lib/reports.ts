@@ -29,6 +29,8 @@
 import mongoose from "mongoose";
 import Order from "@/models/Order";
 import Product from "@/models/Product";
+import PurchaseOrder from "@/models/PurchaseOrder";
+import Supplier from "@/models/Supplier";
 import User from "@/models/User";
 import {
   addDays,
@@ -48,6 +50,7 @@ import type {
   OrdersReportRow,
   PaymentsReportRow,
   ProfitLossReport,
+  PurchasesReportRow,
   RefundsReportRow,
   ReportFilters,
   ReportSummary,
@@ -1558,6 +1561,139 @@ export async function getDashboardReport(filters: ReportFilters): Promise<Dashbo
   };
 }
 
+// ---------------------------------------------------------------------------
+// Purchases report (Session 82 Phase B) — procurement, not sales
+// ---------------------------------------------------------------------------
+
+/**
+ * Purchases report. Filters on the purchaseDate window + purchase status +
+ * payment status (purchase-specific enums). Every money figure comes from the
+ * PurchaseOrder totals — never from current Product prices. The summary uses
+ * purchase semantics (subtotal/discount/additional costs/total/paid) and the
+ * UI renders purchase-labeled cards, NOT the order-labeled generic cards.
+ */
+export async function getPurchasesReport(filters: ReportFilters) {
+  const { from, to } = windowDates(filters);
+  const match: Record<string, unknown> = {
+    purchaseDate: { $gte: from, $lt: to },
+  };
+  if (filters.purchaseStatus) match.status = filters.purchaseStatus;
+  if (filters.paymentStatus) match.paymentStatus = filters.paymentStatus;
+  if (filters.q) {
+    // Search by purchase number OR supplier business name.
+    const needle = escapeRegExp(filters.q);
+    const suppliers = await Supplier.find({
+      businessName: new RegExp(needle, "i"),
+    })
+      .select("_id")
+      .lean();
+    const supplierIds = suppliers.map((s) => s._id);
+    const conditions: Array<Record<string, unknown>> = [
+      { number: new RegExp(needle, "i") },
+    ];
+    if (supplierIds.length > 0) conditions.push({ supplier: { $in: supplierIds } });
+    match.$or = conditions;
+  }
+
+  const [docs] = await Promise.all([
+    PurchaseOrder.find(match)
+      .populate("supplier", "businessName")
+      .sort({ purchaseDate: -1, createdAt: -1 })
+      .lean(),
+  ]);
+
+  const rows: PurchasesReportRow[] = docs.map((p) => {
+    const supplier = p.supplier as unknown as
+      | { businessName?: string }
+      | string
+      | null;
+    const items = (p.items as Array<Record<string, unknown>>) || [];
+    const totalOrdered = items.reduce((s, it) => s + Number(it.quantity || 0), 0);
+    const totalReceived = items.reduce(
+      (s, it) => s + Number(it.receivedQuantity || 0),
+      0
+    );
+    const totalAmount = Number(p.total || 0);
+    const amountPaid = Number(p.amountPaid || 0);
+    return {
+      purchaseId: String(p._id),
+      number: String(p.number || ""),
+      supplierName:
+        typeof supplier === "object" && supplier ? supplier.businessName || "" : "",
+      purchaseDate: p.purchaseDate
+        ? new Date(p.purchaseDate as Date).toISOString()
+        : "",
+      status: String(p.status || "draft"),
+      paymentStatus: String(p.paymentStatus || "unpaid"),
+      totalOrdered,
+      totalReceived,
+      totalOutstanding: Math.max(0, totalOrdered - totalReceived),
+      subtotal: roundToman(Number(p.subtotal || 0)),
+      discount: roundToman(Number(p.discount || 0)),
+      additionalCosts: roundToman(Number(p.additionalCosts || 0)),
+      total: roundToman(totalAmount),
+      amountPaid: roundToman(amountPaid),
+      amountOutstanding: roundToman(Math.max(0, totalAmount - amountPaid)),
+    };
+  });
+
+  // Purchase-specific summary — the UI renders purchase-labeled cards from
+  // these fields (not the order-labeled generic summary cards).
+  const summary: ReportSummary = withRange(
+    {
+      from: "",
+      to: "",
+      preset: null,
+      orders: rows.length,
+      unitsSold: rows.reduce((a, r) => a + r.totalOrdered, 0),
+      grossSales: rows.reduce((a, r) => a + r.subtotal, 0),
+      productDiscount: rows.reduce((a, r) => a + r.discount, 0),
+      couponDiscount: 0,
+      netSales: rows.reduce((a, r) => a + r.total, 0),
+      cogs: 0,
+      grossProfit: 0,
+      grossMargin: null,
+      refundedOrders: 0,
+      refunds: 0,
+      paidAmount: rows.reduce((a, r) => a + r.amountPaid, 0),
+      pendingAmount: 0,
+      outstandingAmount: rows.reduce((a, r) => a + r.amountOutstanding, 0),
+      avgOrderValue: 0,
+      inventoryValue: 0,
+      inventoryCost: 0,
+    },
+    filters
+  );
+
+  const totals: Record<string, number> = {
+    totalOrdered: rows.reduce((a, r) => a + r.totalOrdered, 0),
+    totalReceived: rows.reduce((a, r) => a + r.totalReceived, 0),
+    totalOutstanding: rows.reduce((a, r) => a + r.totalOutstanding, 0),
+    subtotal: rows.reduce((a, r) => a + r.subtotal, 0),
+    discount: rows.reduce((a, r) => a + r.discount, 0),
+    additionalCosts: rows.reduce((a, r) => a + r.additionalCosts, 0),
+    total: rows.reduce((a, r) => a + r.total, 0),
+    amountPaid: rows.reduce((a, r) => a + r.amountPaid, 0),
+    amountOutstanding: rows.reduce((a, r) => a + r.amountOutstanding, 0),
+  };
+
+  const fullCount = rows.length;
+  const bounded = rows.slice(0, EXPORT_MAX_ROWS);
+  const start = (filters.page - 1) * filters.limit;
+  return {
+    report: "purchases",
+    filters,
+    summary,
+    rows: bounded.slice(start, start + filters.limit),
+    total: fullCount,
+    totals,
+    page: filters.page,
+    limit: filters.limit,
+    truncated: fullCount > EXPORT_MAX_ROWS,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 /** Registry used by the API routes + UI (valid report slugs). */
 export const REPORT_SLUGS = [
   "dashboard",
@@ -1569,6 +1705,7 @@ export const REPORT_SLUGS = [
   "customers",
   "inventory",
   "pnl",
+  "purchases",
 ] as const;
 
 export type ReportSlug = (typeof REPORT_SLUGS)[number];
@@ -1593,6 +1730,8 @@ export async function getReportData(slug: ReportSlug, filters: ReportFilters) {
       return getInventoryReport(filters);
     case "pnl":
       return getProfitLossReport(filters);
+    case "purchases":
+      return getPurchasesReport(filters);
   }
 }
 

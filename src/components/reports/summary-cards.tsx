@@ -79,6 +79,50 @@ export function summaryCardsFromSummary(s: ReportSummary): SummaryCardItem[] {
   ];
 }
 
+/**
+ * Purchase-labeled summary cards (Session 82 Phase B). The purchases report
+ * uses purchase semantics (subtotal/discount/total/paid/outstanding) — never
+ * the order-labeled generic cards (no COGS/profit claims on procurement data).
+ */
+export function purchaseSummaryCardsFromSummary(
+  s: ReportSummary
+): SummaryCardItem[] {
+  return [
+    {
+      title: "تعداد خرید",
+      value: count(s.orders),
+      hint: `${count(s.unitsSold)} واحد سفارش‌شده`,
+      icon: ShoppingCart,
+    },
+    {
+      title: "جمع جزء خرید",
+      value: money(s.grossSales),
+      hint: `تخفیف: ${money(s.productDiscount)} · هزینه اضافی: ${money(
+        s.netSales - s.grossSales + s.productDiscount
+      )}`,
+      icon: DollarSign,
+    },
+    {
+      title: "جمع کل خرید",
+      value: money(s.netSales),
+      hint: "پس از تخفیف و هزینه‌های اضافی",
+      icon: Wallet,
+    },
+    {
+      title: "پرداخت‌شده به تأمین‌کننده",
+      value: money(s.paidAmount),
+      hint: `مانده: ${money(s.outstandingAmount)}`,
+      icon: TrendingDown,
+    },
+    {
+      title: "مانده پرداخت",
+      value: money(s.outstandingAmount),
+      hint: "مبلغ پرداخت‌نشده",
+      icon: Ban,
+    },
+  ];
+}
+
 export function SummaryCards({ items }: { items: SummaryCardItem[] }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
