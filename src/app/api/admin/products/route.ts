@@ -18,6 +18,7 @@ import { prepareVariantsForSave } from "@/lib/product-variants";
 import { prepareRichDescription } from "@/lib/product-description";
 import { createWithUniqueSlug } from "@/lib/product-slug";
 import { parseProductDiscount } from "@/lib/product-pricing";
+import { assertNoDirectStockChange } from "@/lib/inventory-adjustments";
 // Note: All models are registered globally via dbConnect.js — no side-effect imports needed here
 
 export async function GET(req: NextRequest) {
@@ -246,6 +247,17 @@ export async function PUT(req: NextRequest) {
         { error: discountResult.error },
         { status: 400 }
       );
+    }
+
+    // Session 82 Phase D — post-cutover enforcement: once accounting is
+    // initialized, direct stock edits are rejected (use /admin/inventory
+    // adjustments instead). Non-stock product editing is untouched.
+    const stockGuard = await assertNoDirectStockChange(id, {
+      stock: prepared.hasVariants ? undefined : body.stock,
+      variants: prepared.hasVariants ? prepared.variants : undefined,
+    });
+    if (!stockGuard.ok) {
+      return NextResponse.json({ error: stockGuard.error }, { status: 400 });
     }
 
     const update: Record<string, unknown> = {

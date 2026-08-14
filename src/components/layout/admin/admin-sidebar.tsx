@@ -25,6 +25,7 @@ import {
   MessageSquareText,
   Bell,
   BookOpenCheck,
+  Boxes,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,12 @@ const navItems = [
     title: "خریدها",
     href: "/admin/purchases",
     icon: FileUp,
+  },
+  {
+    // Session 82 Phase D — inventory adjustments + movement ledger + FIFO layers.
+    title: "انبار",
+    href: "/admin/inventory",
+    icon: Boxes,
   },
   {
     title: "صفحه اصلی",

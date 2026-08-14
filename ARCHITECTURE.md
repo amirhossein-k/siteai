@@ -115,6 +115,9 @@ Telegram (fire-and-forget):
 | `/api/admin/purchases/[id]` | GET, PATCH | admin | Purchase detail (incl. items with ordered/received/outstanding + receipts history) · PATCH: `action: order` (draft→ordered), update draft, `action: cancel` (draft/ordered only — never destroys already-received inventory/layers). Malformed ObjectId → 400 |
 | `/api/admin/purchases/[id]/receive` | POST | admin | **The only inventory-creating operation:** partial receiving per item (qty ≥1 ≤ outstanding, over-receive → 409 with no partial state), creates exact FIFO cost layers (unit cost from the PurchaseItem, never current supplierPrice) + append-only `receipt` InventoryMovements + atomic stock increments via stockVersion; **idempotent via per-receipt client `key`** (same-key retry → already-applied, no double stock/layers; concurrent duplicate-key claim → retry) |
 | `/api/admin/purchases/[id]/pay` | POST | admin | Record `amountPaid` + derive `paymentStatus` (unpaid/partial/paid). Financially separate from receiving — **never touches stock or cost layers** |
+| `/api/admin/inventory/adjustments` | POST | admin | **The single audited path for stock changes outside the existing flows (Session 82 Phase D):** `applyInventoryAdjustment()` — product/variantId, signed quantity delta (never below 0), unitCost, **mandatory reason** + notes; single-document atomic stockVersion update; **exactly-once via unique `sourceRef` movement index + `exists()` pre-check** (duplicate/retry → no double adjustment); positive → new FIFO layer at the CONFIRMED cost (never silently supplierPrice), negative → FIFO layers consumed oldest-first (fail-safe on insufficient layers, no partial mutation); malformed ids → 400, insufficient stock → 409; `INVENTORY_WRITE_LIMIT` 30/actor/15min |
+| `/api/admin/inventory/movements` | GET | admin | Append-only ledger view — filters: product, variant, type, sourceRef, date range, search, pagination; enough for «چه چیزی / چه زمانی / چقدر / با چه بهایی / به چه دلیل / توسط چه کسی / منبع»; no customer PII |
+| `/api/admin/inventory/layers` | GET | admin | Active FIFO cost layers — product, variant, remaining qty, unitCost, total layer value (remaining × unitCost), acquiredAt, source/ref; fully-consumed layers remain auditable via movements |
 
 ### Public Supplier Application Routes (Session 67)
 | Route | Methods | Auth | Description |
@@ -202,7 +205,7 @@ Telegram (fire-and-forget):
 
 ## 7. Database Schema
 
-### Collections (17 total — core subset below; full catalog + key fields in PROJECT_STATE.md)
+### Collections (20 total — core subset below; full catalog + key fields in PROJECT_STATE.md)
 | Collection | Key Fields | Notes |
 |------------|-----------|-------|
 | **User** | name, phone, passwordHash (optional — OTP), role, supplier, address, isActive, **tokenVersion** | role: customer/supplier/admin |
@@ -211,6 +214,7 @@ Telegram (fire-and-forget):
 | **SupplierOrder** | order ref, supplier ref, items[], amountOwed, status, isPaidOut, timestamps | Per-supplier sub-orders — created ONLY for consignment-sourcing lines (Phase C); purchased-sourcing lines pay the supplier via purchases instead |
 | **CustomerConversation** | customer (ref), order (ref), supplierOrder (ref), supplier (ref), product (optional), category, subject, status (open/pending/resolved/closed), customerUnread, staffUnread, lastMessage*, messages[], resolvedAt, closedAt | Order-linked support (Session 68); one active conversation per supplier-order (unique partial index) |
 | **PurchaseOrder** | number (P-YYYYMMDD-NNN), supplier (ref), purchaseDate, reference, notes, status (draft/ordered/partially_received/received/cancelled), subtotal, discount, additionalCosts, total, paymentStatus (unpaid/partial/paid), amountPaid, items[] (product ref, variantId, quantity, receivedQuantity, unitCost, lineTotal), receipts[] (idempotency key, itemId, quantity, receivedAt, receivedBy), createdBy, cancelledAt/By/Reason | Procurement (Session 82 Phase B). **Only receiving creates stock + FIFO cost layers + receipt movements**; partial + idempotent receiving; consignment products rejected |
+| **InventoryMovement** | product (ref), variantId, type (opening_balance/receipt/sale/return_restock/cancellation_restock/purchase_return/adjustment/sourcing_change), quantity (signed), unitCost, totalCost, sourceRef, sourceType, description, createdBy, createdAt | Append-only immutable audit ledger (Session 82 Phase C/D); unique partial index `{sourceRef} where $gt: ""` — the original `$ne` form never built (MongoDB limitation), fixed + rebuilt unique; `Product.stock` stays the fast cache, this is the historical source of truth |
 | **Category** | name, slug, isActive | Simple categorization |
 | **Supplier** | user ref, businessName, contactPhone, bankAccount, balance, **telegramChatId**, isActive | telegramChatId for notifications |
 | **Notification** | recipient, type[], message, relatedOrder, isRead, **sentToTelegram** | In-app + Telegram tracking |

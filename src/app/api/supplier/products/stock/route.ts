@@ -5,6 +5,7 @@ import { requireRoleOrError, serverError } from "@/lib/auth-utils";
 import Supplier from "@/models/Supplier";
 import Product from "@/models/Product";
 import { setVariantStock } from "@/lib/inventory";
+import { isInventoryInitialized } from "@/lib/inventory-adjustments";
 
 /**
  * POST /api/supplier/products/stock
@@ -77,6 +78,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "محصول یافت نشد یا متعلق به شما نیست" },
         { status: 404 }
+      );
+    }
+
+    // Session 82 Phase D — post-cutover enforcement: once accounting is
+    // initialized, direct variant stock edits are rejected (admin must use
+    // the /admin/inventory adjustment mechanism so the ledger stays complete).
+    if (await isInventoryInitialized()) {
+      return NextResponse.json(
+        {
+          error:
+            "پس از فعال‌شدن حسابداری، تغییر مستقیم موجودی ممکن نیست — مدیر باید از صفحه «انبار» (تعدیل موجودی) استفاده کند",
+        },
+        { status: 400 }
       );
     }
 

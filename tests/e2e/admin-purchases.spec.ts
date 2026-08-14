@@ -44,8 +44,10 @@ const PERSIAN = {
  * products API (consignment by default), then converted to `sourcing:
  * "purchased"` through the accounting init wizard (the only real-API path —
  * the wizard is itself part of Session 82 Phase A). The wizard stamps the
- * GLOBAL accounting config singleton; global-teardown removes it (and the
- * purchase rows + movements) via tests/e2e/helpers/db.ts.
+ * GLOBAL accounting config singleton; this suite's afterAll removes it
+ * immediately (the verify-accounting.js convention) so the post-cutover
+ * stock-edit enforcement never leaks into later specs (global-teardown also
+ * removes it at run end, plus the purchase rows + movements).
  *
  * Desktop chromium only (the mobile project's testMatch excludes this spec).
  */
@@ -124,6 +126,19 @@ test.describe("Admin purchases", () => {
     };
     const row = (body.data ?? []).find((p) => p._id === productId);
     expect(row?.sourcing).toBe("purchased");
+  });
+
+  test.afterAll(async () => {
+    // Restore the pre-run state: delete the GLOBAL accounting config singleton
+    // this journey stamped (the exact convention verify-accounting.js uses at
+    // suite end). Without this, the post-cutover stock-edit enforcement would
+    // leak into every later spec in the run.
+    const { connectDb, disconnectDb, clearAccountingConfig } = await import(
+      "./helpers/db"
+    );
+    await connectDb();
+    await clearAccountingConfig();
+    await disconnectDb();
   });
 
   test("admin creates a draft purchase through the UI", async ({ page }) => {

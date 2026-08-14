@@ -91,9 +91,15 @@ InventoryMovementSchema.index({ type: 1, createdAt: -1 });
 // financial/inventory event that references a source (opening balances,
 // receipts by `receipt-<purchase>-<key>-<item>`, later sales/adjustments).
 // Empty sourceRefs (plain movements without a source) are exempt.
+//
+// NOTE (Session 82 Phase D fix): the filter must be `{ sourceRef: { $gt: "" } }`
+// — MongoDB partial-filter expressions do NOT support $ne/$not, so the
+// original `{ $type: "string", $ne: "" }` made createIndex fail with code 67
+// on every DB (Mongoose logs the autoIndex failure and continues; the
+// receive/adjust exists() pre-checks masked the missing guarantee).
 InventoryMovementSchema.index(
   { sourceRef: 1 },
-  { unique: true, partialFilterExpression: { sourceRef: { $type: "string", $ne: "" } } }
+  { unique: true, partialFilterExpression: { sourceRef: { $gt: "" } } }
 );
 
 export default mongoose.models.InventoryMovement ||

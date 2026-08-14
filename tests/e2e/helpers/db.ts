@@ -60,6 +60,50 @@ export async function disconnectDb(): Promise<void> {
 }
 
 /**
+ * Session 82 Phase D — restore the pre-run state of the GLOBAL accounting
+ * config singleton (`_id: "accounting"`). The accounting-init wizard stamps
+ * it (inventoryInitialized: true) whenever a journey converts a product to
+ * `sourcing: "purchased"` — leaving it stamped would leak the post-cutover
+ * stock-edit enforcement into every later spec in the run (the exact failure
+ * mode that broke product-discount + product-listing-seo). Suites that run
+ * the wizard delete it in `afterAll` — the same convention verify-accounting.js
+ * uses at suite end (and global-teardown uses for the whole run).
+ */
+export async function clearAccountingConfig(): Promise<void> {
+  const db = mongoose.connection.db;
+  if (!db) return;
+  // The config singleton has a STRING _id ("accounting") — type the
+  // collection explicitly so the filter type-checks.
+  await db
+    .collection<{ _id: string }>("accountingconfigs")
+    .deleteMany({ _id: "accounting" });
+}
+
+/**
+ * Session 82 — re-stamp the GLOBAL accounting config singleton (the same
+ * shape the init wizard writes) when a journey's beforeAll recycle-path needs
+ * enforcement back ON after its own previous afterAll cleaned it up. Test-state
+ * setup only — never used by production code.
+ */
+export async function stampAccountingConfig(): Promise<void> {
+  const db = mongoose.connection.db;
+  if (!db) return;
+  await db.collection<{ _id: string }>("accountingconfigs").updateOne(
+    { _id: "accounting" },
+    {
+      $set: {
+        cutoverDate: new Date(),
+        valuationMethod: "fifo",
+        inventoryInitialized: true,
+        initializedAt: new Date(),
+      },
+      $setOnInsert: { _id: "accounting" },
+    },
+    { upsert: true }
+  );
+}
+
+/**
  * Remove every E2E-created row whose identifier starts with `prefix`.
  *
  * ObjectId `_id` fields CANNOT be regex-matched in MongoDB, so the pattern is:
@@ -250,7 +294,7 @@ export async function clearRateLimiterKeys(): Promise<void> {
   await db.collection<{ _id: string }>("ratelimits").deleteMany({
     _id: {
       $regex:
-        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify|supplier-apply|supplier-application-decide|conversation-create|conversation-msg|purchase-write|accounting-init|accounting-config):",
+        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify|supplier-apply|supplier-application-decide|conversation-create|conversation-msg|purchase-write|inventory-write|accounting-init|accounting-config):",
     },
   });
 }

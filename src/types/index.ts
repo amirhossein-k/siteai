@@ -609,6 +609,8 @@ export interface AdminProduct {
   supplier: { _id: string; businessName: string } | string | null;
   supplierPrice: number;
   price: number;
+  /** Session 82 Phase A/B — sourcing mode (consignment | purchased). */
+  sourcing?: string;
   /** Admin-only stored discount config (absent on pre-discount products). */
   discount?: ProductDiscount | null;
   stock: number;
@@ -920,6 +922,54 @@ export interface SupplierOrder {
   isPaidOut: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+// --- Session 82 Phase D — inventory ledger views ---
+export type InventoryMovementType =
+  | "opening_balance"
+  | "receipt"
+  | "sale"
+  | "return_restock"
+  | "cancellation_restock"
+  | "purchase_return"
+  | "adjustment"
+  | "sourcing_change";
+
+export interface InventoryMovementView {
+  _id: string;
+  product: { _id: string; name: string; slug: string } | string;
+  variantId?: string | null;
+  type: InventoryMovementType;
+  /** Signed quantity (+receipt / −sale). */
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+  sourceRef: string;
+  description: string;
+  createdBy?: { _id: string; name: string } | string | null;
+  createdAt: string;
+}
+
+export interface InventoryLayerRow {
+  productId: string;
+  productName: string;
+  slug: string;
+  variantId: string | null;
+  variantSku: string;
+  variantLabel: string;
+  qty: number;
+  remaining: number;
+  unitCost: number;
+  value: number;
+  acquiredAt: string;
+  source: "opening" | "receipt" | "adjustment";
+  ref: string;
+}
+
+export interface InventoryAdjustmentResponse {
+  idempotent: boolean;
+  movement: InventoryMovementView;
+  product: { _id: string; stock: number };
 }
 
 // ============================================================

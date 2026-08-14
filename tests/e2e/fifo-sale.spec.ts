@@ -17,7 +17,10 @@ import { getState, createCategory, createProduct, type E2EState } from "./helper
  * payment.status=paid, which the system only reaches via the payment gateway —
  * the journey marks the fixture order paid directly in the DB (the same
  * state-setup verify-fifo.js uses); the refund itself is exercised through the
- * real admin UI.
+ * real admin UI. The wizard stamps the GLOBAL accounting config singleton;
+ * this suite's afterAll removes it immediately (the verify-accounting.js
+ * convention) so the post-cutover stock-edit enforcement never leaks into
+ * later specs (global-teardown also removes it at run end).
  *
  * Desktop chromium only (the mobile project's testMatch excludes this spec).
  */
@@ -135,6 +138,19 @@ test.describe("FIFO sale + refund", () => {
     });
     expect(rec.status()).toBe(200);
     await dDb();
+  });
+
+  test.afterAll(async () => {
+    // Restore the pre-run state: delete the GLOBAL accounting config singleton
+    // this journey stamped (the exact convention verify-accounting.js uses at
+    // suite end). Without this, the post-cutover stock-edit enforcement would
+    // leak into every later spec in the run.
+    const { connectDb, disconnectDb, clearAccountingConfig } = await import(
+      "./helpers/db"
+    );
+    await connectDb();
+    await clearAccountingConfig();
+    await disconnectDb();
   });
 
   test("customer buys purchased stock → FIFO layer consumed, no supplier payout", async ({
