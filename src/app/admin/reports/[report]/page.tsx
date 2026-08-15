@@ -20,6 +20,7 @@ import {
   SummaryCards,
   summaryCardsFromSummary,
   purchaseSummaryCardsFromSummary,
+  expenseSummaryCardsFromSummary,
 } from "@/components/reports/summary-cards";
 import {
   buildReportQuery,
@@ -149,9 +150,13 @@ export default function ReportDetailPage() {
                     ? purchaseSummaryCardsFromSummary(
                         (data as ReportEnvelope<Record<string, unknown>>).summary
                       )
-                    : summaryCardsFromSummary(
-                        (data as ReportEnvelope<Record<string, unknown>>).summary
-                      )
+                    : report === "expenses"
+                      ? expenseSummaryCardsFromSummary(
+                          (data as ReportEnvelope<Record<string, unknown>>).summary
+                        )
+                      : summaryCardsFromSummary(
+                          (data as ReportEnvelope<Record<string, unknown>>).summary
+                        )
                 }
               />
               <Card>

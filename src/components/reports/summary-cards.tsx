@@ -9,6 +9,8 @@ import {
   TrendingDown,
   Wallet,
   Ban,
+  ReceiptText,
+  XCircle,
 } from "lucide-react";
 import { formatPrice } from "@/lib/utils";
 import type { ReportSummary } from "@/types";
@@ -119,6 +121,48 @@ export function purchaseSummaryCardsFromSummary(
       value: money(s.outstandingAmount),
       hint: "مبلغ پرداخت‌نشده",
       icon: Ban,
+    },
+  ];
+}
+
+/**
+ * Expense-labeled summary cards (Session 82 Phase E). Only NON-void expenses
+ * count toward the totals; the voided figure is shown as an informational
+ * audit line (never included in operating totals).
+ */
+export function expenseSummaryCardsFromSummary(
+  s: ReportSummary
+): SummaryCardItem[] {
+  return [
+    {
+      title: "تعداد هزینه‌ها",
+      value: count(s.orders),
+      hint: "هزینه‌های غیرباطل",
+      icon: ReceiptText,
+    },
+    {
+      title: "جمع هزینه‌های عملیاتی",
+      value: money(s.grossSales),
+      hint: "فقط هزینه‌های غیرباطل",
+      icon: Wallet,
+    },
+    {
+      title: "پرداخت‌شده",
+      value: money(s.paidAmount),
+      hint: "از کل هزینه‌ها",
+      icon: TrendingDown,
+    },
+    {
+      title: "در انتظار پرداخت",
+      value: money(s.pendingAmount),
+      hint: `معوق: ${money(s.outstandingAmount)}`,
+      icon: Ban,
+    },
+    {
+      title: "باطل‌شده",
+      value: money(s.refunds),
+      hint: `${count(s.refundedOrders)} مورد — در مجموع‌ها لحاظ نمی‌شود`,
+      icon: XCircle,
     },
   ];
 }

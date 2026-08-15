@@ -332,7 +332,13 @@ async function run() {
     assert(byKey.net.amount === 5450, "pnl net");
     assert(byKey.cogs.amount === -2300, "pnl cogs");
     assert(byKey.grossProfit.amount === 3150, "pnl profit");
-    assert(byKey.netProfit.unavailable === true, "net profit must be unavailable");
+    // Session 82 Phase E: net profit = gross profit − operating expenses. This
+    // suite records no expenses, so operatingExpenses = 0 and netProfit equals
+    // grossProfit — it is NO LONGER flagged unavailable (the expense ledger is
+    // authoritative; a real zero is not a fake zero).
+    assert(byKey.operatingExpenses.amount === 0, "pnl operating expenses 0");
+    assert(byKey.netProfit.unavailable === undefined, "net profit is available");
+    assert(byKey.netProfit.amount === 3150, "pnl net profit = gross profit (no expenses)");
     assert(byKey.inventory.amount > 0, "inventory value present");
     console.log("\n      margin=" + byKey.margin.percent);
   });

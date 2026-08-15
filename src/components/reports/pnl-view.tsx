@@ -44,6 +44,11 @@ export function PnlView({ data }: { data: ProfitLossReport }) {
             سود ناخالص نسبت به دوره قبل: {changeLabel(change.grossProfit)}
           </span>
         )}
+        {change.netProfit !== null && change.netProfit !== undefined && (
+          <span className="rounded-lg bg-muted px-2 py-1">
+            سود خالص نسبت به دوره قبل: {changeLabel(change.netProfit)}
+          </span>
+        )}
         {change.orders !== null && change.orders !== undefined && (
           <span className="rounded-lg bg-muted px-2 py-1">
             سفارش‌ها نسبت به دوره قبل: {changeLabel(change.orders)}
@@ -109,9 +114,11 @@ export function PnlView({ data }: { data: ProfitLossReport }) {
       </div>
 
       <p className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-        بهای تمام‌شده از اسنپ‌شات قیمت خرید (supplierPrice) هر اقلام سفارش محاسبه
-        می‌شود. مالیات و هزینه‌های عملیاتی در این سیستم ثبت نمی‌شوند؛ بنابراین
-        «سود خالص» در دسترس نیست.
+        بهای تمام‌شده از اسنپ‌شات FIFO هر اقلام سفارش (fifoUnitCost) یا قیمت خرید
+        (supplierPrice) محاسبه می‌شود. سود خالص = سود ناخالص − هزینه‌های عملیاتی
+        ثبت‌شده در دفتر هزینه‌ها (هزینه‌های باطل‌شده لحاظ نمی‌شوند). مالیات و هزینه
+        ارسال ثبت نمی‌شوند؛ اگر هزینه‌ای در بازه ثبت نشده باشد، سود خالص برابر سود
+        ناخالص است.
       </p>
     </div>
   );

@@ -256,6 +256,10 @@ export async function cleanupByPrefix(prefix: string): Promise<void> {
     );
   }
 
+  // Session 82 Phase E — expenses carry the run prefix in their description
+  // (the UI description field embeds it), so they are resolved directly.
+  deletes.push(db.collection("expenses").deleteMany({ description: { $regex: re } }));
+
   // Session 82 — the accounting-init wizard upserts the GLOBAL `accounting`
   // config singleton when the journey converts a product to `sourcing:
   // purchased`. The E2E run overwrote/stamped it, so teardown restores the
@@ -294,7 +298,7 @@ export async function clearRateLimiterKeys(): Promise<void> {
   await db.collection<{ _id: string }>("ratelimits").deleteMany({
     _id: {
       $regex:
-        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify|supplier-apply|supplier-application-decide|conversation-create|conversation-msg|purchase-write|inventory-write|accounting-init|accounting-config):",
+        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify|supplier-apply|supplier-application-decide|conversation-create|conversation-msg|purchase-write|inventory-write|expense-write|accounting-init|accounting-config):",
     },
   });
 }

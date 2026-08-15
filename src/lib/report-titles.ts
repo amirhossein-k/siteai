@@ -10,4 +10,5 @@ export const REPORT_TITLES: Record<string, string> = {
   inventory: "گزارش موجودی",
   pnl: "سود و زیان",
   purchases: "گزارش خرید",
+  expenses: "گزارش هزینه‌ها",
 };

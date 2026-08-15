@@ -183,7 +183,7 @@ function writeSummarySheet(
   // Note about unavailable metrics.
   sheet.mergeCells(`A${r + 1}:B${r + 1}`);
   sheet.getCell(`A${r + 1}`).value =
-    "یادداشت: مالیات و هزینه ارسال ثبت نمی‌شوند؛ سود خالص (پس از هزینه‌ها) در دسترس نیست؛ ارزش موجودی بر اساس بهای تمام‌شده فعلی است.";
+    "یادداشت: مالیات و هزینه ارسال ثبت نمی‌شوند؛ ارزش موجودی بر اساس بهای تمام‌شده فعلی است. سود خالص = سود ناخالص − هزینه‌های عملیاتی ثبت‌شده در دفتر هزینه‌ها.";
   sheet.getCell(`A${r + 1}`).font = { italic: true, size: 9 };
   sheet.getCell(`A${r + 1}`).alignment = { wrapText: true };
 
@@ -308,6 +308,20 @@ const PURCHASES_COLUMNS: Column[] = [
   { header: "جمع کل", key: "total", width: 14, numFmt: MONEY, align: "right" },
   { header: "پرداخت‌شده", key: "amountPaid", width: 14, numFmt: MONEY, align: "right" },
   { header: "مانده", key: "amountOutstanding", width: 14, numFmt: MONEY, align: "right" },
+];
+
+const EXPENSES_COLUMNS: Column[] = [
+  { header: "تاریخ", key: "expenseDate", width: 18 },
+  { header: "دسته‌بندی", key: "categoryLabel", width: 22 },
+  { header: "شرح", key: "description", width: 40 },
+  { header: "مبلغ (تومان)", key: "amount", width: 15, numFmt: MONEY, align: "right" },
+  { header: "روش پرداخت", key: "paymentMethodLabel", width: 16 },
+  { header: "مرجع", key: "reference", width: 20 },
+  { header: "دریافت‌کننده", key: "payee", width: 20 },
+  { header: "وضعیت", key: "statusLabel", width: 14 },
+  { header: "ثبت توسط", key: "createdByName", width: 18 },
+  { header: "باطل در", key: "voidedAt", width: 18 },
+  { header: "دلیل باطل‌سازی", key: "voidReason", width: 30 },
 ];
 
 const INVENTORY_COLUMNS: Column[] = [
@@ -439,6 +453,17 @@ export function buildReportWorkbook<T>(
       );
       return workbook;
     }
+    case "expenses": {
+      writeExpenseSummarySheet(workbook, filters, data.summary);
+      writeDetailSheet(
+        workbook,
+        "هزینه‌ها",
+        EXPENSES_COLUMNS,
+        flattenRows(data.rows as Array<Record<string, unknown>>, EXPENSES_COLUMNS),
+        data.totals
+      );
+      return workbook;
+    }
     default:
       return workbook;
   }
@@ -500,6 +525,57 @@ function writePurchaseSummarySheet(
   sheet.mergeCells(`A${r + 1}:B${r + 1}`);
   sheet.getCell(`A${r + 1}`).value =
     "یادداشت: این گزارش خرید/تدارکات است — هیچ مبلغی به‌عنوان سود فروش یا COGS محسوب نمی‌شود.";
+  sheet.getCell(`A${r + 1}`).font = { italic: true, size: 9 };
+  sheet.getCell(`A${r + 1}`).alignment = { wrapText: true };
+
+  return sheet;
+}
+
+/** Expense-labeled summary sheet (Session 82 Phase E) — expense KPIs. */
+function writeExpenseSummarySheet(
+  workbook: ExcelJS.Workbook,
+  filters: ReportFilters,
+  summary: ReportSummary
+): ExcelJS.Worksheet {
+  const sheet = workbook.addWorksheet("خلاصه");
+  sheet.columns = [{ width: 42 }, { width: 20 }];
+
+  sheet.mergeCells("A1:B1");
+  const titleCell = sheet.getCell("A1");
+  titleCell.value = REPORT_TITLES.expenses;
+  titleCell.font = { bold: true, size: 14 };
+  sheet.mergeCells("A2:B2");
+  sheet.getCell("A2").value = `بازه گزارش: ${filters.from ?? "—"} تا ${filters.to ?? "—"}`;
+  sheet.getCell("A2").font = { italic: true };
+  sheet.mergeCells("A3:B3");
+  sheet.getCell("A3").value = `تولید شده در: ${iso(new Date().toISOString())}`;
+  sheet.getCell("A3").font = { italic: true };
+
+  const rows: KpiValue[] = [
+    kpi("تعداد هزینه‌ها (غیرباطل)", summary.orders, "count"),
+    kpi("جمع هزینه‌های عملیاتی", summary.grossSales, "money"),
+    kpi("پرداخت‌شده", summary.paidAmount, "money"),
+    kpi("در انتظار پرداخت", summary.pendingAmount, "money"),
+    kpi("باطل‌شده (جمع)", summary.refunds, "money"),
+    kpi("باطل‌شده (تعداد)", summary.refundedOrders, "count"),
+  ];
+
+  let r = 5;
+  for (const item of rows) {
+    sheet.getCell(`A${r}`).value = item.label;
+    const vCell = sheet.getCell(`B${r}`);
+    if (item.kind === "number") {
+      vCell.value = item.value;
+      vCell.numFmt = item.numFmt;
+    } else {
+      vCell.value = item.value;
+    }
+    r++;
+  }
+
+  sheet.mergeCells(`A${r + 1}:B${r + 1}`);
+  sheet.getCell(`A${r + 1}`).value =
+    "یادداشت: هزینه‌های باطل‌شده در مجموع‌ها محاسبه نمی‌شوند؛ هر مبلغ دقیقاً همان است که ثبت شده — هیچ هزینه‌ای تخمین زده نمی‌شود (مثلاً کارمزد درگاه فقط با ثبت دستی به‌عنوان هزینه محاسبه می‌شود).";
   sheet.getCell(`A${r + 1}`).font = { italic: true, size: 9 };
   sheet.getCell(`A${r + 1}`).alignment = { wrapText: true };
 

@@ -69,12 +69,12 @@ test.describe("Admin reports", () => {
     // P&L statement renders with its headline rows.
     await expect(page.getByText("سود و زیان", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("بهای تمام‌شده (COGS)").first()).toBeVisible();
-    // Net profit is honest: row label present, amount shows «نامشخص», and the
-    // footnote explains COGS-only (no tax/expense data) — never fabricated.
+    // Session 82 Phase E — net profit is now real: the operating-expenses and
+    // net-profit rows render (with the seeded expense fixture they equal
+    // gross profit − operating expenses). No «در دسترس نیست» note anymore.
     await expect(page.getByText("سود خالص", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("نامشخص").first()).toBeVisible();
     await expect(
-      page.getByText(/سود خالص. در دسترس نیست/).first()
+      page.getByText("هزینه‌های عملیاتی", { exact: true }).first()
     ).toBeVisible();
 
     // The seeded order appears in the daily chart's tooltip-free bars

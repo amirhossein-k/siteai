@@ -36,7 +36,14 @@ export async function GET(
 
   const parsed = parseReportFilters(
     Object.fromEntries(req.nextUrl.searchParams.entries()),
-    { kind: report === "purchases" ? "purchase" : "order" }
+    {
+      kind:
+        report === "purchases"
+          ? "purchase"
+          : report === "expenses"
+            ? "expense"
+            : "order",
+    }
   );
   if ("error" in parsed) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });

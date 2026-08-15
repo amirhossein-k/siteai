@@ -1218,6 +1218,10 @@ export interface ReportFilters {
   orderStatus?: string;
   /** Purchase status (draft/ordered/…/cancelled) — only for the purchases report. */
   purchaseStatus?: string;
+  /** Expense status (paid/pending/void) — only for the expenses report (Session 82 Phase E). */
+  expenseStatus?: string;
+  /** Expense category enum — only for the expenses report (Session 82 Phase E). */
+  expenseCategory?: string;
   paymentStatus?: string;
   paymentMethod?: string;
   coupon?: string;
@@ -1406,6 +1410,8 @@ export interface ProfitLossReport {
   change: {
     netSales: number | null;
     grossProfit: number | null;
+    /** Net profit change (Session 82 Phase E — requires the expense ledger). */
+    netProfit: number | null;
     orders: number | null;
   };
 }
@@ -1541,6 +1547,26 @@ export interface PurchaseOrderView {
 }
 
 /** Row of the purchases report (Session 82 Phase B). */
+/** Expense-ledger line (Session 82 Phase E) — amounts are exactly what the admin recorded. */
+export interface ExpenseReportRow {
+  _id: string;
+  expenseDate: string;
+  category: string;
+  categoryLabel: string;
+  description: string;
+  amount: number;
+  paymentMethod: string;
+  paymentMethodLabel: string;
+  reference: string;
+  payee: string;
+  status: string;
+  statusLabel: string;
+  createdByName: string;
+  voidedAt: string | null;
+  voidedByName: string;
+  voidReason: string;
+}
+
 export interface PurchasesReportRow {
   purchaseId: string;
   number: string;

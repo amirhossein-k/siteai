@@ -28,13 +28,23 @@
  *    approximation (current stock × CURRENT supplierPrice — documented
  *    limitation: revaluing such a product's supplierPrice revalues all its
  *    remaining unlayered stock).
- *  - Expenses are not tracked → net profit (beyond gross profit) is N/A.
+ *  - Operating expenses (Session 82 Phase E) come from the Expense ledger:
+ *    P&L operating expenses = Σ non-void expense amounts in the window and
+ *    Net Profit = Gross Profit − Operating Expenses. Voids are audited
+ *    (voidReason required, rows never deleted) and excluded from totals.
+ *    Nothing is estimated — a gateway fee, for example, is only counted when
+ *    the admin records it as an expense (category gateway_fees).
  */
 
 import mongoose from "mongoose";
 import Order from "@/models/Order";
 import Product from "@/models/Product";
 import PurchaseOrder from "@/models/PurchaseOrder";
+import Expense, {
+  EXPENSE_CATEGORY_LABELS,
+  EXPENSE_PAYMENT_METHOD_LABELS,
+  EXPENSE_STATUS_LABELS,
+} from "@/models/Expense";
 import {
   layersValue,
   type InventoryCostLayer,
@@ -55,6 +65,7 @@ import type {
   CouponReportRow,
   CustomerSalesRow,
   DashboardReport,
+  ExpenseReportRow,
   InventoryReportRow,
   OrdersReportRow,
   PaymentsReportRow,
@@ -1447,18 +1458,25 @@ export async function getProfitLossReport(
     from: dateParam(prevFrom),
     to: dateParam(new Date(prevTo.getTime() - 1)),
   };
-  const [current, previous, inventory] = await Promise.all([
+  const [current, previous, inventory, currentExpenses, prevExpenses] = await Promise.all([
     computeSummary(await buildOrderMatch(filters)).then((s) => withRange(s, filters)),
     computeSummary(await buildOrderMatch(prevFilters)).then((s) =>
       withRange(s, prevFilters)
     ),
     computeInventoryValue(),
+    sumNonVoidExpenses(from, to),
+    sumNonVoidExpenses(prevFrom, prevTo),
   ]);
 
   const { inventoryValue } = inventory;
-  const rows = buildStatementRows(current, inventoryValue);
+  const rows = buildStatementRows(current, inventoryValue, currentExpenses);
   const prevRows =
-    previous.orders > 0 ? buildStatementRows(previous, inventoryValue) : null;
+    previous.orders > 0
+      ? buildStatementRows(previous, inventoryValue, prevExpenses)
+      : null;
+
+  const currentNetProfit = current.grossProfit - currentExpenses;
+  const prevNetProfit = previous.grossProfit - prevExpenses;
 
   return {
     current: { summary: current, rows },
@@ -1475,6 +1493,13 @@ export async function getProfitLossReport(
               Math.abs(previous.grossProfit)
             )
           : null,
+      netProfit:
+        prevNetProfit !== 0
+          ? safePct(
+              currentNetProfit - prevNetProfit,
+              Math.abs(prevNetProfit)
+            )
+          : null,
       orders:
         previous.orders > 0
           ? Math.round(((current.orders - previous.orders) / previous.orders) * 1000) / 10
@@ -1483,13 +1508,29 @@ export async function getProfitLossReport(
   };
 }
 
+/** Σ non-void expense amounts in [from, to) — the P&L operating-expense line. */
+async function sumNonVoidExpenses(from: Date, to: Date): Promise<number> {
+  const [agg] = await Expense.aggregate<{ total: number }>([
+    {
+      $match: {
+        expenseDate: { $gte: from, $lt: to },
+        status: { $ne: "void" },
+      },
+    },
+    { $group: { _id: null, total: { $sum: "$amount" } } },
+  ]);
+  return roundToman(agg?.total ?? 0);
+}
+
 /** Build the P&L statement lines (amounts + % of gross, then % of net). */
 export function buildStatementRows(
   summary: ReportSummary,
-  inventoryValue: number
+  inventoryValue: number,
+  operatingExpenses = 0
 ): Array<{ key: string; label: string; amount: number | null; percent: number | null; unavailable?: boolean }> {
   const gross = summary.grossSales;
   const net = summary.netSales;
+  const netProfit = summary.grossProfit - operatingExpenses;
   return [
     { key: "gross", label: "فروش ناخالص", amount: gross, percent: gross > 0 ? 100 : null },
     { key: "productDiscount", label: "تخفیف محصول", amount: -summary.productDiscount, percent: safePct(summary.productDiscount, gross) },
@@ -1499,7 +1540,8 @@ export function buildStatementRows(
     { key: "grossProfit", label: "سود ناخالص", amount: summary.grossProfit, percent: safePct(summary.grossProfit, net) },
     { key: "margin", label: "حاشیه سود ناخالص", amount: null, percent: summary.grossMargin, unavailable: summary.grossMargin === null },
     { key: "refunds", label: "بازپرداخت‌ها", amount: -summary.refunds, percent: safePct(summary.refunds, net) },
-    { key: "netProfit", label: "سود خالص", amount: null, percent: null, unavailable: true },
+    { key: "operatingExpenses", label: "هزینه‌های عملیاتی", amount: -operatingExpenses, percent: safePct(operatingExpenses, net) },
+    { key: "netProfit", label: "سود خالص", amount: netProfit, percent: safePct(netProfit, net) },
     { key: "inventory", label: "ارزش موجودی (به بهای تمام‌شده)", amount: inventoryValue, percent: null },
   ];
 }
@@ -1750,6 +1792,118 @@ export async function getPurchasesReport(filters: ReportFilters) {
   };
 }
 
+/** Expense-ledger report (Session 82 Phase E) — non-void rows + window totals. */
+export async function getExpensesReport(filters: ReportFilters) {
+  const { from, to } = windowDates(filters);
+  const match: Record<string, unknown> = {
+    expenseDate: { $gte: from, $lt: to },
+  };
+  if (filters.expenseStatus) match.status = filters.expenseStatus;
+  if (filters.expenseCategory) match.category = filters.expenseCategory;
+  if (filters.q) {
+    const needle = escapeRegExp(filters.q);
+    match.$or = [
+      { description: new RegExp(needle, "i") },
+      { payee: new RegExp(needle, "i") },
+      { reference: new RegExp(needle, "i") },
+    ];
+  }
+
+  const docs = await Expense.find(match)
+    .populate("createdBy", "name")
+    .populate("voidedBy", "name")
+    .sort({ expenseDate: -1, createdAt: -1 })
+    .lean();
+
+  const rows: ExpenseReportRow[] = docs.map((e) => {
+    const createdBy = e.createdBy as unknown as
+      | { name?: string }
+      | string
+      | null;
+    return {
+      _id: String(e._id),
+      expenseDate: e.expenseDate
+        ? new Date(e.expenseDate as Date).toISOString()
+        : "",
+      category: String(e.category || ""),
+      categoryLabel:
+        (EXPENSE_CATEGORY_LABELS as Record<string, string>)[String(e.category || "")] ??
+        String(e.category || ""),
+      description: String(e.description || ""),
+      amount: roundToman(Number(e.amount || 0)),
+      paymentMethod: e.paymentMethod ? String(e.paymentMethod) : "",
+      paymentMethodLabel: e.paymentMethod
+        ? ((EXPENSE_PAYMENT_METHOD_LABELS as Record<string, string>)[
+            String(e.paymentMethod)
+          ] ?? String(e.paymentMethod))
+        : "",
+      reference: String(e.reference || ""),
+      payee: String(e.payee || ""),
+      status: String(e.status || "pending"),
+      statusLabel:
+        (EXPENSE_STATUS_LABELS as Record<string, string>)[String(e.status || "")] ??
+        String(e.status || ""),
+      createdByName:
+        typeof createdBy === "object" && createdBy ? createdBy.name || "" : "",
+      voidedAt: e.voidedAt ? new Date(e.voidedAt as Date).toISOString() : null,
+      voidedByName: "",
+      voidReason: String(e.voidReason || ""),
+    };
+  });
+
+  // Totals count ONLY non-void expenses (voided rows stay visible but never
+  // affect money) — the same accounting rule as the P&L operating-expense line.
+  const active = rows.filter((r) => r.status !== "void");
+  const totals: Record<string, number> = {
+    amount: active.reduce((a, r) => a + r.amount, 0),
+    count: active.length,
+    voidedAmount: rows.filter((r) => r.status === "void").reduce((a, r) => a + r.amount, 0),
+    voidedCount: rows.filter((r) => r.status === "void").length,
+  };
+
+  const summary: ReportSummary = withRange(
+    {
+      from: "",
+      to: "",
+      preset: null,
+      orders: totals.count,
+      unitsSold: 0,
+      grossSales: totals.amount,
+      productDiscount: totals.voidedAmount,
+      couponDiscount: 0,
+      netSales: totals.amount,
+      cogs: 0,
+      grossProfit: 0,
+      grossMargin: null,
+      refundedOrders: totals.voidedCount,
+      refunds: totals.voidedAmount,
+      paidAmount: active.filter((r) => r.status === "paid").reduce((a, r) => a + r.amount, 0),
+      pendingAmount: active.filter((r) => r.status === "pending").reduce((a, r) => a + r.amount, 0),
+      outstandingAmount: active.filter((r) => r.status === "pending").reduce((a, r) => a + r.amount, 0),
+      avgOrderValue: 0,
+      inventoryValue: 0,
+      inventoryCost: 0,
+    },
+    filters
+  );
+
+  const fullCount = rows.length;
+  const bounded = rows.slice(0, EXPORT_MAX_ROWS);
+  const start = (filters.page - 1) * filters.limit;
+  return {
+    report: "expenses",
+    filters,
+    summary,
+    rows: bounded.slice(start, start + filters.limit),
+    total: fullCount,
+    totals,
+    page: filters.page,
+    limit: filters.limit,
+    truncated: fullCount > EXPORT_MAX_ROWS,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
 /** Registry used by the API routes + UI (valid report slugs). */
 export const REPORT_SLUGS = [
   "dashboard",
@@ -1762,6 +1916,7 @@ export const REPORT_SLUGS = [
   "inventory",
   "pnl",
   "purchases",
+  "expenses",
 ] as const;
 
 export type ReportSlug = (typeof REPORT_SLUGS)[number];
@@ -1788,6 +1943,8 @@ export async function getReportData(slug: ReportSlug, filters: ReportFilters) {
       return getProfitLossReport(filters);
     case "purchases":
       return getPurchasesReport(filters);
+    case "expenses":
+      return getExpensesReport(filters);
   }
 }
 

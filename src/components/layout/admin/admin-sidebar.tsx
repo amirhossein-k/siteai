@@ -26,6 +26,7 @@ import {
   Bell,
   BookOpenCheck,
   Boxes,
+  ReceiptText,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -68,6 +69,12 @@ const navItems = [
     title: "انبار",
     href: "/admin/inventory",
     icon: Boxes,
+  },
+  {
+    // Session 82 Phase E — expense ledger (audited voids, feeds P&L net profit).
+    title: "هزینه‌ها",
+    href: "/admin/expenses",
+    icon: ReceiptText,
   },
   {
     title: "صفحه اصلی",
@@ -168,7 +175,11 @@ export function AdminSidebar({ variant = "desktop" }: AdminSidebarProps) {
         "w-64 border-l bg-card",
         variant === "desktop"
           ? "hidden lg:flex lg:flex-col"
-          : "flex h-full flex-col overflow-y-auto"
+          // The mobile drawer must keep the store-link/logout footer pinned
+          // (Session 82 Phase E — the nav grew past the viewport fold, which
+          // pushed «خروج» below the drawer and broke the mobile logout click;
+          // only the nav scrolls, exactly like the desktop column).
+          : "flex h-full flex-col overflow-hidden"
       )}
     >
       {/* Logo */}
@@ -183,7 +194,14 @@ export function AdminSidebar({ variant = "desktop" }: AdminSidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 p-4">
+      <nav
+        className={cn(
+          "flex-1 space-y-1 p-4",
+          // Mobile: only the nav scrolls so the store-link/logout footer stays
+          // pinned (Session 82 Phase E — the 22-item nav outgrew the drawer).
+          variant === "mobile" && "min-h-0 overflow-y-auto"
+        )}
+      >
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;

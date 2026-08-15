@@ -179,6 +179,12 @@ export const INVENTORY_WRITE_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/** Expense writes (create/update/pay/void): 60 per actor per 15 minutes (Session 82 Phase E). */
+export const EXPENSE_WRITE_LIMIT: RateLimitConfig = {
+  max: 60,
+  windowMs: 15 * 60 * 1000,
+};
+
 // ============================================================
 // Core
 // ============================================================

@@ -72,6 +72,7 @@ const suites = [
   "verify-purchases", // Session 82 Phase B — procurement (PurchaseOrder CRUD, order/receive/pay/cancel, partial+full receiving, exact FIFO cost layers + receipt movements, over-receive 409, idempotent retries, consignment rejection, purchases report)
   "verify-fifo", // Session 82 Phase C — FIFO checkout integration (fifoUnitCost snapshots, purchased-vs-consignment payout safety, rollback/refund/cancel layer restoration, concurrency, variant isolation, fail-safe, report COGS + layer-based inventory valuation)
   "verify-inventory", // Session 82 Phase D — inventory adjustments + movement ledger (positive/negative adjustment FIFO layer semantics, exactly-once idempotency, concurrent no-oversell, variant isolation, consignment stock-only, movement/layer APIs, post-cutover direct-stock-edit enforcement, reconciliation)
+  "verify-expenses", // Session 82 Phase E — expense ledger (audited void with required reason, non-void totals, expense report + P&L net profit = grossProfit − operatingExpenses, rate limits)
 ];
 
 // Same env-loading convention as the verify suites (no dotenv dependency):

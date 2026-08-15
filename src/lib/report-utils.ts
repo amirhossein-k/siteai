@@ -56,6 +56,23 @@ export const PURCHASE_STATUSES = [
 /** Purchase payment statuses — the purchases report's payment filter. */
 export const PURCHASE_PAYMENT_STATUSES = ["unpaid", "partial", "paid"] as const;
 
+/** Expense statuses (Session 82 Phase E) — the expenses report's status filter. */
+export const EXPENSE_STATUSES = ["paid", "pending", "void"] as const;
+
+/** Expense categories (Session 82 Phase E) — the expenses report's category filter. */
+export const EXPENSE_CATEGORIES = [
+  "shipping",
+  "packaging",
+  "advertising",
+  "gateway_fees",
+  "rent",
+  "utilities",
+  "salaries",
+  "software",
+  "maintenance",
+  "other",
+] as const;
+
 /** Low-stock threshold — the Product model has no minStock field (documented). */
 export const LOW_STOCK_THRESHOLD = 5;
 
@@ -230,7 +247,7 @@ function parsePaging(
  */
 export function parseReportFilters(
   params: Record<string, string | undefined>,
-  opts?: { kind?: "order" | "purchase" }
+  opts?: { kind?: "order" | "purchase" | "expense" }
 ): { filters: ReportFilters } | { error: string } {
   const rawPreset = params.preset;
   let preset: ReportPreset | null = null;
@@ -270,13 +287,16 @@ export function parseReportFilters(
   }
 
   const isPurchase = opts?.kind === "purchase";
+  const isExpense = opts?.kind === "expense";
   const statusList = isPurchase
     ? PURCHASE_STATUSES
-    : ORDER_STATUSES;
+    : isExpense
+      ? EXPENSE_STATUSES
+      : ORDER_STATUSES;
   const paymentStatusList = isPurchase
     ? PURCHASE_PAYMENT_STATUSES
     : PAYMENT_STATUSES;
-  const statusLabel = isPurchase ? "وضعیت خرید" : "وضعیت سفارش";
+  const statusLabel = isPurchase ? "وضعیت خرید" : isExpense ? "وضعیت هزینه" : "وضعیت سفارش";
   const paymentLabel = isPurchase ? "وضعیت پرداخت خرید" : "وضعیت پرداخت";
 
   const orderStatus = parseBoundedString(params.status, 30);
@@ -284,6 +304,22 @@ export function parseReportFilters(
     return { error: `${statusLabel} نامعتبر است` };
   }
   const purchaseStatus = isPurchase ? orderStatus : undefined;
+  const expenseStatus = isExpense ? orderStatus : undefined;
+
+  // Expenses use an ENUM category (not a product ObjectId) — `category` is
+  // validated against EXPENSE_CATEGORIES and mapped to expenseCategory.
+  const expenseCategoryRaw = parseBoundedString(params.category, 30);
+  let expenseCategory: string | undefined;
+  if (isExpense) {
+    if (
+      expenseCategoryRaw &&
+      !(EXPENSE_CATEGORIES as readonly string[]).includes(expenseCategoryRaw)
+    ) {
+      return { error: "دسته‌بندی هزینه نامعتبر است" };
+    }
+    expenseCategory = expenseCategoryRaw || undefined;
+  }
+
   const paymentStatus = parseBoundedString(params.paymentStatus, 30);
   if (
     paymentStatus &&
@@ -310,8 +346,10 @@ export function parseReportFilters(
       productId: parseOptionalId(params.product),
       categoryId: parseOptionalId(params.category),
       customerId: parseOptionalId(params.customer),
-      orderStatus: isPurchase ? undefined : orderStatus,
+      orderStatus: isPurchase || isExpense ? undefined : orderStatus,
       purchaseStatus,
+      expenseStatus,
+      expenseCategory,
       paymentStatus,
       paymentMethod,
       coupon: parseBoundedString(params.coupon, 50),

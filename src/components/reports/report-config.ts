@@ -224,6 +224,25 @@ export const REPORT_META: Record<string, ReportMeta> = {
       { key: "lastSaleAt", label: "آخرین فروش", format: "date" },
     ],
   },
+  expenses: {
+    title: REPORT_TITLES.expenses,
+    description: "هزینه‌های عملیاتی ثبت‌شده — مبالغ دقیقاً همان است که ثبت شده؛ هزینه‌های باطل‌شده در مجموع‌ها لحاظ نمی‌شوند",
+    filters: { preset: true, status: true, category: true, q: true },
+    totalKeys: ["amount", "count"],
+    columns: [
+      { key: "expenseDate", label: "تاریخ", format: "date" },
+      { key: "categoryLabel", label: "دسته‌بندی" },
+      { key: "description", label: "شرح" },
+      moneyColumn("amount", "مبلغ"),
+      { key: "paymentMethodLabel", label: "روش پرداخت" },
+      { key: "payee", label: "دریافت‌کننده" },
+      { key: "reference", label: "مرجع" },
+      { key: "statusLabel", label: "وضعیت" },
+      { key: "createdByName", label: "ثبت توسط" },
+      { key: "voidedAt", label: "تاریخ باطل‌سازی", format: "date" },
+      { key: "voidReason", label: "دلیل باطل‌سازی" },
+    ],
+  },
 };
 
 export const REPORT_NAV: Array<{ report: string; title: string }> = [
@@ -237,6 +256,7 @@ export const REPORT_NAV: Array<{ report: string; title: string }> = [
   { report: "inventory", title: REPORT_TITLES.inventory },
   { report: "pnl", title: REPORT_TITLES.pnl },
   { report: "purchases", title: REPORT_TITLES.purchases },
+  { report: "expenses", title: REPORT_TITLES.expenses },
 ];
 
 /** Build the canonical query string for a params object (empty values dropped). */

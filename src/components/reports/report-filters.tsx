@@ -10,6 +10,8 @@ import {
   PAYMENT_METHODS,
   PURCHASE_STATUSES,
   PURCHASE_PAYMENT_STATUSES,
+  EXPENSE_STATUSES,
+  EXPENSE_CATEGORIES,
 } from "@/lib/report-utils";
 import type { ReportMeta } from "@/components/reports/report-config";
 import { REPORT_TITLES } from "@/lib/report-titles";
@@ -49,6 +51,27 @@ const PAYMENT_LABELS: Record<string, string> = {
 };
 
 const isPurchaseReport = (meta: ReportMeta) => meta.title === REPORT_TITLES.purchases;
+
+const isExpenseReport = (meta: ReportMeta) => meta.title === REPORT_TITLES.expenses;
+
+const EXPENSE_STATUS_LABELS: Record<string, string> = {
+  paid: "پرداخت شده",
+  pending: "در انتظار پرداخت",
+  void: "باطل شده",
+};
+
+const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
+  shipping: "حمل‌ونقل",
+  packaging: "بسته‌بندی",
+  advertising: "تبلیغات",
+  gateway_fees: "کارمزد درگاه پرداخت",
+  rent: "اجاره",
+  utilities: "قبوض (آب/برق/گاز)",
+  salaries: "حقوق و دستمزد",
+  software: "نرم‌افزار و سرویس‌ها",
+  maintenance: "تعمیر و نگهداری",
+  other: "سایر",
+};
 
 const METHOD_LABELS: Record<string, string> = {
   zarinpal: "زرین‌پال",
@@ -165,11 +188,20 @@ export function ReportFilters({ meta, params, onParamsChange }: ReportFiltersPro
             aria-label="وضعیت"
           >
             <option value="">
-              {isPurchaseReport(meta) ? "وضعیت خرید: همه" : "وضعیت سفارش: همه"}
+              {isPurchaseReport(meta)
+                ? "وضعیت خرید: همه"
+                : isExpenseReport(meta)
+                  ? "وضعیت هزینه: همه"
+                  : "وضعیت سفارش: همه"}
             </option>
-            {(isPurchaseReport(meta) ? PURCHASE_STATUSES : ORDER_STATUSES).map((s) => (
+            {(isPurchaseReport(meta)
+              ? PURCHASE_STATUSES
+              : isExpenseReport(meta)
+                ? EXPENSE_STATUSES
+                : ORDER_STATUSES
+            ).map((s) => (
               <option key={s} value={s}>
-                {STATUS_LABELS[s] ?? s}
+                {isExpenseReport(meta) ? (EXPENSE_STATUS_LABELS[s] ?? s) : (STATUS_LABELS[s] ?? s)}
               </option>
             ))}
           </select>
@@ -211,23 +243,40 @@ export function ReportFilters({ meta, params, onParamsChange }: ReportFiltersPro
           </select>
         )}
 
-        {filters.category && (
-          <select
-            value={params.category ?? ""}
-            onChange={(e) =>
-              e.target.value ? set({ category: e.target.value }) : clear(["category"])
-            }
-            className="h-9 rounded-lg border bg-card px-2 text-sm"
-            aria-label="دسته‌بندی"
-          >
-            <option value="">دسته‌بندی: همه</option>
-            {(categories ?? []).map((c) => (
-              <option key={c._id} value={c._id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        )}
+        {filters.category &&
+          (isExpenseReport(meta) ? (
+            <select
+              value={params.category ?? ""}
+              onChange={(e) =>
+                e.target.value ? set({ category: e.target.value }) : clear(["category"])
+              }
+              className="h-9 rounded-lg border bg-card px-2 text-sm"
+              aria-label="دسته‌بندی هزینه"
+            >
+              <option value="">دسته‌بندی هزینه: همه</option>
+              {EXPENSE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {EXPENSE_CATEGORY_LABELS[c] ?? c}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select
+              value={params.category ?? ""}
+              onChange={(e) =>
+                e.target.value ? set({ category: e.target.value }) : clear(["category"])
+              }
+              className="h-9 rounded-lg border bg-card px-2 text-sm"
+              aria-label="دسته‌بندی"
+            >
+              <option value="">دسته‌بندی: همه</option>
+              {(categories ?? []).map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          ))}
 
         <Button variant="ghost" size="sm" onClick={reset}>
           بازنشانی
