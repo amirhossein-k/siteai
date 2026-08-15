@@ -1,4 +1,4 @@
-name: Regression (47 suites)
+name: Regression (48 suites)
 
 # Session 60 — the full real-API regression (`scripts/run-regression.js`, 33
 # sequential suites) as a NON-gating nightly / on-demand workflow. Session 62

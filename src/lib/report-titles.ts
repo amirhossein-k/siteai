@@ -11,4 +11,5 @@ export const REPORT_TITLES: Record<string, string> = {
   pnl: "سود و زیان",
   purchases: "گزارش خرید",
   expenses: "گزارش هزینه‌ها",
+  accounting: "دفتر حسابداری (V2)",
 };

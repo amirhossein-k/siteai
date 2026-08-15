@@ -73,6 +73,7 @@ const suites = [
   "verify-fifo", // Session 82 Phase C — FIFO checkout integration (fifoUnitCost snapshots, purchased-vs-consignment payout safety, rollback/refund/cancel layer restoration, concurrency, variant isolation, fail-safe, report COGS + layer-based inventory valuation)
   "verify-inventory", // Session 82 Phase D — inventory adjustments + movement ledger (positive/negative adjustment FIFO layer semantics, exactly-once idempotency, concurrent no-oversell, variant isolation, consignment stock-only, movement/layer APIs, post-cutover direct-stock-edit enforcement, reconciliation)
   "verify-expenses", // Session 82 Phase E — expense ledger (audited void with required reason, non-void totals, expense report + P&L net profit = grossProfit − operatingExpenses, rate limits)
+  "verify-accounting-excel", // Session 82 Phase F — accounting Excel V2 (17-sheet Persian workbook, XLSX parse + reconciliation: Σ COGS rows = P&L COGS, net = gross + discounts, FIFO layer value = inventory value, voided-expense exclusion, authz, export rate limit)
 ];
 
 // Same env-loading convention as the verify suites (no dotenv dependency):

@@ -56,11 +56,15 @@ import {
   dateParam,
   EXPORT_MAX_ROWS,
   LOW_STOCK_THRESHOLD,
-  parseDateParam,
   roundToman,
   safePct,
-  startOfUtcDay,
 } from "@/lib/report-utils";
+import {
+  buildLineMatch,
+  buildOrderMatch,
+  escapeRegExp,
+  windowDates,
+} from "@/lib/report-matches";
 import type {
   CouponReportRow,
   CustomerSalesRow,
@@ -76,112 +80,9 @@ import type {
   ReportSummary,
   SalesReportRow,
 } from "@/types";
+import { getAccountingExportData } from "@/lib/accounting-v2";
 
 const { ObjectId } = mongoose.Types;
-
-/** Escape a user string for use inside a RegExp constructor. */
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** Resolve the inclusive-exclusive Mongo window for the filters. */
-function windowDates(filters: ReportFilters): { from: Date; to: Date } {
-  const from = parseDateParam(filters.from ?? "");
-  const to = parseDateParam(filters.to ?? "");
-  return {
-    from: from ?? startOfUtcDay(new Date()),
-    to: to ? addDays(to, 1) : addDays(startOfUtcDay(new Date()), 1),
-  };
-}
-
-/**
- * Build the ORDER-level match: window + order-scoped filters.
- * Non-cancelled by default; an explicit status filter overrides that.
- *
- * With `excludeLineScoped` (used by the sales report), product / category / q
- * are NOT applied here — they are line-scoped (applied after $unwind, so a
- * matching order does not drag its non-matching lines into the report). For
- * the order-level reports (orders/payments/refunds/coupons/customers) those
- * filters keep their whole-order semantics.
- */
-async function buildOrderMatch(
-  filters: ReportFilters,
-  { excludeLineScoped = false }: { excludeLineScoped?: boolean } = {}
-) {
-  const { from, to } = windowDates(filters);
-  const match: Record<string, unknown> = {
-    createdAt: { $gte: from, $lt: to },
-  };
-  if (filters.orderStatus) {
-    match.status = filters.orderStatus;
-  } else {
-    match.status = { $ne: "cancelled" };
-  }
-  if (filters.paymentStatus) match["payment.status"] = filters.paymentStatus;
-  if (filters.paymentMethod) match["payment.method"] = filters.paymentMethod;
-  if (filters.customerId) match.customer = new ObjectId(filters.customerId);
-  if (filters.coupon) {
-    match["discount.code"] = new RegExp(escapeRegExp(filters.coupon), "i");
-  }
-  if (!excludeLineScoped) {
-    if (filters.productId) {
-      match["items.product"] = new ObjectId(filters.productId);
-    }
-    if (filters.categoryId) {
-      match["items.product"] = { $in: await productIdsInCategory(filters.categoryId) };
-    }
-    if (filters.q) {
-      // General search: customer name/phone OR product name (order snapshots)
-      // OR exact order id — one filter works for every report.
-      const needle = escapeRegExp(filters.q);
-      const conditions: Array<Record<string, unknown>> = [];
-      const userMatches = await User.find({
-        $or: [
-          { name: new RegExp(needle, "i") },
-          { phone: new RegExp(needle, "i") },
-        ],
-      })
-        .select("_id")
-        .lean();
-      const ids = userMatches.map((u) => u._id);
-      if (mongoose.isValidObjectId(filters.q)) ids.push(new ObjectId(filters.q));
-      if (ids.length > 0) conditions.push({ customer: { $in: ids } });
-      conditions.push({ "items.name": new RegExp(needle, "i") });
-      match.$or = conditions;
-    }
-  }
-  return match;
-}
-
-async function productIdsInCategory(categoryId: string) {
-  const productIds = await Product.find({ category: new ObjectId(categoryId) })
-    .select("_id")
-    .lean();
-  return productIds.map((p) => p._id);
-}
-
-/**
- * LINE-level match (applied after $unwind in the sales report): product,
- * category and q now scope to the individual line, so a matched order never
- * drags its non-matching lines into the report.
- *
- * NOTE: after `$unwind: "$items"` the line fields are nested under `items`
- * (e.g. `items.product`, `items.name`), so the match keys MUST be prefixed
- * with `items.` — a bare `{ product: ... }` matches nothing.
- */
-async function buildLineMatch(filters: ReportFilters) {
-  const match: Record<string, unknown> = {};
-  if (filters.productId) {
-    match["items.product"] = new ObjectId(filters.productId);
-  }
-  if (filters.categoryId) {
-    match["items.product"] = { $in: await productIdsInCategory(filters.categoryId) };
-  }
-  if (filters.q) {
-    match["items.name"] = new RegExp(escapeRegExp(filters.q), "i");
-  }
-  return Object.keys(match).length > 0 ? match : null;
-}
 
 // ---------------------------------------------------------------------------
 // Summary KPIs (shared by the dashboard, P&L and every report envelope)
@@ -1917,6 +1818,7 @@ export const REPORT_SLUGS = [
   "pnl",
   "purchases",
   "expenses",
+  "accounting",
 ] as const;
 
 export type ReportSlug = (typeof REPORT_SLUGS)[number];
@@ -1945,6 +1847,46 @@ export async function getReportData(slug: ReportSlug, filters: ReportFilters) {
       return getPurchasesReport(filters);
     case "expenses":
       return getExpensesReport(filters);
+    case "accounting": {
+      // The accounting workbook's JSON envelope — reuses the standard reports
+      // and assembles the V2 datasets (order items, movements, layers, COGS).
+      // Top-level `rows`/`totals`/`summary` are the ORDER-ITEMS view (what the
+      // /admin/reports/accounting page renders); the extra V2 datasets live
+      // alongside for the 17-sheet export.
+      const [sales, pnl, inventory, purchases, expenses] = await Promise.all([
+        getSalesReport(filters),
+        getProfitLossReport(filters),
+        getInventoryReport(filters),
+        getPurchasesReport(filters),
+        getExpensesReport(filters),
+      ]);
+      const data = await getAccountingExportData(filters, {
+        summary: sales.summary,
+        sales,
+        pnl,
+        inventory,
+        purchases,
+        expenses,
+      });
+      return {
+        report: "accounting",
+        filters: data.filters,
+        summary: data.summary,
+        rows: data.orderItems.rows,
+        total: data.orderItems.total,
+        totals: data.orderItems.totals,
+        page: data.orderItems.page,
+        limit: data.orderItems.limit,
+        truncated: data.orderItems.truncated,
+        generatedAt: data.generatedAt,
+        orderItems: data.orderItems,
+        purchaseItems: data.purchaseItems,
+        movements: data.movements,
+        layers: data.layers,
+        cogs: data.cogs,
+        accounting: data.accounting,
+      };
+    }
   }
 }
 

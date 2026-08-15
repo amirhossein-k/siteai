@@ -181,6 +181,28 @@ export const REPORT_META: Record<string, ReportMeta> = {
       { key: "lastOrderAt", label: "آخرین سفارش", format: "date" },
     ],
   },
+  accounting: {
+    title: REPORT_TITLES.accounting,
+    description: "دفتر حسابداری V2 — اقلام فروش، گردش موجودی، لایه‌های FIFO و بهای تمام‌شده؛ خروجی اکسل شامل ۱۷ برگ است",
+    filters: { preset: true },
+    totalKeys: ["quantity", "netSales", "cogs", "grossProfit"],
+    columns: [
+      { key: "orderNo", label: "سفارش", className: "font-mono text-xs" },
+      { key: "createdAt", label: "تاریخ", format: "date" },
+      { key: "orderStatus", label: "وضعیت سفارش" },
+      { key: "paymentStatus", label: "وضعیت پرداخت" },
+      { key: "name", label: "نام محصول" },
+      { key: "sku", label: "SKU", className: "font-mono text-xs" },
+      { key: "variantLabel", label: "واریانت" },
+      { key: "quantity", label: "تعداد", format: "count", align: "right" },
+      moneyColumn("unitPrice", "قیمت واحد"),
+      moneyColumn("netSales", "فروش خالص"),
+      moneyColumn("fifoUnitCost", "بهای واحد FIFO"),
+      moneyColumn("cogs", "COGS"),
+      moneyColumn("grossProfit", "سود ناخالص"),
+      { key: "cogsSourceLabel", label: "منبع COGS" },
+    ],
+  },
   purchases: {
     title: REPORT_TITLES.purchases,
     description: "خریدهای ثبت‌شده با وضعیت دریافت و پرداخت — مبالغ از سند خرید است نه قیمت فعلی محصول",
@@ -247,6 +269,7 @@ export const REPORT_META: Record<string, ReportMeta> = {
 
 export const REPORT_NAV: Array<{ report: string; title: string }> = [
   { report: "dashboard", title: REPORT_TITLES.dashboard },
+  { report: "accounting", title: REPORT_TITLES.accounting },
   { report: "sales", title: REPORT_TITLES.sales },
   { report: "orders", title: REPORT_TITLES.orders },
   { report: "payments", title: REPORT_TITLES.payments },

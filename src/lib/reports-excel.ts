@@ -16,6 +16,7 @@ import ExcelJS from "exceljs";
 import type { ReportFilters, ReportSummary } from "@/types";
 import { roundToman } from "@/lib/report-utils";
 import { REPORT_TITLES } from "@/lib/report-titles";
+import type { AccountingExportData } from "@/lib/accounting-v2";
 
 const MONEY = "#,##0";
 const INTEGER = "#,##0";
@@ -342,6 +343,91 @@ const INVENTORY_COLUMNS: Column[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Accounting V2 columns (Session 82 Phase F — the accounting workbook)
+// ---------------------------------------------------------------------------
+
+const ORDER_ITEMS_COLUMNS: Column[] = [
+  { header: "شماره سفارش", key: "orderNo", width: 12 },
+  { header: "تاریخ", key: "createdAt", width: 18 },
+  { header: "وضعیت سفارش", key: "orderStatus", width: 14 },
+  { header: "وضعیت پرداخت", key: "paymentStatus", width: 14 },
+  { header: "شناسه محصول", key: "productId", width: 26 },
+  { header: "SKU", key: "sku", width: 18 },
+  { header: "نام محصول", key: "name", width: 34 },
+  { header: "واریانت", key: "variantLabel", width: 14 },
+  { header: "تعداد", key: "quantity", width: 10, numFmt: INTEGER, align: "right" },
+  { header: "قیمت واحد فروش", key: "unitPrice", width: 16, numFmt: MONEY, align: "right" },
+  { header: "قیمت اصلی", key: "originalPrice", width: 14, numFmt: MONEY, align: "right" },
+  { header: "تخفیف محصول", key: "productDiscount", width: 15, numFmt: MONEY, align: "right" },
+  { header: "سهم کوپن", key: "couponAllocation", width: 14, numFmt: MONEY, align: "right" },
+  { header: "فروش خالص", key: "netSales", width: 16, numFmt: MONEY, align: "right" },
+  { header: "بهای واحد FIFO", key: "fifoUnitCost", width: 14, numFmt: MONEY, align: "right" },
+  { header: "COGS", key: "cogs", width: 15, numFmt: MONEY, align: "right" },
+  { header: "منبع COGS", key: "cogsSourceLabel", width: 28 },
+  { header: "سود ناخالص", key: "grossProfit", width: 16, numFmt: MONEY, align: "right" },
+  { header: "حاشیه", key: "grossMargin", width: 10, numFmt: PERCENT, align: "right" },
+];
+
+const PURCHASE_ITEMS_COLUMNS: Column[] = [
+  { header: "شماره خرید", key: "number", width: 20 },
+  { header: "تاریخ خرید", key: "purchaseDate", width: 18 },
+  { header: "تأمین‌کننده", key: "supplierName", width: 26 },
+  { header: "نام محصول", key: "name", width: 34 },
+  { header: "واریانت", key: "variantLabel", width: 14 },
+  { header: "SKU", key: "sku", width: 18 },
+  { header: "سفارش‌شده", key: "ordered", width: 10, numFmt: INTEGER, align: "right" },
+  { header: "دریافت‌شده", key: "received", width: 10, numFmt: INTEGER, align: "right" },
+  { header: "باقیمانده", key: "remaining", width: 10, numFmt: INTEGER, align: "right" },
+  { header: "بهای واحد", key: "unitCost", width: 14, numFmt: MONEY, align: "right" },
+  { header: "جمع ردیف", key: "lineTotal", width: 15, numFmt: MONEY, align: "right" },
+  { header: "وضعیت خرید", key: "status", width: 14 },
+  { header: "وضعیت پرداخت", key: "paymentStatus", width: 14 },
+  { header: "پرداخت‌شده", key: "amountPaid", width: 14, numFmt: MONEY, align: "right" },
+  { header: "مانده", key: "amountOutstanding", width: 14, numFmt: MONEY, align: "right" },
+  { header: "مرجع", key: "reference", width: 20 },
+];
+
+const MOVEMENTS_COLUMNS: Column[] = [
+  { header: "تاریخ", key: "createdAt", width: 18 },
+  { header: "نام محصول", key: "name", width: 34 },
+  { header: "واریانت", key: "variantLabel", width: 14 },
+  { header: "SKU", key: "sku", width: 18 },
+  { header: "نوع حرکت", key: "typeLabel", width: 20 },
+  { header: "تعداد", key: "quantity", width: 10, numFmt: INTEGER, align: "right" },
+  { header: "بهای واحد", key: "unitCost", width: 14, numFmt: MONEY, align: "right" },
+  { header: "جمع بها", key: "totalCost", width: 15, numFmt: MONEY, align: "right" },
+  { header: "مرجع منبع", key: "sourceRef", width: 34 },
+  { header: "شرح", key: "description", width: 40 },
+  { header: "ثبت توسط", key: "createdByName", width: 18 },
+];
+
+const LAYERS_COLUMNS: Column[] = [
+  { header: "نام محصول", key: "name", width: 34 },
+  { header: "واریانت", key: "variantLabel", width: 14 },
+  { header: "SKU", key: "sku", width: 18 },
+  { header: "منبع لایه", key: "sourceLabel", width: 20 },
+  { header: "مرجع", key: "ref", width: 34 },
+  { header: "تاریخ ایجاد", key: "acquiredAt", width: 18 },
+  { header: "تعداد اولیه", key: "originalQty", width: 12, numFmt: INTEGER, align: "right" },
+  { header: "باقیمانده", key: "remaining", width: 10, numFmt: INTEGER, align: "right" },
+  { header: "بهای واحد", key: "unitCost", width: 14, numFmt: MONEY, align: "right" },
+  { header: "ارزش باقیمانده", key: "remainingValue", width: 16, numFmt: MONEY, align: "right" },
+];
+
+const COGS_COLUMNS: Column[] = [
+  { header: "شماره سفارش", key: "orderNo", width: 12 },
+  { header: "تاریخ", key: "createdAt", width: 18 },
+  { header: "نام محصول", key: "name", width: 34 },
+  { header: "واریانت", key: "variantLabel", width: 14 },
+  { header: "SKU", key: "sku", width: 18 },
+  { header: "تعداد", key: "quantity", width: 10, numFmt: INTEGER, align: "right" },
+  { header: "بهای واحد (FIFO)", key: "fifoUnitCost", width: 16, numFmt: MONEY, align: "right" },
+  { header: "COGS", key: "cogs", width: 15, numFmt: MONEY, align: "right" },
+  { header: "منبع بها", key: "cogsSourceLabel", width: 30 },
+  { header: "مرجع لایه/حرکت", key: "sourceRef", width: 34 },
+];
+
+// ---------------------------------------------------------------------------
 // Row shaping
 // ---------------------------------------------------------------------------
 
@@ -665,6 +751,126 @@ export function buildDashboardWorkbook(data: {
   writeDetailSheet(workbook, "کوپن‌ها", COUPONS_COLUMNS, flattenRows(data.coupons.rows, COUPONS_COLUMNS), data.coupons.totals);
   writeDetailSheet(workbook, "مشتریان", CUSTOMERS_COLUMNS, flattenRows(data.customers.rows, CUSTOMERS_COLUMNS), data.customers.totals);
   writeDetailSheet(workbook, "موجودی", INVENTORY_COLUMNS, flattenRows(data.inventory.rows, INVENTORY_COLUMNS), data.inventory.totals);
+
+  return workbook;
+}
+
+// ---------------------------------------------------------------------------
+// Accounting workbook V2 (Session 82 Phase F) — the 17-sheet accountant book
+// ---------------------------------------------------------------------------
+
+/**
+ * The accounting summary sheet (خلاصه حسابداری) — label/value KPIs with the
+ * valuation basis + historical note, so an accountant sees exactly how the
+ * figures were derived (nothing is invented or shown as a fake zero).
+ */
+function writeAccountingSummarySheet(
+  workbook: ExcelJS.Workbook,
+  data: AccountingExportData
+): ExcelJS.Worksheet {
+  const sheet = workbook.addWorksheet("خلاصه حسابداری");
+  sheet.columns = [{ width: 46 }, { width: 20 }];
+
+  sheet.mergeCells("A1:B1");
+  const titleCell = sheet.getCell("A1");
+  titleCell.value = "خلاصه حسابداری";
+  titleCell.font = { bold: true, size: 14 };
+  sheet.mergeCells("A2:B2");
+  sheet.getCell("A2").value = `بازه گزارش: ${data.filters.from ?? "—"} تا ${data.filters.to ?? "—"}`;
+  sheet.getCell("A2").font = { italic: true };
+  sheet.mergeCells("A3:B3");
+  sheet.getCell("A3").value = `تولید شده در: ${iso(new Date().toISOString())}`;
+  sheet.getCell("A3").font = { italic: true };
+
+  let r = 5;
+  for (const item of data.accounting.rows) {
+    sheet.getCell(`A${r}`).value = item.label;
+    const vCell = sheet.getCell(`B${r}`);
+    if (item.numFmt === "money" && item.value !== null) {
+      vCell.value = roundToman(item.value);
+      vCell.numFmt = MONEY;
+    } else if (item.numFmt === "percent" && item.value !== null) {
+      vCell.value = item.value / 100;
+      vCell.numFmt = PERCENT;
+    } else if (item.numFmt === "count" && item.value !== null) {
+      vCell.value = item.value;
+      vCell.numFmt = INTEGER;
+    } else {
+      vCell.value = item.value === null ? "در دسترس نیست" : item.value;
+    }
+    r++;
+  }
+
+  const notes = [
+    data.accounting.valuation.valuationBasisLabel,
+    data.accounting.valuation.historicalNote,
+    "روش ارزیابی: FIFO (لایه‌های صریح) — روش میانگین موزون استفاده نمی‌شود.",
+    "هیچ مبلغی تخمین زده نمی‌شود؛ داده‌های در دسترس نبوده به‌عنوان «در دسترس نیست» علامت‌گذاری می‌شوند.",
+  ];
+  let nr = r + 1;
+  for (const note of notes) {
+    sheet.mergeCells(`A${nr}:B${nr}`);
+    sheet.getCell(`A${nr}`).value = note;
+    sheet.getCell(`A${nr}`).font = { italic: true, size: 9 };
+    sheet.getCell(`A${nr}`).alignment = { wrapText: true };
+    nr++;
+  }
+
+  return sheet;
+}
+
+/**
+ * Build the full 17-sheet accounting workbook V2 (Session 82 Phase F).
+ *
+ * Sheet order (Persian): خلاصه · فروش · سفارش‌ها · اقلام فروش · پرداخت‌ها ·
+ * مرجوعی‌ها · مشتریان · کوپن‌ها · خریدها · اقلام خرید · هزینه‌ها · موجودی ·
+ * گردش موجودی · لایه‌های FIFO · بهای تمام‌شده · سود و زیان · خلاصه حسابداری.
+ *
+ * All money/percent values are server-computed (exceljs formatting only).
+ * The first sheet is the order-labeled خلاصه so an accountant immediately
+ * sees the period + core KPIs; the last is the accountant-facing خلاصه
+ * حسابداری with the valuation basis + historical note.
+ */
+export function buildAccountingWorkbook(
+  data: AccountingExportData,
+  filters: ReportFilters,
+  pieces: {
+    summary: ReportSummary;
+    sales: EnvelopeWithRows;
+    orders: EnvelopeWithRows;
+    payments: EnvelopeWithRows;
+    refunds: EnvelopeWithRows;
+    customers: EnvelopeWithRows;
+    coupons: EnvelopeWithRows;
+    purchases: EnvelopeWithRows;
+    expenses: EnvelopeWithRows;
+    inventory: EnvelopeWithRows;
+    pnl: {
+      current: { summary: ReportSummary; rows: Array<unknown> };
+      previous?: { summary: ReportSummary; rows: Array<unknown> } | null;
+    };
+  }
+): ExcelJS.Workbook {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "فروشگاه من";
+
+  writeSummarySheet(workbook, REPORT_TITLES.accounting, filters, data.summary);
+  writeDetailSheet(workbook, "فروش", SALES_COLUMNS, flattenRows(pieces.sales.rows, SALES_COLUMNS), pieces.sales.totals);
+  writeDetailSheet(workbook, "سفارش‌ها", ORDERS_COLUMNS, flattenRows(pieces.orders.rows, ORDERS_COLUMNS), pieces.orders.totals);
+  writeDetailSheet(workbook, "اقلام فروش", ORDER_ITEMS_COLUMNS, flattenRows(data.orderItems.rows, ORDER_ITEMS_COLUMNS), data.orderItems.totals);
+  writeDetailSheet(workbook, "پرداخت‌ها", PAYMENTS_COLUMNS, flattenRows(pieces.payments.rows, PAYMENTS_COLUMNS), pieces.payments.totals);
+  writeDetailSheet(workbook, "مرجوعی‌ها", REFUNDS_COLUMNS, flattenRows(pieces.refunds.rows, REFUNDS_COLUMNS), pieces.refunds.totals);
+  writeDetailSheet(workbook, "مشتریان", CUSTOMERS_COLUMNS, flattenRows(pieces.customers.rows, CUSTOMERS_COLUMNS), pieces.customers.totals);
+  writeDetailSheet(workbook, "کوپن‌ها", COUPONS_COLUMNS, flattenRows(pieces.coupons.rows, COUPONS_COLUMNS), pieces.coupons.totals);
+  writeDetailSheet(workbook, "خریدها", PURCHASES_COLUMNS, flattenRows(pieces.purchases.rows, PURCHASES_COLUMNS), pieces.purchases.totals);
+  writeDetailSheet(workbook, "اقلام خرید", PURCHASE_ITEMS_COLUMNS, flattenRows(data.purchaseItems.rows, PURCHASE_ITEMS_COLUMNS), data.purchaseItems.totals);
+  writeDetailSheet(workbook, "هزینه‌ها", EXPENSES_COLUMNS, flattenRows(pieces.expenses.rows, EXPENSES_COLUMNS), pieces.expenses.totals);
+  writeDetailSheet(workbook, "موجودی", INVENTORY_COLUMNS, flattenRows(pieces.inventory.rows, INVENTORY_COLUMNS), pieces.inventory.totals);
+  writeDetailSheet(workbook, "گردش موجودی", MOVEMENTS_COLUMNS, flattenRows(data.movements.rows, MOVEMENTS_COLUMNS));
+  writeDetailSheet(workbook, "لایه‌های FIFO", LAYERS_COLUMNS, flattenRows(data.layers.rows, LAYERS_COLUMNS), data.layers.totals);
+  writeDetailSheet(workbook, "بهای تمام‌شده", COGS_COLUMNS, flattenRows(data.cogs.rows, COGS_COLUMNS), data.cogs.totals);
+  writePnlSheet(workbook, pieces.pnl);
+  writeAccountingSummarySheet(workbook, data);
 
   return workbook;
 }

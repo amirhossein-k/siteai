@@ -13,13 +13,17 @@ import {
   getRefundsReport,
   getReportData,
   getSalesReport,
+  getPurchasesReport,
+  getExpensesReport,
   REPORT_SLUGS,
   type ReportSlug,
 } from "@/lib/reports";
 import {
+  buildAccountingWorkbook,
   buildDashboardWorkbook,
   buildReportWorkbook,
 } from "@/lib/reports-excel";
+import { getAccountingExportData } from "@/lib/accounting-v2";
 
 /**
  * GET /api/admin/reports/[report]/export
@@ -77,7 +81,47 @@ export async function GET(
     const filters = { ...parsed.filters, page: 1, limit: EXPORT_MAX_ROWS };
 
     let workbook;
-    if (report === "dashboard") {
+    if (report === "accounting") {
+      // The V2 accounting workbook — the full 17-sheet accountant book.
+      const [sales, orders, payments, refunds, coupons, customers, inventory, pnl, purchases, expenses] =
+        await Promise.all([
+          getSalesReport(filters),
+          getOrdersReport(filters),
+          getPaymentsReport(filters),
+          getRefundsReport(filters),
+          getCouponReport(filters),
+          getCustomerSalesReport(filters),
+          getInventoryReport(filters),
+          getProfitLossReport(filters),
+          getPurchasesReport(filters),
+          getExpensesReport(filters),
+        ]);
+      const data = await getAccountingExportData(filters, {
+        summary: sales.summary,
+        sales,
+        pnl,
+        inventory,
+        purchases,
+        expenses,
+      });
+      workbook = buildAccountingWorkbook(
+        data,
+        filters,
+        {
+          summary: sales.summary,
+          sales,
+          orders,
+          payments,
+          refunds,
+          customers,
+          coupons,
+          purchases,
+          expenses,
+          inventory,
+          pnl,
+        }
+      );
+    } else if (report === "dashboard") {
       const [sales, orders, payments, refunds, coupons, customers, inventory, pnl] =
         await Promise.all([
           getSalesReport(filters),
