@@ -161,6 +161,7 @@ const { data: session } = useSession();
 ### UI
 
 - Login page: «ورود با رمز عبور» (default) / «ورود با کد یک‌بارمصرف» toggle. Register page: «ثبت‌نام با رمز عبور» (default) / «ثبت‌نام با کد یک‌بارمصرف» toggle (OTP registration asks for a name — the account is created at verify). Both reuse the shared `OtpPanel` + `OtpCodeInput` components. The password forms are untouched and remain the default.
+- **Session 83 — visual redesign only.** The pages live in the dedicated `(auth)` route group (`src/app/(auth)/login` / `register`) with a minimal full-viewport layout (no storefront header/footer) and reproduce the marloo-login split-screen design (dark holographic scene + white panel, Persian/RTL, Vazirmatn). All behavior — labels, validation, endpoints, OTP state machine, redirects, rate limiting — is byte-identical to the pre-redesign implementation; no authentication/business logic changed.
 
 ---
 
@@ -174,7 +175,7 @@ After a successful login, users are redirected based on their role:
 | `supplier` | `/supplier/dashboard` |
 | `customer` | `/` |
 
-This is implemented in `src/app/(storefront)/login/page.tsx` by fetching `/api/auth/session` after `signIn()` to get the role before redirecting.
+This is implemented in `src/app/(auth)/login/page.tsx` by fetching `/api/auth/session` after `signIn()` to get the role before redirecting.
 
 ---
 

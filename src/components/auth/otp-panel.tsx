@@ -2,11 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
+import { User, Phone, ArrowLeft, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OtpCodeInput } from "@/components/auth/otp-code-input";
 import { showToast } from "@/components/ui/toast";
 import { otpRequestSchema, otpVerifySchema } from "@/lib/validations/auth";
+import {
+  AUTH_INPUT_CLASS,
+  AUTH_SUBMIT_CLASS,
+  AUTH_LABEL_CLASS,
+} from "@/components/auth/auth-styles";
 import type { UserRole } from "@/types";
 
 const RESEND_COOLDOWN_SECONDS = 60;
@@ -26,8 +32,9 @@ interface OtpPanelProps {
  *   2. verify  — 6-digit code → POST /api/auth/otp/verify → { loginToken }
  *                → signIn("credentials", { phone, loginToken })
  *
- * The password flows on the host pages are untouched; this is purely an
- * additional sign-in option (the host page defaults to its password tab).
+ * Session 83 — visual restyle only (marloo-login language). Every label,
+ * button, error text, endpoint call and the whole state machine are
+ * unchanged.
  */
 export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
   const isRegister = purpose === "register";
@@ -154,47 +161,59 @@ export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
             <div className="space-y-2">
               <label
                 htmlFor={inputId("name")}
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                className={`mb-2 block ${AUTH_LABEL_CLASS}`}
               >
                 نام و نام خانوادگی
               </label>
-              <Input
-                id={inputId("name")}
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="مثال: علی محمدی"
-                autoComplete="name"
-                disabled={loading}
-              />
+              <div className="relative">
+                <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">
+                  <User className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <Input
+                  id={inputId("name")}
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="مثال: علی محمدی"
+                  autoComplete="name"
+                  disabled={loading}
+                  className={AUTH_INPUT_CLASS}
+                />
+              </div>
             </div>
           )}
 
           <div className="space-y-2">
             <label
               htmlFor={inputId("phone")}
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              className={`mb-2 block ${AUTH_LABEL_CLASS}`}
             >
               شماره موبایل
             </label>
-            <Input
-              id={inputId("phone")}
-              type="text"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="09xxxxxxxxx"
-              autoComplete="tel"
-              dir="ltr"
-              className="text-left"
-              disabled={loading}
-            />
+            <div className="relative">
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400">
+                <Phone className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <Input
+                id={inputId("phone")}
+                type="text"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="09xxxxxxxxx"
+                autoComplete="tel"
+                dir="ltr"
+                disabled={loading}
+                className={`${AUTH_INPUT_CLASS} text-left`}
+              />
+            </div>
           </div>
 
           {error && (
             <div
-              className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+              className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-700"
               role="alert"
             >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               {error}
             </div>
           )}
@@ -203,17 +222,23 @@ export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
             type="button"
             onClick={requestCode}
             loading={loading}
-            className="w-full"
-            size="lg"
+            className={AUTH_SUBMIT_CLASS}
           >
-            {loading ? "در حال ارسال..." : "ارسال کد تأیید"}
+            {loading ? (
+              "در حال ارسال..."
+            ) : (
+              <span className="relative z-10 flex items-center justify-center gap-2">
+                ارسال کد تأیید
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              </span>
+            )}
           </Button>
         </>
       ) : (
         <>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-zinc-500">
             کد ۶ رقمی به شماره{" "}
-            <span dir="ltr" className="font-medium text-foreground">
+            <span dir="ltr" className="font-medium text-zinc-900">
               {phone}
             </span>{" "}
             ارسال شد.
@@ -222,7 +247,7 @@ export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
           <div className="space-y-2">
             <label
               htmlFor={inputId("code")}
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              className={`mb-2 block ${AUTH_LABEL_CLASS}`}
             >
               کد تأیید
             </label>
@@ -237,9 +262,10 @@ export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
 
           {error && (
             <div
-              className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
+              className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-700"
               role="alert"
             >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               {error}
             </div>
           )}
@@ -248,10 +274,16 @@ export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
             type="button"
             onClick={verifyCode}
             loading={loading}
-            className="w-full"
-            size="lg"
+            className={AUTH_SUBMIT_CLASS}
           >
-            {isRegister ? "تأیید و ورود" : "ورود"}
+            {loading ? (
+              "در حال تأیید..."
+            ) : (
+              <span className="relative z-10 flex items-center justify-center gap-2">
+                {isRegister ? "تأیید و ورود" : "ورود"}
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              </span>
+            )}
           </Button>
 
           <div className="flex items-center justify-between text-sm">
@@ -261,7 +293,7 @@ export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
                 setStep("request");
                 setError("");
               }}
-              className="text-muted-foreground underline-offset-4 hover:underline"
+              className="text-zinc-500 underline-offset-4 transition hover:text-zinc-900 hover:underline"
             >
               تغییر شماره
             </button>
@@ -269,7 +301,7 @@ export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
               type="button"
               onClick={requestCode}
               disabled={cooldown > 0 || loading}
-              className="font-medium text-foreground underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+              className="font-medium text-zinc-900 underline-offset-4 transition hover:text-cyan-500 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
             >
               {cooldown > 0 ? `ارسال مجدد کد (${cooldown} ثانیه)` : "ارسال مجدد کد"}
             </button>

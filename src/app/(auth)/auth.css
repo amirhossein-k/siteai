@@ -1,0 +1,282 @@
+/*
+ * Session 83 — auth pages stylesheet.
+ *
+ * Ported from the marloo-login reference design (Vite/Tailwind v4) and
+ * adapted to this project:
+ *   - Tailwind v4 is already imported by src/app/globals.css; this file only
+ *     adds the custom classes/keyframes the holographic scene + neon UI need.
+ *   - Persian typography uses the project's Vazirmatn stack (no new fonts).
+ *   - prefers-reduced-motion disables the decorative animations.
+ */
+
+/* ---------- Neon text ---------- */
+/* Bright neon — used ONLY inside the dark (aria-hidden) holographic scene. */
+.neon-cyan {
+  color: #00e5ff;
+  text-shadow:
+    0 0 8px rgba(0, 229, 255, 0.95),
+    0 0 20px rgba(0, 229, 255, 0.55),
+    0 0 42px rgba(0, 229, 255, 0.35);
+}
+
+/*
+ * Accessible neon accent for the light panel: cyan-700 (#0e7490, 4.7:1 on
+ * white) with a soft glow so it still reads as "neon" while meeting WCAG AA.
+ */
+.neon-accent {
+  color: #0e7490;
+  text-shadow: 0 0 16px rgba(0, 229, 255, 0.45);
+}
+
+.text-gradient {
+  background: linear-gradient(90deg, #00e5ff, #a855f7);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ---------- Glow filters for holographic objects ---------- */
+.glow-cyan {
+  filter: drop-shadow(0 0 5px rgba(0, 229, 255, 0.9))
+    drop-shadow(0 0 14px rgba(0, 229, 255, 0.45));
+}
+.glow-purple {
+  filter: drop-shadow(0 0 5px rgba(168, 85, 247, 0.9))
+    drop-shadow(0 0 14px rgba(168, 85, 247, 0.45));
+}
+
+/* ---------- Scene backdrop ---------- */
+.scene-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 46px 46px;
+  -webkit-mask-image: radial-gradient(
+    ellipse 85% 75% at 50% 45%,
+    black 25%,
+    transparent 78%
+  );
+  mask-image: radial-gradient(
+    ellipse 85% 75% at 50% 45%,
+    black 25%,
+    transparent 78%
+  );
+}
+
+/* ---------- Glassmorphism chip ---------- */
+.glass-chip {
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.055);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* ---------- Orb core ---------- */
+.orb-core {
+  background: radial-gradient(
+    circle at 32% 28%,
+    #a6fbff 0%,
+    #22d3ee 22%,
+    #7c3aed 60%,
+    rgba(168, 85, 247, 0.4) 76%,
+    transparent 100%
+  );
+  box-shadow:
+    0 0 50px rgba(0, 229, 255, 0.45),
+    0 0 110px rgba(168, 85, 247, 0.35),
+    inset 0 0 30px rgba(255, 255, 255, 0.16);
+}
+
+/* ---------- Autofill fix (light panel) ---------- */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #fafafa inset;
+  -webkit-text-fill-color: #18181b;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* ---------- Keyframes ---------- */
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0) translateX(0) rotate(var(--tilt, 0deg));
+  }
+  50% {
+    transform: translateY(var(--amp, -16px)) translateX(var(--drift, 0px))
+      rotate(var(--tilt, 0deg));
+  }
+}
+.floaty {
+  animation: floaty var(--dur, 7s) ease-in-out var(--delay, 0s) infinite;
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.12;
+    transform: scale(0.7);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.15);
+  }
+}
+.star {
+  animation: twinkle var(--dur, 3s) ease-in-out var(--delay, 0s) infinite;
+}
+
+@keyframes dashmove {
+  to {
+    stroke-dashoffset: -60;
+  }
+}
+.trail {
+  stroke-dasharray: 4px 9px;
+  animation: dashmove var(--dur, 4s) linear infinite;
+}
+
+@keyframes spinslow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin-slow {
+  animation: spinslow var(--dur, 20s) linear infinite;
+}
+.spin-rev {
+  animation: spinslow var(--dur, 26s) linear infinite reverse;
+}
+
+@keyframes orbpulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+.orb-pulse {
+  animation: orbpulse 5.5s ease-in-out infinite;
+}
+
+@keyframes ringpulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+.ring-pulse {
+  animation: ringpulse 4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-160%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(240%) skewX(-18deg);
+  }
+}
+.btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shimmer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 38%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.5),
+    transparent
+  );
+  transform: translateX(-160%) skewX(-18deg);
+  animation: shimmer 3.4s ease-in-out infinite;
+}
+
+@keyframes scanline {
+  0% {
+    top: -12%;
+  }
+  100% {
+    top: 112%;
+  }
+}
+.scanline {
+  animation: scanline 8s ease-in-out infinite;
+}
+
+/*
+ * Entrance animation — translateY ONLY (no opacity). The axe-core
+ * accessibility suite scans the auth pages right after load; an opacity
+ * fade would blend text colors mid-flight and produce false color-contrast
+ * violations. The rise motion is preserved, contrast is always stable.
+ */
+@keyframes fadeUp {
+  from {
+    transform: translateY(16px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.fade-up {
+  animation: fadeUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Staggered entrance for direct children */
+.stagger > * {
+  animation: fadeUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stagger > *:nth-child(1) {
+  animation-delay: 0.02s;
+}
+.stagger > *:nth-child(2) {
+  animation-delay: 0.1s;
+}
+.stagger > *:nth-child(3) {
+  animation-delay: 0.18s;
+}
+.stagger > *:nth-child(4) {
+  animation-delay: 0.26s;
+}
+.stagger > *:nth-child(5) {
+  animation-delay: 0.34s;
+}
+.stagger > *:nth-child(6) {
+  animation-delay: 0.42s;
+}
+.stagger > *:nth-child(7) {
+  animation-delay: 0.5s;
+}
+.stagger > *:nth-child(8) {
+  animation-delay: 0.58s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floaty,
+  .star,
+  .trail,
+  .spin-slow,
+  .spin-rev,
+  .orb-pulse,
+  .ring-pulse,
+  .scanline,
+  .stagger > *,
+  .btn-shimmer::after {
+    animation: none !important;
+  }
+}
