@@ -386,6 +386,63 @@ async function http(jar, method, url, body) {
     assert(!already, "purchased product NOT listed");
   });
 
+  // ---- TEST 10b: candidate variant ids (duplicate-key regression) ----
+  // The GET candidates projection must return real `variants._id`s (MongoDB
+  // field-level projections drop embedded subdoc `_id` unless explicitly
+  // projected). Otherwise every variant candidate carries `variantId:
+  // "undefined"` and two+ variants render duplicate React keys
+  // (`productId:undefined`) on the wizard page. Also proves the self-healing
+  // backfill of genuinely id-less legacy variant subdocs.
+  await testAsync("candidates GET: real variantIds + unique page keys (healthy + id-less fixtures)", async () => {
+    const skuSuffix2 = String(Date.now()).slice(-8) + "b";
+    const dupIdsId = (await seedProduct({
+      name: PREFIX + "DupIds", slug: PREFIX + "dupids", supplierPrice: 0, price: 200000, stock: 0,
+      variants: [
+        { _id: new mongoose.Types.ObjectId(), sku: `ACCT82-${skuSuffix2}-D1`, attributes: [], price: 200000, supplierPrice: 100000, stock: 3, stockVersion: 0, images: [], isActive: true, costLayers: [] },
+        { _id: new mongoose.Types.ObjectId(), sku: `ACCT82-${skuSuffix2}-D2`, attributes: [], price: 220000, supplierPrice: 110000, stock: 2, stockVersion: 0, images: [], isActive: true, costLayers: [] },
+      ],
+    })).insertedId.toString();
+    const dupNoIdId = (await seedProduct({
+      name: PREFIX + "DupNoIds", slug: PREFIX + "dupnoids", supplierPrice: 0, price: 240000, stock: 0,
+      // Legacy shape: raw write WITHOUT subdoc `_id` (Mongoose casting bypassed)
+      variants: [
+        { sku: `ACCT82-${skuSuffix2}-N1`, attributes: [], price: 240000, supplierPrice: 120000, stock: 4, stockVersion: 0, images: [], isActive: true, costLayers: [] },
+        { sku: `ACCT82-${skuSuffix2}-N2`, attributes: [], price: 260000, supplierPrice: 130000, stock: 1, stockVersion: 0, images: [], isActive: true, costLayers: [] },
+      ],
+    })).insertedId.toString();
+
+    const r = await http(adminJar, "GET", "/api/admin/accounting/initialize");
+    assert(r.status === 200, `candidates → ${r.status}`);
+    const mine = r.json.candidates.filter((c) => c.productId === dupIdsId || c.productId === dupNoIdId);
+    assert(mine.length === 4, `4 variant candidate rows, got ${mine.length}`);
+    for (const c of mine) {
+      assert(c.variantId && c.variantId !== "undefined", `variantId must be a real id, got ${JSON.stringify(c.variantId)}`);
+      assert(/^[0-9a-f]{24}$/i.test(c.variantId), `variantId must be 24-hex, got ${c.variantId}`);
+    }
+    // No candidate anywhere may carry the literal "undefined" variantId
+    assert(!r.json.candidates.some((c) => c.variantId === "undefined"), "no candidate variantId === 'undefined'");
+    // Page keys (same keyOf as src/app/admin/accounting/page.tsx) must be unique
+    const keyOf = (c) => (c.variantId ? `${c.productId}:${c.variantId}` : c.productId);
+    const seen = new Set();
+    for (const c of r.json.candidates) {
+      const k = keyOf(c);
+      assert(!seen.has(k), `duplicate candidate key ${k}`);
+      seen.add(k);
+    }
+    // The id-less fixture was repaired on read: initialize can now address
+    // both of its variants by their (new) real ids — no 400, no skips.
+    await clearInitKeys();
+    const idsOnly = mine.filter((c) => c.productId === dupNoIdId);
+    const init2 = await http(adminJar, "POST", "/api/admin/accounting/initialize", {
+      cutoverDate: CUTOVER_ISO,
+      confirmValuation: true,
+      items: idsOnly.map((c) => ({ productId: c.productId, variantId: c.variantId, openingCost: 120000 })),
+    });
+    assert(init2.status === 200, `init repaired id-less variants → ${init2.status}: ${JSON.stringify(init2.json)}`);
+    assert(init2.json.skipped.length === 0, `no skipped rows, got ${JSON.stringify(init2.json.skipped)}`);
+    assert(init2.json.productsInitialized === 1 && init2.json.layersCreated === 2, `1 product / 2 layers, got ${JSON.stringify(init2.json)}`);
+  });
+
   // ---- TEST 11: config PATCH after init → 400 (frozen) ----
   await testAsync("config PATCH after initialization → 400 (cutover frozen)", async () => {
     const r = await http(adminJar, "PATCH", "/api/admin/accounting/config", { cutoverDate: "2026-09-01T00:00:00.000Z" });

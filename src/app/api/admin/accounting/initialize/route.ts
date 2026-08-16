@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
+import mongoose from "mongoose";
 import { dbConnect } from "@/lib/dbConnect";
 import { requireRoleOrError, serverError } from "@/lib/auth-utils";
 import { rateLimit, ACCOUNTING_INIT_LIMIT } from "@/lib/rate-limiter";
@@ -31,8 +32,12 @@ export async function GET(req: NextRequest) {
 
   try {
     await dbConnect();
+    // NOTE: `variants._id` MUST be projected explicitly — MongoDB field-level
+    // projections on embedded arrays exclude the subdoc `_id` otherwise, which
+    // turns every variant candidate into `variantId: "undefined"` (and, with
+    // >=2 variants, duplicate React keys on the wizard page).
     const products = (await Product.find({ sourcing: "consignment" })
-      .select("name hasVariants stock price supplierPrice variants.sku variants.stock variants.supplierPrice variants.price")
+      .select("name hasVariants stock price supplierPrice variants._id variants.sku variants.stock variants.supplierPrice variants.price")
       .lean()) as unknown as Array<
       Record<string, unknown> & {
         _id: unknown;
@@ -50,12 +55,47 @@ export async function GET(req: NextRequest) {
       }
     >;
 
+    // Self-healing data repair: variant subdocs are REQUIRED to carry `_id`
+    // (checkout, movements and cost layers all address variants by
+    // `variants._id`), but legacy raw writes that bypassed Mongoose casting
+    // (e.g. old seed scripts) may have stored them without one. Backfill real
+    // ids so the wizard can address every row — idempotent (only touches
+    // products with genuinely missing ids) and field-preserving (rebuilt from
+    // the FULL document, never from the projected subset above).
+    for (const p of products) {
+      const projected = Array.isArray(p.variants) ? p.variants : [];
+      if (!projected.some((v) => !v._id)) continue;
+      const full = (await Product.findById(p._id).lean()) as
+        | (Record<string, unknown> & {
+            variants?: Array<Record<string, unknown> & { _id?: unknown }>;
+          })
+        | null;
+      const rawVariants =
+        full && Array.isArray(full.variants) ? full.variants : [];
+      if (!rawVariants.some((v) => !v._id)) continue;
+      const fixed = rawVariants.map((v) =>
+        v._id ? v : { ...v, _id: new mongoose.Types.ObjectId() }
+      );
+      // RAW driver write (not Product.updateOne): the array is stored verbatim,
+      // so the ONLY change is the added variant `_id`s. Mongoose casting on
+      // this path would also mutate unrelated data — schema transforms like
+      // `sku` uppercase, inject `_id` into `attributes` subdocs (declared
+      // `_id: false`), and bump `updatedAt` via the timestamps middleware.
+      await Product.collection.updateOne(
+        { _id: p._id as mongoose.Types.ObjectId },
+        { $set: { variants: fixed } }
+      );
+      p.variants = fixed as typeof p.variants;
+    }
+
     const candidates = products.flatMap((p) => {
       const variants = p.hasVariants && Array.isArray(p.variants) ? p.variants : [];
       if (variants.length > 0) {
         return variants.map((v) => ({
           productId: String(p._id),
-          variantId: String(v._id),
+          // Never emit the literal string "undefined" — an absent subdoc id
+          // yields `undefined` (the page keys such rows deterministically).
+          variantId: v._id ? String(v._id) : undefined,
           name: p.name,
           variantLabel: v.sku || undefined,
           stock: v.stock ?? 0,

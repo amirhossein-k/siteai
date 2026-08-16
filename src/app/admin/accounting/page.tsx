@@ -54,8 +54,19 @@ export default function AccountingPage() {
     [candidatesData]
   );
 
-  const keyOf = (c: OpeningBalanceCandidate) =>
-    c.variantId ? `${c.productId}:${c.variantId}` : c.productId;
+  // Deterministic, unique, identity-derived key for each wizard row. The API
+  // sends real variant ids; the string "undefined" and the sku fallback are
+  // defensive only (stale cached payloads / legacy id-less variants) so a row
+  // can never render with a misleading `${productId}:undefined` key.
+  const keyOf = (c: OpeningBalanceCandidate) => {
+    const vid =
+      c.variantId && c.variantId !== "undefined" ? c.variantId : undefined;
+    if (vid) return `${c.productId}:${vid}`;
+    // Id-less variant row: derive the key from the variant's globally-unique
+    // SKU so two rows of the same product can never collide.
+    if (c.variantLabel) return `${c.productId}:sku:${c.variantLabel}`;
+    return c.productId;
+  };
 
   const canInitialize =
     config?.inventoryInitialized !== true &&
