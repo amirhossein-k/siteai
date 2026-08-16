@@ -119,7 +119,7 @@ export function ReviewsSection({
   };
 
   return (
-    <Card className="mt-10">
+    <Card className="mt-10 glass-panel rounded-3xl">
       <CardHeader>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -156,7 +156,7 @@ export function ReviewsSection({
       <CardContent className="space-y-6">
         {/* --- Review form (gated to verified purchasers of a delivered order) --- */}
         {isCustomer && !myLoading && canReview && (
-          <div className="rounded-xl border bg-muted/40 p-4">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <h3 className="mb-3 text-sm font-semibold">ثبت دیدگاه شما</h3>
 
             {/* Star picker */}
@@ -192,7 +192,7 @@ export function ReviewsSection({
               rows={3}
               maxLength={1000}
               placeholder="تجربه خرید خود را بنویسید... (پس از تأیید مدیر منتشر می‌شود)"
-              className="mb-3 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="mb-3 flex w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             />
 
             <div className="flex items-center justify-between gap-3">
@@ -218,7 +218,7 @@ export function ReviewsSection({
 
         {/* Customer's own review status (already submitted) */}
         {isCustomer && !myLoading && !canReview && (myPendingReview || myApprovedReview || myRejectedReview) && (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/40 p-4 text-sm">
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
             <span className="text-muted-foreground">دیدگاه شما:</span>
             {myPendingReview && myStatusBadge("pending")}
             {myApprovedReview && myStatusBadge("approved")}
@@ -281,7 +281,7 @@ export function ReviewsSection({
             {reviewsData.data.map((review) => (
               <div
                 key={review._id}
-                className="rounded-lg border p-4 transition-colors hover:bg-muted/30"
+                className="rounded-xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:bg-white/[0.06]"
               >
                 <div className="mb-1 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
@@ -322,7 +322,7 @@ export function ReviewsSection({
 
                 {/* Supplier reply (Session 37) — shown under the approved review */}
                 {review.reply?.text && (
-                  <div className="mt-3 rounded-lg border-r-4 border-primary bg-muted/40 p-3">
+                  <div className="mt-3 rounded-xl border-r-4 border-primary bg-white/5 p-3">
                     <p className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-primary">
                       <Store className="h-3.5 w-3.5" />
                       پاسخ فروشنده

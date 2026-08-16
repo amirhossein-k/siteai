@@ -193,6 +193,15 @@
   background-image: linear-gradient(160deg, #2b7fff, #1560e0);
 }
 
+/* Reference `glass-panel` (productPage): blue-tinted translucent panel for
+   the product gallery stage and detail sections. No hover transform (unlike
+   glass-card) so large panels stay static. */
+@utility glass-panel {
+  background: linear-gradient(160deg, rgba(40, 90, 220, 0.16), rgba(20, 40, 110, 0.05));
+  border: 1px solid rgba(80, 140, 255, 0.35);
+  box-shadow: 0 0 60px rgba(40, 110, 255, 0.3), inset 0 1px 0 rgba(140, 180, 255, 0.2);
+}
+
 /* Session 85 — respect prefers-reduced-motion app-wide (later phases add
    transition/animation treatments; the gate applies from the foundation). */
 @media (prefers-reduced-motion: reduce) {

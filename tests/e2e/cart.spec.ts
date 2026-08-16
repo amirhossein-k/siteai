@@ -53,7 +53,12 @@ test.describe("Cart", () => {
     page,
   }) => {
     await page.goto(`/products/${specSlug}`);
-    await page.getByRole("button", { name: "افزودن به سبد خرید" }).click();
+    // .first(): the Session 85 mobile sticky buy bar adds a second CTA with
+    // the same label on <lg viewports — either button adds to the cart.
+    await page
+      .getByRole("button", { name: "افزودن به سبد خرید" })
+      .first()
+      .click();
     await expect(page.getByText(/به سبد خرید اضافه شد/)).toBeVisible();
 
     await page.goto("/cart");
@@ -78,7 +83,10 @@ test.describe("Cart", () => {
 
   test("checkout button navigates to the checkout page", async ({ page }) => {
     await page.goto(`/products/${specSlug}`);
-    await page.getByRole("button", { name: "افزودن به سبد خرید" }).click();
+    await page
+      .getByRole("button", { name: "افزودن به سبد خرید" })
+      .first()
+      .click();
     await expect(page.getByText(/به سبد خرید اضافه شد/)).toBeVisible();
 
     await page.goto("/cart");

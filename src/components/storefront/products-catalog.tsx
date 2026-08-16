@@ -127,7 +127,7 @@ export default function ProductsCatalogPage() {
           exit link back to the full catalog (count/subtitle unchanged). */}
       <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">
+          <h1 className="text-3xl font-black tracking-tight text-white">
             {/* \u200C = نیم‌فاصله — same «محصولات تخفیف‌دار» spelling as the
                 homepage section title (consistent Persian typography). */}
             {isDiscounted ? "محصولات تخفیف\u200Cدار" : "محصولات"}
@@ -139,7 +139,7 @@ export default function ProductsCatalogPage() {
         {isDiscounted && (
           <Link
             href="/products"
-            className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-muted-foreground backdrop-blur transition-colors hover:bg-white/10 hover:text-white"
           >
             مشاهده همه محصولات
           </Link>
@@ -163,7 +163,7 @@ export default function ProductsCatalogPage() {
               onKeyDown={(e) => {
                 if (e.key === "Escape") setSuggestionsOpen(false);
               }}
-              className="pr-9"
+              className="border-white/10 bg-white/5 pr-9"
             />
             {searchQuery && (
               <button
@@ -203,7 +203,7 @@ export default function ProductsCatalogPage() {
 
         {/* Filters panel */}
         {showFilters && (
-          <div className="rounded-lg border p-4 space-y-4">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4 backdrop-blur">
             <FilterChipGroup
               title="دسته‌بندی"
               options={categories || []}
@@ -462,7 +462,7 @@ export default function ProductsCatalogPage() {
               </p>
               <Link
                 href="/products"
-                className="inline-flex items-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground"
+                className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-muted-foreground backdrop-blur transition-colors hover:bg-white/10 hover:text-white"
               >
                 مشاهده همه محصولات
               </Link>

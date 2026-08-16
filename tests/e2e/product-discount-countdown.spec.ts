@@ -121,7 +121,7 @@ test.describe("Discount Countdown Journey", () => {
     // Detail — expiring product: badge + effective price + countdown.
     await page.goto(`/products/${expireSlug()}`);
     await expect(page.getByText("٪20 تخفیف")).toBeVisible();
-    await expect(page.getByText(/۱٬۶۰۰٬۰۰۰/)).toBeVisible();
+    await expect(page.getByText(/۱٬۶۰۰٬۰۰۰/).first()).toBeVisible();
     const detailTimer = page.getByRole("timer");
     await expect(detailTimer).toBeVisible();
     await expect(detailTimer).toContainText("باقی مانده");
@@ -218,7 +218,7 @@ test.describe("Discount Countdown Journey", () => {
     await page.goto(`/products/${expireSlug()}`);
     await expect(page.getByText("٪20 تخفیف")).toHaveCount(0);
     await expect(page.getByRole("timer")).toHaveCount(0);
-    const original = page.getByText(/۲٬۰۰۰٬۰۰۰/);
+    const original = page.getByText(/۲٬۰۰۰٬۰۰۰/).first();
     await expect(original).toBeVisible();
     await expect(original).not.toHaveClass(/line-through/);
   });

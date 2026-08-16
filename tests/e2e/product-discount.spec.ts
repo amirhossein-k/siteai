@@ -110,9 +110,11 @@ test.describe("Product Discount Journey", () => {
     await page.goto(`/products/${productSlug()}`);
     // Discount badge (configured percentage — ASCII digits from the number).
     await expect(page.getByText("٪20 تخفیف")).toBeVisible();
-    // Effective price prominent + original struck through.
-    await expect(page.getByText(/۱٬۶۰۰٬۰۰۰/)).toBeVisible();
-    const original = page.getByText(/۲٬۰۰۰٬۰۰۰/);
+    // Effective price prominent + original struck through. (.first(): the
+    // Session 85 mobile sticky buy bar duplicates the price in a lg:hidden
+    // bar that getByText still matches — the visible price card is first.)
+    await expect(page.getByText(/۱٬۶۰۰٬۰۰۰/).first()).toBeVisible();
+    const original = page.getByText(/۲٬۰۰۰٬۰۰۰/).first();
     await expect(original).toHaveClass(/line-through/);
 
     // Product JSON-LD offers.price = the effective price (server-rendered).
@@ -249,7 +251,7 @@ test.describe("Product Discount Journey", () => {
     // Storefront: normal price only — no badge, no strikethrough.
     await page.goto(`/products/${productSlug()}`);
     await expect(page.getByText("٪20 تخفیف")).toHaveCount(0);
-    const original = page.getByText(/۲٬۰۰۰٬۰۰۰/);
+    const original = page.getByText(/۲٬۰۰۰٬۰۰۰/).first();
     await expect(original).toBeVisible();
     await expect(original).not.toHaveClass(/line-through/);
 
