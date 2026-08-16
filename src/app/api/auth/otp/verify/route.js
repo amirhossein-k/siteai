@@ -5,11 +5,14 @@ import User from "@/models/User";
 import { rateLimit, OTP_VERIFY_LIMIT } from "@/lib/rate-limiter";
 import {
   generateLoginToken,
+  generateResetToken,
   hashLoginToken,
+  hashResetToken,
   hashOtpCode,
   normalizePhone,
   OTP_MAX_ATTEMPTS,
   OTP_LOGIN_TOKEN_TTL_MS,
+  OTP_RESET_TOKEN_TTL_MS,
 } from "@/lib/otp";
 
 const PHONE_RE = /^09\d{9}$/;
@@ -48,7 +51,9 @@ export async function POST(req) {
     if (
       !PHONE_RE.test(phone) ||
       !CODE_RE.test(code) ||
-      (purpose !== "login" && purpose !== "register")
+      (purpose !== "login" &&
+        purpose !== "register" &&
+        purpose !== "password_reset")
     ) {
       return NextResponse.json(
         { error: "اطلاعات وارد شده معتبر نیست" },
@@ -139,10 +144,41 @@ export async function POST(req) {
       }
     }
 
-    // Issue a one-time login token. TTL = min(remaining row life, token TTL)
-    // so the token can NEVER outlive its row (TTL index alignment).
+    // Issue a one-time token. TTL = min(remaining row life, token TTL) so the
+    // token can NEVER outlive its row (TTL index alignment).
     // NOTE: the CODE is consumed here (codeConsumedAt) but `consumedAt` stays
-    // null — it is reserved for the single token exchange in authorize().
+    // null — it is reserved for the single token exchange (authorize() for
+    // loginToken, POST /api/auth/password-reset/complete for resetToken).
+    if (purpose === "password_reset") {
+      // Session 84 — password recovery NEVER mints a loginToken: the reset
+      // verify issues a purpose-scoped resetToken that ONLY the complete
+      // endpoint can spend. A login OTP can therefore never complete a
+      // reset and a reset OTP can never authenticate.
+      const resetToken = generateResetToken();
+      const tokenExpiry = Math.min(
+        new Date(doc.expiresAt).getTime(),
+        Date.now() + OTP_RESET_TOKEN_TTL_MS
+      );
+      await OtpCode.updateOne(
+        { _id: doc._id },
+        {
+          $set: {
+            codeConsumedAt: new Date(),
+            resetTokenHash: hashResetToken(resetToken),
+            resetTokenExpiresAt: new Date(tokenExpiry),
+          },
+        }
+      );
+
+      return NextResponse.json({
+        resetToken,
+        expiresInSeconds: Math.max(
+          1,
+          Math.floor((tokenExpiry - Date.now()) / 1000)
+        ),
+      });
+    }
+
     const loginToken = generateLoginToken();
     const tokenExpiry = Math.min(
       new Date(doc.expiresAt).getTime(),

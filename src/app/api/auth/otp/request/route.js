@@ -49,7 +49,7 @@ export async function POST(req) {
         { status: 400 }
       );
     }
-    if (purpose !== "login" && purpose !== "register") {
+    if (purpose !== "login" && purpose !== "register" && purpose !== "password_reset") {
       return NextResponse.json(
         { error: "نوع درخواست نامعتبر است" },
         { status: 400 }
@@ -109,7 +109,7 @@ export async function POST(req) {
           { status: 409 }
         );
       }
-    } else {
+    } else if (purpose === "login") {
       // login — anti-enumeration (see header): unknown phones get the same
       // success response and nothing is created or sent.
       // ACCEPTED trade-off (documented in AUTHENTICATION.md): the 60s resend
@@ -119,6 +119,29 @@ export async function POST(req) {
       // information via its standard 409, so this adds no new oracle.
       const user = await User.findOne({ phone });
       if (!user) {
+        return NextResponse.json({
+          sent: true,
+          purpose,
+          expiresInSeconds: OTP_TTL_MS / 1000,
+        });
+      }
+    } else {
+      // password_reset — anti-enumeration CLOSED (Session 84 decision): an
+      // unknown phone receives the SAME 200 AND a dummy OtpCode row, so the
+      // 60s resend cooldown behaves identically for known and unknown
+      // numbers (no 200-vs-429 existence oracle — the login purpose keeps
+      // its documented legacy trade-off, this purpose does not inherit it).
+      // No SMS is ever sent; the dummy row carries a random code hash that
+      // was never delivered, so verify() fails uniformly for unknown phones.
+      const user = await User.findOne({ phone });
+      if (!user) {
+        await OtpCode.create({
+          phone,
+          purpose,
+          codeHash: hashOtpCode(generateOtpCode()),
+          devPlaintextCode: null,
+          expiresAt: new Date(Date.now() + OTP_TTL_MS),
+        });
         return NextResponse.json({
           sent: true,
           purpose,

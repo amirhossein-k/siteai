@@ -151,4 +151,14 @@ test.describe("Accessibility (axe-core)", () => {
     ).toBeVisible();
     await expectNoSeriousCritical(await scan(page).analyze(), "register");
   });
+
+  test("forgot-password page has no serious/critical violations", async ({
+    page,
+  }) => {
+    await page.goto("/forgot-password");
+    await expect(
+      page.getByRole("heading", { name: "بازیابی رمز عبور" })
+    ).toBeVisible();
+    await expectNoSeriousCritical(await scan(page).analyze(), "forgot-password");
+  });
 });

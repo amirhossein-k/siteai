@@ -25,6 +25,8 @@ export const OTP_RESEND_COOLDOWN_MS = 60 * 1000;
 export const OTP_MAX_ATTEMPTS = 5;
 /** The one-time login token issued after a successful verify (2 minutes). */
 export const OTP_LOGIN_TOKEN_TTL_MS = 2 * 60 * 1000;
+/** The one-time password-reset token issued after a successful verify (2 minutes). */
+export const OTP_RESET_TOKEN_TTL_MS = 2 * 60 * 1000;
 
 /**
  * Normalize an Iranian mobile to the canonical `09xxxxxxxxx` form:
@@ -51,6 +53,16 @@ export function generateLoginToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+/**
+ * Session 84 — generate a high-entropy one-time PASSWORD-RESET token
+ * (64 hex chars / 256 bits). Same crypto as the login token; the PURPOSE is
+ * kept distinct so a login token can never be spent on a reset and vice
+ * versa (the reset complete route only looks at resetTokenHash).
+ */
+export function generateResetToken(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
+
 /** SHA-256 digest of an OTP code (what is persisted instead of the code). */
 export function hashOtpCode(code: string): string {
   return crypto.createHash("sha256").update(code, "utf8").digest("hex");
@@ -58,6 +70,11 @@ export function hashOtpCode(code: string): string {
 
 /** SHA-256 digest of a one-time login token (what is persisted). */
 export function hashLoginToken(token: string): string {
+  return crypto.createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+/** SHA-256 digest of a one-time password-reset token (what is persisted). */
+export function hashResetToken(token: string): string {
   return crypto.createHash("sha256").update(token, "utf8").digest("hex");
 }
 

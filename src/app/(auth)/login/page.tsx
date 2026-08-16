@@ -215,6 +215,16 @@ export default function LoginPage() {
                 )}
               />
 
+              {/* Session 84 — password recovery entry (login page only) */}
+              <div className="-mt-2 text-left">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-zinc-500 transition hover:text-cyan-500"
+                >
+                  رمز عبور را فراموش کرده‌اید؟
+                </Link>
+              </div>
+
               {serverError && (
                 <div
                   className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-700"

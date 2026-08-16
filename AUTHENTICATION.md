@@ -222,6 +222,30 @@ Logout is **pure client-side cookie termination** — it rides the built-in Next
 
 ---
 
+## Password Recovery — بازیابی رمز عبور (Session 84)
+
+A real forgot-password flow built **on the existing OTP/SMS infrastructure** — no second OTP system, no parallel auth architecture. Zero changes to NextAuth `authorize()`, `src/lib/auth.js`, middleware, the SMS adapter, the token-version infra, the User model, or the login/register OTP contracts.
+
+### Flow (4 steps, Persian/RTL at `/forgot-password`; entry «رمز عبور را فراموش کردهاید؟» on the login page only)
+1. **Request** — `POST /api/auth/otp/request { phone, purpose: "password_reset" }`. Same validation-before-rate-limit convention and the SAME shared per-phone OTP/SMS budget as login/register (`otp_request:<phone>` 5/15min, per-IP 15/15min, 60s resend cooldown) — one abuse budget across all three purposes.
+2. **Verify** — `POST /api/auth/otp/verify { phone, code, purpose: "password_reset" }` → **`{ resetToken }`** — a 256-bit random token, SHA-256 stored (`resetTokenHash`), 2-min TTL, **never a `loginToken`**. Wrong-code attempts + 5-attempt lock and expiry behave exactly like login OTP.
+3. **Complete** — `POST /api/auth/password-reset/complete { phone, resetToken, newPassword }` — atomically consumes the token (single-use; concurrent completes allow exactly one winner), validates the new password with the SAME 6–100 policy, bcrypt(10), **bumps `tokenVersion` + invalidates the cache** (every previously-issued session dies — change-password semantics), and **marks every outstanding `OtpCode` row for the phone consumed** (a pending login token minted before the reset can never authenticate). Rate limit 5/phone/15min.
+4. **Success** — «رمز عبور با موفقیت تغییر کرد» → «ورود به حساب کاربری».
+
+### Security model
+- **Anti-enumeration (closed):** for `password_reset`, an UNKNOWN phone receives the same `200 { sent: true }` AND a dummy `OtpCode` row (random code hash, no SMS, `devPlaintextCode: null`), so the 60s resend cooldown behaves IDENTICALLY for known and unknown numbers — no 200-vs-429 existence oracle. (The `login` purpose keeps its documented legacy trade-off.)
+- **Reset ≠ session:** verify never mints a `loginToken` and the flow never calls `signIn()` — a password recovery cannot create a session by construction.
+- **Token hygiene:** `resetToken` is held only in React memory (never localStorage/sessionStorage/cookies) and dropped after success; it is consumed atomically (`updateOne { consumedAt: null }` → modifiedCount 1) so replay or concurrent use fails with the same uniform «درخواست نامعتبر یا منقضی شده است».
+- **Uniform errors:** unknown token, expired token, unknown account all return the same 400 message — no account-existence or token-existence leak. Malformed input is rejected before the rate limiter.
+- **Passwordless accounts** may establish their FIRST password through this flow (consistent with change-password).
+- **Session invalidation:** the `tokenVersion` bump revokes ALL pre-reset sessions (≤60s cross-process, instant same-process) — stale credentials cannot remain valid.
+
+### Files
+- `src/lib/otp.ts` — `generateResetToken`/`hashResetToken` (+ `OTP_RESEND_COOLDOWN_MS` reuse); `src/models/OtpCode.js` — `purpose` enum + `resetTokenHash`/`resetTokenExpiresAt` (additive); `src/lib/rate-limiter.ts` — `PASSWORD_RESET_COMPLETE_LIMIT` (+ E11000-safe first-request create); `src/lib/validations/auth.ts` — `resetPasswordSchema`; request/verify routes extended; `src/app/api/auth/password-reset/complete/route.js` (new); `src/app/(auth)/forgot-password/page.tsx` (new).
+- Verified by `scripts/verify-password-reset.js` (22/22 real-API) + `tests/unit/password-reset.test.ts` + Journey 18 E2E (desktop + mobile anonymous smoke).
+
+---
+
 ## Password Security
 
 - Passwords are hashed with **bcryptjs** (10 salt rounds)

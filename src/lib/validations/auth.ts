@@ -43,6 +43,26 @@ export const registerSchema = z
 export type RegisterFormData = z.infer<typeof registerSchema>;
 
 /**
+ * Session 84 — password-reset completion (client side of step 3).
+ * Same password policy as register/change-password (6–100); the confirm
+ * field is UI-only (the complete API receives just the new password).
+ */
+export const resetPasswordSchema = z
+  .object({
+    password: z
+      .string()
+      .min(6, "رمز عبور باید حداقل ۶ کاراکتر باشد")
+      .max(100, "رمز عبور حداکثر ۱۰۰ کاراکتر"),
+    confirmPassword: z.string().min(1, "تکرار رمز عبور الزامی است"),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "رمز عبور و تکرار آن یکسان نیستند",
+    path: ["confirmPassword"],
+  });
+
+export type ResetPasswordData = z.infer<typeof resetPasswordSchema>;
+
+/**
  * Session 62 — OTP code request schema (SMS login/register step 1).
  */
 export const otpRequestSchema = z.object({

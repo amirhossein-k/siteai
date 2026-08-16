@@ -101,6 +101,12 @@ export const OTP_VERIFY_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/** Password-reset completion: 5 per phone per 15 minutes (Session 84). */
+export const PASSWORD_RESET_COMPLETE_LIMIT: RateLimitConfig = {
+  max: 5,
+  windowMs: 15 * 60 * 1000,
+};
+
 /** Password change: 5 attempts per user per 15 minutes (Session 64). */
 export const CHANGE_PASSWORD_LIMIT: RateLimitConfig = {
   max: 5,
@@ -209,27 +215,41 @@ export async function rateLimit(
   // The `$inc` increments count only if the document already exists
   // (i.e., the window has been started). We use a two-phase approach
   // to avoid creating a new document with the wrong expiresAt on every update.
-  const doc = await model.findById(docId).lean();
+  let doc = await model.findById(docId).lean();
 
   if (!doc) {
-    // First request in this window — create the document
+    // First request in this window — create the document. Two concurrent
+    // first-requests can race this find-then-create (both see no doc and
+    // both attempt the insert): the loser hits the _id unique-index E11000
+    // and must NOT 500. It re-reads the winner's document and falls through
+    // to the normal increment path below, so it is COUNTED exactly like a
+    // sequential request (no budget bypass — the DB count ends up equal to
+    // the number of admitted requests).
     const expiresAt = new Date(now.getTime() + config.windowMs);
-    await model.create({
-      _id: docId,
-      count: 1,
-      expiresAt,
-    });
+    try {
+      await model.create({
+        _id: docId,
+        count: 1,
+        expiresAt,
+      });
+    } catch (err) {
+      if ((err as { code?: number })?.code !== 11000) throw err;
+      doc = await model.findById(docId).lean();
+    }
 
-    return {
-      limited: false,
-      remaining: config.max - 1,
-      resetInMs: config.windowMs,
-      headers: {
-        "X-RateLimit-Limit": String(config.max),
-        "X-RateLimit-Remaining": String(config.max - 1),
-        "X-RateLimit-Reset": String(Math.ceil(expiresAt.getTime() / 1000)),
-      },
-    };
+    if (!doc) {
+      // Genuine first request — this create won the race: fresh window.
+      return {
+        limited: false,
+        remaining: config.max - 1,
+        resetInMs: config.windowMs,
+        headers: {
+          "X-RateLimit-Limit": String(config.max),
+          "X-RateLimit-Remaining": String(config.max - 1),
+          "X-RateLimit-Reset": String(Math.ceil(expiresAt.getTime() / 1000)),
+        },
+      };
+    }
   }
 
   // If the window has expired, reset

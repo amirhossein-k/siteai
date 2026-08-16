@@ -64,6 +64,7 @@ const suites = [
   "verify-order-management", // Session 57 — order lifecycle state machine, claim-based transitions, shipping metadata, actor audit, list sort (cleans its own PREFIX'd rows)
   "verify-homepage-cms", // Session 53 — admin CRUD + public composition + visibility rules
   "verify-otp", // Session 62 — SMS OTP auth (REQUIRES the dev server started with SMS_MOCK=1; hermetic otherwise — fails with a clear setup message)
+  "verify-password-reset", // Session 84 — password recovery (purpose-scoped reset OTP, closed cooldown oracle, atomic single-use resetToken, tokenVersion revocation, outstanding-OTP invalidation, rate limits)
   "verify-logout", // Session 63 — logout/session termination (real API: signout redirect, session clear, re-login; creates + deletes one customer)
   "verify-session-security", // Session 64 — tokenVersion enforcement (change-password / logout-all / admin revoke; requires SMS_MOCK=1 for the OTP-registered user)
   "verify-telegram-alerts",
@@ -104,7 +105,7 @@ async function clearLoginRateLimits() {
     const res = await mongoose.connection.db
       .collection("ratelimits")
       .deleteMany({
-        _id: { $regex: "^rl:(login|login_ip|otp_request|otp_request_ip|otp_verify|conversation-create|conversation-msg|accounting-init|accounting-config):" },
+        _id: { $regex: "^rl:(login|login_ip|otp_request|otp_request_ip|otp_verify|password_reset_complete|conversation-create|conversation-msg|accounting-init|accounting-config):" },
       });
     console.log(`  [clean] login/OTP rate-limit state cleared (${res.deletedCount} docs)`);
     await mongoose.disconnect();

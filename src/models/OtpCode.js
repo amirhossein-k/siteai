@@ -31,7 +31,7 @@ const OtpCodeSchema = new mongoose.Schema(
     },
     purpose: {
       type: String,
-      enum: ["login", "register"],
+      enum: ["login", "register", "password_reset"],
       required: true,
     },
     codeHash: {
@@ -66,6 +66,22 @@ const OtpCodeSchema = new mongoose.Schema(
     },
     /** Mirrors the code-row expiry so the token and the row die together. */
     loginTokenExpiresAt: {
+      type: Date,
+      default: null,
+    },
+    /**
+     * Session 84 — set after a successful `password_reset` verify: the
+     * one-time PASSWORD-RESET token hash. Kept separate from loginTokenHash
+     * so a login token can NEVER be spent on a password reset and vice versa
+     * (the complete route only looks at resetTokenHash). Consumed atomically
+     * by POST /api/auth/password-reset/complete via `consumedAt`.
+     */
+    resetTokenHash: {
+      type: String,
+      default: null,
+    },
+    /** Mirrors the code-row expiry so the reset token dies with the row. */
+    resetTokenExpiresAt: {
       type: Date,
       default: null,
     },
