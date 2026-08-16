@@ -61,7 +61,9 @@ export function QuickCategories({ section }: HomepageSectionRendererProps) {
                 href={categoryHref}
                 className="group flex w-[23%] shrink-0 snap-start flex-col items-center gap-2 sm:w-[16%] md:w-auto"
               >
-                <span className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-muted to-muted/60 text-lg font-bold text-muted-foreground shadow-sm ring-1 ring-border transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg sm:h-20 sm:w-20 sm:rounded-3xl">
+                {/* Session 85 — glass tile surface (dark reference); category
+                   data, links and the image/letter fallback unchanged. */}
+                <span className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white/5 text-lg font-bold text-muted-foreground shadow-sm ring-1 ring-white/10 backdrop-blur-sm transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:ring-white/20 sm:h-20 sm:w-20 sm:rounded-3xl">
                   {categoryImage ? (
                     <Image
                       src={categoryImage}

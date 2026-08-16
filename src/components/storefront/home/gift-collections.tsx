@@ -42,7 +42,9 @@ export function GiftCollections({ section }: HomepageSectionRendererProps) {
               key={collection._id}
               href={collection.ctaHref || "/products"}
               className={cn(
-                "group relative overflow-hidden rounded-2xl bg-gradient-to-br p-6 text-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl sm:p-8",
+                /* Session 85 — container polish only (radius/shadow); the
+                   gradient theme, artwork and links unchanged. */
+                "group relative overflow-hidden rounded-3xl bg-gradient-to-br p-6 text-white shadow-2xl shadow-black/40 transition-all duration-300 hover:-translate-y-1 hover:shadow-black/60 sm:p-8",
                 isGradient(collection.themeColor)
                   ? collection.themeColor
                   : "from-slate-800 via-slate-700 to-zinc-600"

@@ -60,7 +60,8 @@ export function LazySection({
           <Skeleton className="h-7 w-48" />
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="overflow-hidden rounded-xl border">
+              /* Session 85 — glass skeleton surface (dark reference). */
+              <div key={i} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
                 <Skeleton className="aspect-square w-full rounded-none" />
                 <div className="space-y-2 p-3">
                   <Skeleton className="h-3 w-16" />

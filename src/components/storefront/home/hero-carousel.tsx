@@ -63,7 +63,10 @@ export function HeroCarousel({ section }: HomepageSectionRendererProps) {
       aria-roledescription="carousel"
       aria-label="اسلایدر فروشگاه"
     >
-      <div className="relative overflow-hidden rounded-2xl border shadow-sm sm:rounded-3xl">
+      {/* Session 85 — container polish only (border/shadow); the CMS slides,
+          cross-fade, autoplay, pause-on-hover, arrows/dots and a11y are
+          untouched. */}
+      <div className="relative overflow-hidden rounded-3xl border border-white/10 shadow-2xl shadow-black/40">
         <div className="relative aspect-[4/3] sm:aspect-[16/9] lg:aspect-[21/9]">
           {slides.map((slide, i) => {
             const gradient = isGradient(slide.themeColor)

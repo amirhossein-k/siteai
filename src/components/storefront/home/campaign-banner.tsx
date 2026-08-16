@@ -32,7 +32,9 @@ export function CampaignBanner({ section }: HomepageSectionRendererProps) {
     <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
       <div
         className={cn(
-          "relative overflow-hidden rounded-2xl px-6 py-10 text-white shadow-sm sm:rounded-3xl sm:px-12 sm:py-14",
+          /* Session 85 — container polish only (radius/shadow); banner data
+             and behavior unchanged. */
+          "relative overflow-hidden rounded-3xl px-6 py-10 text-white shadow-2xl shadow-black/40 sm:px-12 sm:py-14",
           isGradient ? `bg-gradient-to-l ${banner.themeColor}` : "bg-gradient-to-l from-indigo-900 via-indigo-800 to-violet-700"
         )}
         style={

@@ -13,7 +13,6 @@ import {
   Store,
   type LucideIcon,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { SectionHeader } from "@/components/storefront/home/section-header";
 import type { HomepageSectionRendererProps } from "@/types";
 
@@ -58,20 +57,20 @@ export function TrustBadges({ section }: HomepageSectionRendererProps) {
         {badges.map((badge) => {
           const Icon = ICON_MAP[badge.icon || ""] || ShieldCheck;
           return (
-            <Card
+            /* Session 85 — glass badge card (dark reference); badge data
+               and the whitelisted-icon mapping unchanged. */
+            <div
               key={badge._id}
-              className="group border transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
+              className="glass-card group rounded-2xl p-5"
             >
-              <CardContent className="p-5">
-                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-muted text-foreground transition-colors duration-300 group-hover:bg-primary group-hover:text-primary-foreground">
-                  <Icon className="h-6 w-6" />
-                </div>
-                <h3 className="mb-1.5 text-base font-semibold">{badge.title}</h3>
-                <p className="text-sm leading-6 text-muted-foreground">
-                  {badge.description}
-                </p>
-              </CardContent>
-            </Card>
+              <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors duration-300 group-hover:bg-primary group-hover:text-primary-foreground">
+                <Icon className="h-6 w-6" />
+              </div>
+              <h3 className="mb-1.5 text-base font-semibold">{badge.title}</h3>
+              <p className="text-sm leading-6 text-muted-foreground">
+                {badge.description}
+              </p>
+            </div>
           );
         })}
       </div>

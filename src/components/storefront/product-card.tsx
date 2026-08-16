@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { ShoppingCart, ImageOff, Heart, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { cn, formatPrice, isAllowedImageSrc } from "@/lib/utils";
 import { useCartStore } from "@/stores/cart-store";
 import { showToast } from "@/components/ui/toast";
@@ -27,6 +26,18 @@ interface ProductCardProps {
   onCountdownExpire?: (endsAt: string) => void;
 }
 
+/**
+ * Product card (Session 50; Session 85 Phase B — dark-glass reference restyle).
+ *
+ * The reference glass surface (glass-card utility from the Phase A theme),
+ * gradient status badges on the RTL start corner, blue-gradient CTA and a
+ * dominant price — while preserving EVERY behavior contract: server-computed
+ * effective pricing (Session 77), countdown + onCountdownExpire (Session 78),
+ * the stretched product link, customer-gated wishlist heart, supplier link,
+ * image allowlist + fallback, and the disabled/out-of-stock add-to-cart.
+ * Badge/label TEXT is unchanged («ناموجود», «تنها X عدد باقیست», «٪Y تخفیف»,
+ * «افزودن به سبد خرید») — the E2E text contracts hold.
+ */
 export function ProductCard({
   product,
   className,
@@ -88,18 +99,32 @@ export function ProductCard({
   return (
     <div
       className={cn(
-        "group relative overflow-hidden rounded-xl border bg-card transition-all duration-300 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lg",
+        // Session 85 — glass-card provides the reference surface (translucent
+        // gradient, blur, border, deep shadow + hover lift); the glow overlay
+        // below adds the blue accent glow on hover. `relative` keeps the
+        // stretched-link overlay and z-indexed actions working.
+        "glass-card group relative overflow-hidden rounded-3xl",
         className
       )}
     >
+      {/* Hover glow overlay (pointer-events-none; transparent, ring + glow). */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-0 rounded-3xl opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        style={{
+          boxShadow:
+            "inset 0 0 0 1px rgba(90,160,255,0.22), 0 0 42px rgba(60,120,255,0.14)",
+        }}
+      />
+
       {/* Product Image */}
-      <div className="relative aspect-square overflow-hidden bg-muted">
+      <div className="relative aspect-square overflow-hidden bg-white/[0.02]">
         {showImage ? (
           <>
             {/* Loading skeleton */}
             {!imageLoaded && (
-              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-muted to-muted/50 animate-pulse">
-                <span className="text-5xl font-bold text-muted-foreground/10">
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-white/[0.04] to-transparent animate-pulse">
+                <span className="text-5xl font-bold text-white/10">
                   {product.name?.[0] || "?"}
                 </span>
               </div>
@@ -119,43 +144,46 @@ export function ProductCard({
             />
           </>
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-muted to-muted/50">
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-white/[0.04] to-transparent">
             {imageError ? (
-              <ImageOff className="h-10 w-10 text-muted-foreground/30" />
+              <ImageOff className="h-10 w-10 text-white/20" />
             ) : (
-              <span className="text-5xl font-bold text-muted-foreground/20">
+              <span className="text-5xl font-bold text-white/15">
                 {product.name?.[0] || "?"}
               </span>
             )}
           </div>
         )}
 
-        {/* Stock + discount badges (stacked, top-left) */}
-        <div className="absolute left-2 top-2 flex flex-col items-start gap-2">
+        {/* Status badges — RTL start corner (top-right), reference gradient
+            pills. All gradient stops keep white text ≥ WCAG AA (Session 61
+            convention; the axe gate scans the catalog/homepage). Text is
+            byte-identical to the pre-Phase-B badges. */}
+        <div className="absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
           {product.stock === 0 && (
-            <Badge variant="destructive" className="text-xs">
+            <span className="rounded-lg bg-gradient-to-b from-red-600 to-red-800 px-3 py-1 text-xs font-bold text-white shadow-lg shadow-black/40">
               ناموجود
-            </Badge>
+            </span>
           )}
           {hasLowStock && (
-            <Badge variant="warning" className="text-xs">
+            <span className="rounded-lg bg-gradient-to-b from-amber-700 to-amber-800 px-3 py-1 text-xs font-bold text-white shadow-lg shadow-black/40">
               تنها {product.stock} عدد باقیست
-            </Badge>
+            </span>
           )}
           {hasActiveDiscount && (
-            <Badge className="bg-rose-600 text-xs text-white">
+            <span className="rounded-lg bg-gradient-to-b from-rose-600 to-rose-700 px-3 py-1 text-xs font-bold text-white shadow-lg shadow-black/40">
               ٪{discountPercent} تخفیف
-            </Badge>
+            </span>
           )}
         </div>
 
-        {/* Wishlist heart (Session 35) — z-10 lifts it above the product
-            stretched-link overlay so it stays an independent action. */}
+        {/* Wishlist heart (Session 35) — RTL end corner (top-left); z-20 lifts
+            it above the stretched-link overlay so it stays independent. */}
         <button
           type="button"
           onClick={handleWishlist}
           aria-label={inWishlist ? "حذف از علاقه‌مندی‌ها" : "افزودن به علاقه‌مندی‌ها"}
-          className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-background/85 text-muted-foreground shadow-sm backdrop-blur-sm transition-all hover:scale-110 hover:bg-background hover:text-rose-500"
+          className="absolute left-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white shadow-md backdrop-blur-sm transition-all hover:scale-110 hover:bg-black/50"
         >
           <Heart
             className={cn(
@@ -181,19 +209,19 @@ export function ProductCard({
           href={`/products/${product.slug || product._id}`}
           className="after:absolute after:inset-0 after:content-['']"
         >
-          <h3 className="mb-2 text-sm font-semibold leading-tight transition-colors hover:text-primary line-clamp-2">
+          <h3 className="mb-2 line-clamp-2 text-sm font-semibold leading-tight text-foreground transition-colors hover:text-primary">
             {product.name}
           </h3>
         </Link>
 
-        {/* Price + supplier link (Session 42) — the price sits under the
-            stretched overlay (navigates); the supplier link is an independent
-            action stacked above it. */}
+        {/* Price + supplier link (Session 42) — the dominant current price
+            (Session 85: white/extrabold on the dark glass) with the original
+            struck-through and secondary when a discount is active. */}
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="flex flex-wrap items-baseline gap-2">
             {hasActiveDiscount ? (
               <>
-                <span className="text-lg font-bold text-emerald-600">
+                <span className="text-lg font-extrabold text-white">
                   {formatPrice(effectivePrice)}
                 </span>
                 <span className="text-xs text-muted-foreground line-through">
@@ -201,7 +229,7 @@ export function ProductCard({
                 </span>
               </>
             ) : (
-              <span className="text-lg font-bold">
+              <span className="text-lg font-extrabold text-white">
                 {formatPrice(effectivePrice)}
               </span>
             )}
@@ -223,8 +251,7 @@ export function ProductCard({
 
         {/* Discount countdown (Session 78) — only while the server reports an
             ACTIVE discount with a finite end. Presentation only; the server
-            remains authoritative for pricing. Placed under the price row so
-            the badge/price layout above is untouched. */}
+            remains authoritative for pricing. */}
         {discountEndsAt && (
           <div className="mb-2">
             <DiscountCountdown
@@ -235,10 +262,12 @@ export function ProductCard({
           </div>
         )}
 
-        {/* Add to cart button — z-10 lifts it above the stretched product
-            overlay so adding to cart never triggers product navigation. */}
+        {/* Add to cart — Session 85: reference blue-gradient CTA. Both
+            gradient stops (blue-600 → blue-800) keep white text ≥ 4.5:1, and
+            the disabled/out-of-stock state + label text are unchanged. z-10
+            lifts it above the stretched product overlay. */}
         <Button
-          className="relative z-10 w-full gap-2 text-xs"
+          className="relative z-10 w-full gap-2 bg-gradient-to-b from-blue-600 to-blue-800 text-xs text-white shadow-lg shadow-blue-950/50 transition-all hover:-translate-y-0.5 hover:from-blue-600 hover:to-blue-700 hover:shadow-blue-900/60"
           size="sm"
           disabled={product.stock === 0}
           onClick={() => {

@@ -43,7 +43,9 @@ export function PopularBrands({ section }: HomepageSectionRendererProps) {
               href={`/products?brand=${brand._id}`}
               className="group flex w-[23%] shrink-0 snap-start flex-col items-center gap-2 sm:w-[16%] md:w-auto"
             >
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-muted to-muted/70 text-lg font-bold text-muted-foreground shadow-sm ring-1 ring-border transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg">
+              {/* Session 85 — glass brand tile (dark reference); brand data
+                 and the real /products?brand=<id> link unchanged. */}
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/5 text-lg font-bold text-muted-foreground shadow-sm ring-1 ring-white/10 backdrop-blur-sm transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:ring-white/20">
                 {brand.name[0]}
               </span>
               <span className="max-w-full truncate text-center text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">

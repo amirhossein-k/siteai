@@ -32,19 +32,22 @@ export function SectionHeader({
   className,
 }: SectionHeaderProps) {
   return (
-    <div className={cn("mb-4 flex items-end justify-between gap-3", className)}>
-      <div className="flex items-center gap-2.5">
+    /* Session 85 — oversized/extrabold title (Productcarousel reference) with
+       the icon chip + blue underline «مشاهده همه» link. Structure, slots
+       (href/linkLabel/icon/aside) and semantic h2 are unchanged. */
+    <div className={cn("mb-5 flex items-end justify-between gap-3", className)}>
+      <div className="flex items-center gap-3">
         {icon && (
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/5 text-primary">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
             {icon}
           </span>
         )}
         <div>
-          <h2 className="text-lg font-bold text-foreground sm:text-xl">
+          <h2 className="text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
             {title}
           </h2>
           {subtitle && (
-            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
+            <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
               {subtitle}
             </p>
           )}
@@ -55,7 +58,7 @@ export function SectionHeader({
         {href && (
           <Link
             href={href}
-            className="group inline-flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:text-primary/80 sm:text-sm"
+            className="group inline-flex items-center gap-1 border-b border-primary/50 pb-0.5 text-sm font-medium text-primary transition-colors hover:border-primary hover:text-primary"
           >
             {linkLabel}
             <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
