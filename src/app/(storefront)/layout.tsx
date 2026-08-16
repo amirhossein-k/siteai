@@ -12,7 +12,9 @@ export default function StorefrontLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen flex-col">
+    /* Session 85 — `.storefront dot-grid` scopes the dark-glass theme to the
+       storefront group (admin/supplier/auth stay light). */
+    <div className="storefront dot-grid flex min-h-screen flex-col">
       <StorefrontHeader />
 
       {/* Main Content */}

@@ -37,11 +37,15 @@ export function StorefrontHeader() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-xl">
+    /* Session 85 — glass-strong translucent header bar (productPage reference
+       `glass-strong`): the scoped `.storefront` tokens already darken every
+       text/icon via the CSS variables; this swap gives the bar its translucent
+       glass surface + blue accent treatment. */
+    <header className="glass-strong sticky top-0 z-50">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center gap-4">
           <Link href="/" className="flex shrink-0 items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-zinc-900 to-zinc-700 text-white text-sm font-bold shadow-lg dark:from-zinc-50 dark:to-zinc-300 dark:text-zinc-900">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-800 text-sm font-bold text-white shadow-lg shadow-blue-900/50">
               S
             </div>
             <span className="text-xl font-bold tracking-tight">{APP_NAME}</span>
@@ -53,7 +57,7 @@ export function StorefrontHeader() {
               className={cn(
                 "text-sm font-medium transition-colors",
                 pathname === "/"
-                  ? "text-foreground border-b-2 border-foreground pb-0.5"
+                  ? "text-foreground border-b-2 border-primary pb-0.5"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -64,7 +68,7 @@ export function StorefrontHeader() {
               className={cn(
                 "text-sm font-medium transition-colors",
                 pathname.startsWith("/products")
-                  ? "text-foreground border-b-2 border-foreground pb-0.5"
+                  ? "text-foreground border-b-2 border-primary pb-0.5"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -76,7 +80,7 @@ export function StorefrontHeader() {
                 className={cn(
                   "text-sm font-medium transition-colors",
                   pathname.startsWith("/coupons")
-                    ? "text-foreground border-b-2 border-foreground pb-0.5"
+                    ? "text-foreground border-b-2 border-primary pb-0.5"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -89,7 +93,7 @@ export function StorefrontHeader() {
                 className={cn(
                   "text-sm font-medium transition-colors",
                   pathname.startsWith("/orders")
-                    ? "text-foreground border-b-2 border-foreground pb-0.5"
+                    ? "text-foreground border-b-2 border-primary pb-0.5"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -102,7 +106,7 @@ export function StorefrontHeader() {
                 className={cn(
                   "text-sm font-medium transition-colors",
                   pathname.startsWith("/wishlist")
-                    ? "text-foreground border-b-2 border-foreground pb-0.5"
+                    ? "text-foreground border-b-2 border-primary pb-0.5"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -234,7 +238,9 @@ function HeaderSearchBox({ autoFocus, onNavigated }: HeaderSearchBoxProps) {
           if (e.key === "Enter") navigate(query);
           if (e.key === "Escape") setOpen(false);
         }}
-        className="h-10 w-full rounded-xl border bg-muted/40 pr-4 pl-9 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:bg-background"
+        /* Session 85 — glass search pill (productPage reference): translucent
+           white-on-dark surface with a blue focus border. */
+        className="h-10 w-full rounded-full border border-white/10 bg-white/5 pr-4 pl-9 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60 focus:bg-white/10"
       />
       <SearchSuggestions
         query={query}

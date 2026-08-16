@@ -24,7 +24,10 @@ export default async function HomePage() {
   const composition = await getHomepageComposition();
 
   return (
-    <div className="flex min-h-screen flex-col">
+    /* Session 85 — `.storefront dot-grid` scopes the dark-glass theme to the
+       storefront (admin/supplier/auth stay light). The homepage lives outside
+       the (storefront) route group, so it carries its own scope here. */
+    <div className="storefront dot-grid flex min-h-screen flex-col">
       <StorefrontHeader />
 
       <main className="flex-1 pb-14">

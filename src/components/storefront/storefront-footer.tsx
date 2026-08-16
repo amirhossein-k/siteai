@@ -7,7 +7,9 @@ import { APP_NAME } from "@/lib/constants";
  */
 export function StorefrontFooter() {
   return (
-    <footer className="border-t bg-muted/30">
+    /* Session 85 — footer surface restyle: translucent border on the dark
+       storefront (the scoped tokens already darken the text/links). */
+    <footer className="border-t border-white/5 bg-transparent">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <div>
