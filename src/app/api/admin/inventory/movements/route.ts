@@ -16,7 +16,6 @@ const MOVEMENT_TYPES = [
   "cancellation_restock",
   "purchase_return",
   "adjustment",
-  "sourcing_change",
 ];
 
 function escapeRegExp(value: string): string {

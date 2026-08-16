@@ -49,6 +49,7 @@ const PASS = "fifo82-test-123";
 const ADMIN_PHONE = "09120000000";
 const ADMIN_PASS = "admin123456";
 const SUPPLIER_PHONE = "09157773022";
+const SUPPLIER2_PHONE = "09157773021";
 const CUSTOMER_PHONE = "09157773019";
 
 let passed = 0, failed = 0, total = 0;
@@ -158,7 +159,7 @@ async function checkout(jar, items) {
   await d.collection("purchaseorders").deleteMany({ "items.name": { $regex: "^" + PREFIX } });
   await d.collection("categories").deleteMany({ slug: { $regex: "^" + PREFIX } });
   await d.collection("suppliers").deleteMany({ businessName: { $regex: "^" + PREFIX } });
-  await User.deleteMany({ phone: { $in: [SUPPLIER_PHONE, CUSTOMER_PHONE] } });
+  await User.deleteMany({ phone: { $in: [SUPPLIER_PHONE, SUPPLIER2_PHONE, CUSTOMER_PHONE] } });
   // Orders/supplier-orders from a crashed previous run (fixed fixture phones)
   const sweepCustomer = await User.findOne({ phone: CUSTOMER_PHONE }).lean();
   if (sweepCustomer) {
@@ -205,6 +206,33 @@ async function checkout(jar, items) {
   const concId = (await seedProduct({ name: PREFIX + "Conc", slug: PREFIX + "conc", supplierPrice: 100000, price: 180000, stock: 0 })).insertedId.toString();
   // broken purchased product: stock 3 but NO layers (inconsistent state)
   const brokenId = (await seedProduct({ name: PREFIX + "Broken", slug: PREFIX + "broken", supplierPrice: 50000, price: 100000, stock: 3, costLayers: [] })).insertedId.toString();
+  // HIGH-1 rollback fixtures — a SECOND supplier + one of its products so one
+  // checkout spans TWO SupplierOrders (the SO-creation failure trigger).
+  const suppUser2 = await User.create({ name: PREFIX + "Supplier2", phone: SUPPLIER2_PHONE, passwordHash: await bcrypt.hash(PASS, 10), role: "supplier", isActive: true });
+  const suppDoc2 = await Supplier.create({ user: suppUser2._id, businessName: PREFIX + "SupplierCo2", isActive: true, balance: 0, pendingReserve: 0 });
+  await User.findByIdAndUpdate(suppUser2._id, { $set: { supplier: suppDoc2._id } });
+  const soFailPurchId = (await d.collection("products").insertOne({
+    name: PREFIX + "SOFailPurch", slug: PREFIX + "sofail-purch", description: "", images: [], brand: null, tags: [],
+    category: catDoc.insertedId, supplier: suppDoc._id, supplierPrice: 120000, price: 200000,
+    stock: 0, stockVersion: 0, hasVariants: false, variants: [], isActive: true,
+    sourcing: "purchased", costLayers: [], createdAt: now, updatedAt: now,
+  })).insertedId.toString();
+  const soFailConsignId = (await d.collection("products").insertOne({
+    name: PREFIX + "SOFailConsign", slug: PREFIX + "sofail-consign", description: "", images: [], brand: null, tags: [],
+    category: catDoc.insertedId, supplier: suppDoc2._id, supplierPrice: 90000, price: 150000,
+    stock: 5, stockVersion: 0, hasVariants: false, variants: [], isActive: true,
+    sourcing: "consignment", costLayers: [], createdAt: now, updatedAt: now,
+  })).insertedId.toString();
+  // SECOND consignment product (different supplier, SAME item name) so the
+  // HIGH-1 test can force TWO SupplierOrders for one order — purchased items
+  // never produce a SupplierOrder, so the original 2-supplier cart could not
+  // collide. Both SOs share the name, which the partial unique index keys on.
+  const soFailConsign2Id = (await d.collection("products").insertOne({
+    name: PREFIX + "SOFailConsign", slug: PREFIX + "sofail-consign2", description: "", images: [], brand: null, tags: [],
+    category: catDoc.insertedId, supplier: suppDoc._id, supplierPrice: 90000, price: 150000,
+    stock: 5, stockVersion: 0, hasVariants: false, variants: [], isActive: true,
+    sourcing: "consignment", costLayers: [], createdAt: now, updatedAt: now,
+  })).insertedId.toString();
 
   const getProduct = async (id) => d.collection("products").findOne({ _id: new mongoose.Types.ObjectId(id) });
   const getOrder = async (id) => d.collection("orders").findOne({ _id: new mongoose.Types.ObjectId(id) });
@@ -492,10 +520,79 @@ async function checkout(jar, items) {
     assert(!!mv && mv.quantity === 5 && mv.unitCost === 100000, "cancellation_restock movement exists");
   });
 
+  // ---- TEST 17: SupplierOrder creation failure → full FIFO rollback (HIGH-1) ----
+  await testAsync("SO-create failure: stock+layers restored, order+SOs cleaned, no sale movement", async () => {
+    // Give the purchased product a layer to consume.
+    const prod0 = await receivePurchase(soFailPurchId, 10, 100000);
+    assert(prod0.stock === 10 && prod0.costLayers.length === 1, "SO-fail fixture ready (10 @100000)");
+
+    // Force SupplierOrder.create to fail deterministically. A unique index on
+    // `order` ALONE can never be built in this app (multi-supplier orders
+    // legitimately hold several SOs with the same order id), so the trigger is
+    // a PARTIAL unique index keyed on the shared consignment item name: the
+    // cart has TWO consignment items (different suppliers) with that exact
+    // name → both SOs match the filter → the second insert collides on
+    // `order` → E11000 → the checkout rollback runs. Purchased items produce
+    // no SO, which is why the original 2-supplier design could not collide.
+    // Per-run index name: a crashed run can leave the index behind, and a
+    // same-name createIndex with different options would fail silently.
+    const idxName = "zz_fifo82_so_unique_" + PREFIX;
+    try {
+      await d.collection("supplierorders").createIndex(
+        { order: 1 },
+        { unique: true, partialFilterExpression: { "items.name": PREFIX + "SOFailConsign" }, name: idxName }
+      );
+    } catch (e) { /* already present from a crashed run */ }
+
+    try {
+      const prod = await getProduct(soFailPurchId);
+      const beforeStock = prod.stock;
+      const beforeQty = prod.costLayers.reduce((s, l) => s + l.remaining, 0);
+      const beforeValue = prod.costLayers.reduce((s, l) => s + l.remaining * l.unitCost, 0);
+      const consignBefore = (await getProduct(soFailConsignId)).stock;
+      const consign2Before = (await getProduct(soFailConsign2Id)).stock;
+
+      const r = await checkout(customerJar, [
+        { id: soFailPurchId, quantity: 2, price: 200000, name: PREFIX + "SOFailPurch" },
+        { id: soFailConsignId, quantity: 1, price: 150000, name: PREFIX + "SOFailConsign" },
+        { id: soFailConsign2Id, quantity: 1, price: 150000, name: PREFIX + "SOFailConsign" },
+      ]);
+      assert(r.status === 500, `SO failure → ${r.status} (expected 500): ${JSON.stringify(r.json)}`);
+
+      // Stock + FIFO layers restored EXACTLY (never supplierPrice, never partial).
+      const after = await getProduct(soFailPurchId);
+      assert(after.stock === beforeStock, `purchased stock restored (${after.stock} vs ${beforeStock})`);
+      const afterQty = after.costLayers.reduce((s, l) => s + l.remaining, 0);
+      const afterValue = after.costLayers.reduce((s, l) => s + l.remaining * l.unitCost, 0);
+      assert(afterQty === beforeQty, `layer qty restored (${afterQty} vs ${beforeQty})`);
+      assert(afterValue === beforeValue, `layer value restored (${afterValue} vs ${beforeValue})`);
+      const consignAfter = await getProduct(soFailConsignId);
+      assert(consignAfter.stock === consignBefore, `consignment stock restored (${consignAfter.stock} vs ${consignBefore})`);
+      const consign2After = await getProduct(soFailConsign2Id);
+      assert(consign2After.stock === consign2Before, `consignment2 stock restored (${consign2After.stock} vs ${consign2Before})`);
+
+      // The order and every SupplierOrder created for it are removed.
+      const oids = [new mongoose.Types.ObjectId(soFailPurchId), new mongoose.Types.ObjectId(soFailConsignId), new mongoose.Types.ObjectId(soFailConsign2Id)];
+      const orderCount = await d.collection("orders").countDocuments({ "items.product": { $in: oids } });
+      assert(orderCount === 0, `order cleaned up (${orderCount} orders left)`);
+      const soCount = await d.collection("supplierorders").countDocuments({ "items.product": { $in: oids } });
+      assert(soCount === 0, `no orphaned SupplierOrders (${soCount})`);
+
+      // No sale movement was (or should be) recorded for the rolled-back sale.
+      const saleMv = await d.collection("inventorymovements").countDocuments({ type: "sale", product: new mongoose.Types.ObjectId(soFailPurchId) });
+      assert(saleMv === 0, `no sale movement for rolled-back purchase (${saleMv})`);
+    } finally {
+      try { await d.collection("supplierorders").dropIndex(idxName); } catch { /* already dropped */ }
+    }
+  });
+
   // ============================================================
   // CLEANUP (scoped to this suite's own fixtures)
   // ============================================================
   try {
+    // Defensively drop the temporary SO unique index if a crashed run left it.
+    try { await d.collection("supplierorders").dropIndex("zz_fifo82_so_unique_" + PREFIX); } catch { /* absent */ }
+    try { await d.collection("supplierorders").dropIndex("zz_fifo82_so_order_unique"); } catch { /* absent */ }
     const prefixProductIds = (await d.collection("products")
       .find({ slug: { $regex: "^" + PREFIX } })
       .project({ _id: 1 }).toArray()).map((x) => x._id);
@@ -511,7 +608,7 @@ async function checkout(jar, items) {
     await d.collection("products").deleteMany({ slug: { $regex: "^" + PREFIX } });
     await d.collection("categories").deleteMany({ slug: { $regex: "^" + PREFIX } });
     await d.collection("suppliers").deleteMany({ businessName: { $regex: "^" + PREFIX } });
-    await User.deleteMany({ phone: { $in: [SUPPLIER_PHONE, CUSTOMER_PHONE] } });
+    await User.deleteMany({ phone: { $in: [SUPPLIER_PHONE, SUPPLIER2_PHONE, CUSTOMER_PHONE] } });
     await d.collection("ratelimits").deleteMany({ _id: { $regex: "^rl:purchase-write:" } });
     console.log("\n[cleanup] PREFIX'd fixtures removed");
   } catch (err) {

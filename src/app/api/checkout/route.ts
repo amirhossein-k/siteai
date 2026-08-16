@@ -463,15 +463,29 @@ export async function POST(req: NextRequest) {
       await Promise.all(supplierOrderPromises);
     } catch (err) {
       // SupplierOrder creation failed — release the coupon claim (if any),
-      // roll back stock AND delete the order
+      // roll back stock AND delete the order.
+      //
+      // Session 82 Phase C hardening (HIGH-1): purchased items restore their
+      // exact FIFO layers at the snapshot cost (r.fifoUnitCost — captured from
+      // reserveStock's __fifoConsumption) — stock and layers always move
+      // together. Consignment items keep the stock-only restore. Any
+      // SupplierOrders already created for this order in this request are
+      // removed with it (no orphaned payout obligations pointing at a deleted
+      // order).
       if (claimedCoupon) {
         await releaseCouponClaim(claimedCoupon.id, claimedCoupon.userId);
       }
       await Promise.all([
         ...reservedProducts.map((r) =>
-          restoreStock(String(r.product._id), r.quantity, r.variantId)
+          restoreStock(
+            String(r.product._id),
+            r.quantity,
+            r.variantId,
+            r.fifoUnitCost
+          )
         ),
         Order.findByIdAndDelete(order._id),
+        SupplierOrder.deleteMany({ order: order._id }),
       ]);
       throw err;
     }

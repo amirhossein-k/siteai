@@ -189,6 +189,15 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    // Session 82 Phase C hardening (MEDIUM-1): never accept a future cutover
+    // date here either (the config route already rejects it; this guards the
+    // body-supplied variant).
+    if (cutoverDate > new Date()) {
+      return NextResponse.json(
+        { error: "تاریخ شروع حسابداری نمی‌تواند در آینده باشد" },
+        { status: 400 }
+      );
+    }
 
     // --- Process items (idempotent per product) ---
     const productsInitialized = new Set<string>();

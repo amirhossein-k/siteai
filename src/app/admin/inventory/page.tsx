@@ -31,9 +31,11 @@ import { showToast } from "@/components/ui/toast";
 import { formatPrice } from "@/lib/utils";
 import type { AdminProduct, InventoryMovementType } from "@/types";
 
-const MOVEMENT_CONFIG: Record<
-  InventoryMovementType,
-  { label: string; variant: "default" | "secondary" | "destructive" | "success" | "warning" }
+const MOVEMENT_CONFIG: Partial<
+  Record<
+    InventoryMovementType,
+    { label: string; variant: "default" | "secondary" | "destructive" | "success" | "warning" }
+  >
 > = {
   opening_balance: { label: "موجودی اولیه", variant: "secondary" },
   receipt: { label: "دریافت خرید", variant: "success" },
@@ -42,7 +44,6 @@ const MOVEMENT_CONFIG: Record<
   cancellation_restock: { label: "بازگشت لغو", variant: "success" },
   purchase_return: { label: "مرجوعی خرید", variant: "warning" },
   adjustment: { label: "تعدیل", variant: "warning" },
-  sourcing_change: { label: "تغییر منبع", variant: "destructive" },
 };
 
 const LAYER_SOURCE_LABEL: Record<string, string> = {

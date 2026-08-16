@@ -130,13 +130,16 @@ const ProductSchema = new mongoose.Schema(
     supplierPrice: Number, price: Number, stock: Number, stockVersion: Number,
     hasVariants: Boolean, variants: { type: [mongoose.Schema.Types.Mixed], default: [] },
     isActive: Boolean,
+    // Session 82 Phase C hardening — purchased-FIFO retry fixtures.
+    sourcing: String,
+    costLayers: { type: [mongoose.Schema.Types.Mixed], default: [] },
   },
   { timestamps: true, collection: "products" }
 );
 const OrderSchema = new mongoose.Schema(
   {
     customer: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-    items: [{ product: mongoose.Schema.Types.ObjectId, supplier: mongoose.Schema.Types.ObjectId, variantId: mongoose.Schema.Types.ObjectId, name: String, price: Number, supplierPrice: Number, quantity: Number }],
+    items: [{ product: mongoose.Schema.Types.ObjectId, supplier: mongoose.Schema.Types.ObjectId, variantId: mongoose.Schema.Types.ObjectId, name: String, price: Number, supplierPrice: Number, quantity: Number, fifoUnitCost: Number }],
     totalAmount: Number,
     shippingAddress: { fullName: String, phone: String, address: String, postalCode: String },
     payment: { status: String, method: String, authority: String, refId: String, cardPan: String, paidAt: Date },
@@ -147,7 +150,7 @@ const OrderSchema = new mongoose.Schema(
   { timestamps: true, collection: "orders" }
 );
 
-async function makeOrder(db, { customer, product, qty, paymentStatus, orderStatus = "pending_payment", stockRestored = false, authority = "", createdAt }) {
+async function makeOrder(db, { customer, product, qty, paymentStatus, orderStatus = "pending_payment", stockRestored = false, authority = "", createdAt, itemFifoUnitCost = null }) {
   return db.collection("orders").insertOne({
     customer: customer._id,
     items: [{
@@ -158,6 +161,7 @@ async function makeOrder(db, { customer, product, qty, paymentStatus, orderStatu
       price: product.price,
       supplierPrice: product.supplierPrice,
       quantity: qty,
+      fifoUnitCost: itemFifoUnitCost,
     }],
     totalAmount: product.price * qty,
     shippingAddress: { fullName: "Retry Tester", phone: customer.phone, address: "Tehran", postalCode: "" },
@@ -199,6 +203,11 @@ async function run() {
   const Product = mongoose.models.Product_RETRY || mongoose.model("Product_RETRY", ProductSchema);
 
   // --- Idempotency sweep ---
+  const sweepProductIds = (await db.collection("products")
+    .find({ slug: { $regex: "^" + PREFIX } }).project({ _id: 1 }).toArray()).map((x) => x._id);
+  if (sweepProductIds.length) {
+    await db.collection("inventorymovements").deleteMany({ product: { $in: sweepProductIds } });
+  }
   await db.collection("products").deleteMany({ slug: { $regex: "^" + PREFIX } });
   await db.collection("orders").deleteMany({ "items.name": { $regex: "^" + PREFIX } });
   await User.deleteMany({ phone: { $in: [CUSTOMER_A_PHONE, CUSTOMER_B_PHONE] } });
@@ -393,8 +402,141 @@ async function run() {
     console.log("\n      stock still " + after);
   });
 
+  // ============================================================
+  // Session 82 Phase C hardening — PURCHASED (FIFO) retry regression
+  // ============================================================
+  const layer = (qty, unitCost) => ({
+    qty, remaining: qty, unitCost,
+    acquiredAt: new Date(Date.now() - 30 * 24 * 3600 * 1000),
+    source: "receipt", ref: "rc-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+  });
+  const makePurchasedProduct = async (slugSuffix, stock, layersArr) =>
+    Product.create({
+      name: PREFIX + slugSuffix, slug: PREFIX + slugSuffix, description: "purchased retry",
+      category: catDoc._id, supplier: suppDoc._id, price: 10000, supplierPrice: 5000,
+      stock, stockVersion: 0, hasVariants: false, variants: [], isActive: true,
+      sourcing: "purchased", costLayers: layersArr,
+    });
+  const getPurchasedLayers = async (productId) => {
+    const doc = await db.collection("products").findOne({ _id: productId }, { projection: { costLayers: 1 } });
+    return doc ? (doc.costLayers || []) : [];
+  };
+  const layersRemaining = (layersArr) => layersArr.reduce((s, l) => s + (l.remaining || 0), 0);
+  const makeMultiOrder = async (db2, { customer, items, paymentStatus, stockRestored }) =>
+    db2.collection("orders").insertOne({
+      customer: customer._id,
+      items: items.map((it) => ({
+        product: it.product._id,
+        supplier: new mongoose.Types.ObjectId(),
+        variantId: null,
+        name: it.product.name,
+        price: it.product.price,
+        supplierPrice: it.product.supplierPrice,
+        quantity: it.qty,
+        fifoUnitCost: it.fifoUnitCost ?? null,
+      })),
+      totalAmount: items.reduce((s, it) => s + it.product.price * it.qty, 0),
+      shippingAddress: { fullName: "Retry Tester", phone: customer.phone, address: "Tehran", postalCode: "" },
+      payment: { status: paymentStatus, method: "zarinpal", authority: "PURCH_MULTI_" + Date.now(), refId: "", cardPan: "", paidAt: null },
+      status: "pending_payment",
+      stockRestored,
+      statusHistory: [{ status: "pending_payment", at: new Date(), note: "purchased retry fixture" }],
+      createdAt: new Date(), updatedAt: new Date(),
+    });
+
+  // ---- TEST 11 (A): purchased retry SUCCESS — snapshot + ledger reconcile ----
+  await testAsync("purchased retry success: fifoUnitCost refreshed to actual consumed cost + sale movement reconciles", async () => {
+    const prod = await makePurchasedProduct("prod-purch-retry", 10, [layer(10, 1000)]);
+    // Stale COGS snapshot (999) vs the ACTUAL consumed cost (1000) — the retry
+    // must refresh the order item to the real consumption.
+    const inserted = await makeOrder(db, {
+      customer: customerA, product: prod, qty: 2,
+      paymentStatus: "failed", orderStatus: "pending_payment", stockRestored: true,
+      authority: "PURCH_OLD_" + Date.now(), itemFifoUnitCost: 999,
+    });
+    const orderId = inserted.insertedId.toString();
+    const beforeLayers = layersRemaining(await getPurchasedLayers(prod._id));
+    assert(beforeLayers === 10, `fixture layers ${beforeLayers}`);
+
+    const r = await http("POST", "/api/payment/retry", aJar, { orderId });
+    assert(r.status === 200, `retry → ${r.status}: ${JSON.stringify(r.data).slice(0, 120)}`);
+
+    const after = await getStock(db, prod._id);
+    assert(after === 8, `stock 10→8 after retry, got ${after}`);
+    assert(layersRemaining(await getPurchasedLayers(prod._id)) === 8, "layers remaining 8 (exactly one consumption)");
+    const orderDoc = await db.collection("orders").findOne({ _id: new mongoose.Types.ObjectId(orderId) });
+    assert(orderDoc.items[0].fifoUnitCost === 1000, `item fifoUnitCost=${orderDoc.items[0].fifoUnitCost} — must be 1000 (actual consumed), not the stale 999`);
+    assert(orderDoc.payment.status === "pending" && orderDoc.stockRestored === false, "payment retried state");
+    const mv = await db.collection("inventorymovements").findOne({ sourceRef: { $regex: "^sale-" + orderId + "-" + String(prod._id) + ".*retry-" } });
+    assert(!!mv && mv.type === "sale" && mv.quantity === -2 && mv.unitCost === 1000, `retry sale movement ${JSON.stringify(mv)}`);
+    const dup = await db.collection("inventorymovements").countDocuments({ sourceRef: { $regex: "^sale-" + orderId + "-" + String(prod._id) + ".*retry-" } });
+    assert(dup === 1, `exactly one retry movement, got ${dup}`);
+  });
+
+  // ---- TEST 12 (B): purchased retry PARTIAL failure — rollback restores stock AND layers ----
+  await testAsync("purchased retry partial reserve failure → rollback restores stock + exact layers", async () => {
+    const p1 = await makePurchasedProduct("prod-purch-roll1", 10, [layer(10, 1000)]);
+    const p2 = await makePurchasedProduct("prod-purch-roll2", 10, [layer(10, 2000)]);
+    const inserted = await makeMultiOrder(db, {
+      customer: customerA, stockRestored: true, paymentStatus: "failed",
+      items: [
+        { product: p1, qty: 2, fifoUnitCost: 1000 },
+        { product: p2, qty: 2, fifoUnitCost: 2000 },
+      ],
+    });
+    const orderId = inserted.insertedId.toString();
+    // Make the SECOND item's re-reservation fail deterministically.
+    await db.collection("products").updateOne({ _id: p2._id }, { $set: { stock: 0 } });
+
+    const r = await http("POST", "/api/payment/retry", aJar, { orderId });
+    assert(r.status === 409, `retry → ${r.status}: ${JSON.stringify(r.data).slice(0, 120)}`);
+
+    // p1 was re-reserved (layers consumed) and must be rolled back EXACTLY.
+    const p1after = await db.collection("products").findOne({ _id: p1._id });
+    assert(p1after.stock === 10, `p1 stock restored to 10, got ${p1after.stock}`);
+    assert(layersRemaining(p1after.costLayers || []) === 10, "p1 layers restored exactly");
+    const p2after = await db.collection("products").findOne({ _id: p2._id });
+    assert(p2after.stock === 0, `p2 stock untouched (${p2after.stock})`);
+    // No retry movement was written for the failed attempt.
+    const mvCount = await db.collection("inventorymovements").countDocuments({ sourceRef: { $regex: "retry-" + orderId } });
+    assert(mvCount === 0, `no movements from a failed retry (${mvCount})`);
+    // payment.status is restored to the pre-retry state; items untouched.
+    const od = await db.collection("orders").findOne({ _id: new mongoose.Types.ObjectId(orderId) });
+    assert(od.payment.status === "failed", `payment.status=${od.payment.status}`);
+    assert(od.items[0].fifoUnitCost === 1000, "item snapshot unchanged on rollback");
+  });
+
+  // ---- TEST 13 (C): concurrent purchased retries cannot double-consume ----
+  await testAsync("concurrent purchased retries → single reservation, single movement, no double", async () => {
+    const prod = await makePurchasedProduct("prod-purch-conc", 10, [layer(10, 3000)]);
+    const inserted = await makeOrder(db, {
+      customer: customerA, product: prod, qty: 2,
+      paymentStatus: "failed", orderStatus: "pending_payment", stockRestored: true,
+      authority: "PURCH_CONC_" + Date.now(), itemFifoUnitCost: 3000,
+    });
+    const orderId = inserted.insertedId.toString();
+
+    const [r1, r2] = await Promise.all([
+      http("POST", "/api/payment/retry", aJar, { orderId }),
+      http("POST", "/api/payment/retry", aJar, { orderId }),
+    ]);
+    const statuses = [r1.status, r2.status].sort((a, b) => a - b);
+    assert(statuses[0] === 200, `at least one retry succeeded, got ${JSON.stringify(statuses)}`);
+
+    const after = await getStock(db, prod._id);
+    assert(after === 8, `stock exactly 8 (single reservation), got ${after}`);
+    assert(layersRemaining(await getPurchasedLayers(prod._id)) === 8, "layers exactly 8 — no double consumption");
+    const mvCount = await db.collection("inventorymovements").countDocuments({ sourceRef: { $regex: "^sale-" + orderId + ".*retry-" } });
+    assert(mvCount === 1, `exactly one retry movement, got ${mvCount}`);
+  });
+
   // --- Cleanup fixtures ---
   console.log("\nCleaning up test data...");
+  const retryProductIds = (await db.collection("products")
+    .find({ slug: { $regex: "^" + PREFIX } }).project({ _id: 1 }).toArray()).map((x) => x._id);
+  if (retryProductIds.length) {
+    await db.collection("inventorymovements").deleteMany({ product: { $in: retryProductIds } });
+  }
   await db.collection("products").deleteMany({ slug: { $regex: "^" + PREFIX } });
   await db.collection("orders").deleteMany({ "items.name": { $regex: "^" + PREFIX } });
   await db.collection("categories").deleteMany({ slug: { $regex: "^" + PREFIX } });

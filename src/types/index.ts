@@ -933,6 +933,8 @@ export type InventoryMovementType =
   | "cancellation_restock"
   | "purchase_return"
   | "adjustment"
+  // RESERVED in the model enum (no code path produces it today) — kept in
+  // sync with the model so legacy rows stay type-safe.
   | "sourcing_change";
 
 export interface InventoryMovementView {

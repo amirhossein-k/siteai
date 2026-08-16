@@ -145,13 +145,24 @@ export async function assertNoDirectStockChange(
     product.variants.length > 0
   ) {
     for (const sv of submitted.variants ?? []) {
-      if (sv._id === undefined || sv._id === null) continue;
-      const current = (product.variants as Array<{
-        _id: unknown;
-        stock?: number;
-      }>).find((v) => String(v._id) === String(sv._id));
+      const current =
+        sv._id === undefined || sv._id === null
+          ? undefined
+          : (product.variants as Array<{
+              _id: unknown;
+              stock?: number;
+            }>).find((v) => String(v._id) === String(sv._id));
+      if (!current) {
+        // Session 82 Phase C hardening (MEDIUM-5): a NEW variant added
+        // post-cutover must not introduce stock — there is no audited
+        // adjustment (and no cost layer) behind it. stock = 0 is fine (no
+        // inventory change).
+        if (typeof sv.stock === "number" && sv.stock > 0) {
+          return { ok: false, error: msg };
+        }
+        continue;
+      }
       if (
-        current &&
         typeof sv.stock === "number" &&
         sv.stock !== (current.stock ?? 0)
       ) {
@@ -318,7 +329,9 @@ export async function applyInventoryAdjustment(
     layerCost = undefined;
   }
 
-  // --- Compute the layer effect (purchased) ---
+  // --- Fast-fail pre-check of the layer effect (purchased) ---
+  // Revalidated inside the apply loop on every retry; this first pass catches
+  // the common case (e.g. insufficient layers) BEFORE any claim is written.
   let newLayers: InventoryCostLayer[] | null = null;
   let consumedCost = 0;
   if (sourcing === "purchased") {
@@ -348,60 +361,111 @@ export async function applyInventoryAdjustment(
     }
   }
 
-  // --- EXACTLY-ONCE claim: insert the movement first (unique sourceRef) ---
   const description = `تعدیل موجودی — ${(input.reason ?? "").trim()}${
     input.notes ? ` (${input.notes.trim().slice(0, 200)})` : ""
   }`;
-  let movement: Record<string, unknown>;
-  // Belt-and-suspenders pre-check (mirrors the purchase-receive route): the
-  // unique partial index on sourceRef is the hard guarantee; the exists()
-  // probe makes a sequential client retry idempotent even if a legacy DB was
-  // never index-rebuilt (the Phase A→B index upgrade did not alter the
-  // same-named existing index).
-  const claimed = await InventoryMovement.exists({ sourceRef });
-  if (claimed) {
-    const existing = await InventoryMovement.findOne({ sourceRef }).lean();
-    return {
-      ok: true,
-      idempotent: true,
-      movement: existing as Record<string, unknown>,
-      product,
-    };
-  }
-  try {
-    movement = (
+
+  // --- EXACTLY-ONCE claim + crash-recovery completion (Phase C hardening) ---
+  // The movement row is the exactly-once claim (unique partial index on
+  // sourceRef). `completedAt` is the completion marker: it is stamped together
+  // with the final cost figures ONLY after the atomic apply succeeded. A row
+  // with completedAt === null is a PENDING claim — a server crash between the
+  // claim insert and the apply — and a retry with the same key COMPLETES the
+  // apply instead of reporting idempotent (the pre-hardening bug: the retry
+  // short-circuited and the adjustment was silently lost). `claimOwned` tracks
+  // whether THIS request inserted the row, so only its own claim is removed on
+  // a hard failure (pre-existing pending claims are left for a later retry).
+  let claimOwned = false;
+  let existingClaim = (await InventoryMovement.findOne({ sourceRef })
+    .lean()) as unknown as { completedAt?: Date | null } | null;
+  if (existingClaim) {
+    if (existingClaim.completedAt) {
+      return {
+        ok: true,
+        idempotent: true,
+        movement: existingClaim as Record<string, unknown>,
+        product,
+      };
+    }
+    // pending claim → complete the apply below (never insert a second row)
+  } else {
+    try {
       await InventoryMovement.create({
         product: productId,
         variantId: input.variantId ? String(input.variantId) : null,
         type: "adjustment",
         quantity: delta,
-        unitCost: 0, // finalized below once the atomic apply succeeds
+        unitCost: 0, // finalized with completedAt once the apply succeeds
         totalCost: 0,
         sourceRef,
         description: description.slice(0, 500),
         createdBy: input.actorId,
-      })
-    ).toObject();
-  } catch (err) {
-    if ((err as { code?: number })?.code === 11000) {
-      // Client retry or concurrent identical request → already claimed.
-      const existing = await InventoryMovement.findOne({ sourceRef }).lean();
-      if (!existing) {
-        return { ok: false, status: 500, error: "خطا در ثبت تعدیل" };
+      });
+      claimOwned = true;
+    } catch (err) {
+      if ((err as { code?: number })?.code === 11000) {
+        // Concurrent insert or a crashed sibling's pending row → complete it.
+        existingClaim = (await InventoryMovement.findOne({ sourceRef })
+          .lean()) as unknown as { completedAt?: Date | null } | null;
+        if (!existingClaim) {
+          return { ok: false, status: 500, error: "خطا در ثبت تعدیل" };
+        }
+        if (existingClaim.completedAt) {
+          return {
+            ok: true,
+            idempotent: true,
+            movement: existingClaim as Record<string, unknown>,
+            product,
+          };
+        }
+      } else {
+        throw err;
       }
-      return {
-        ok: true,
-        idempotent: true,
-        movement: existing as Record<string, unknown>,
-        product,
-      };
     }
-    throw err;
   }
+
+  // Remove OUR claim on a hard failure so the client can retry fresh; a
+  // pre-existing pending claim is left in place (a later retry completes it,
+  // or it remains as the visible ledger trace of the interrupted attempt).
+  const cleanupClaim = async () => {
+    if (claimOwned) await InventoryMovement.deleteOne({ sourceRef });
+  };
 
   // --- Atomic stock + layers (single-doc, stockVersion-guarded, retry) ---
   let applied = false;
+  let movement: Record<string, unknown> | null = null;
   for (let attempt = 0; attempt < MAX_ADJUST_ATTEMPTS && !applied; attempt++) {
+    // Recompute the layer effect from the CURRENT product state on every pass
+    // (a concurrent op may have changed stock/layers since the last read).
+    if (sourcing === "purchased") {
+      const layers = (
+        variant ? (variant.costLayers ?? []) : (product.costLayers ?? [])
+      ) as InventoryCostLayer[];
+      if (delta > 0) {
+        newLayers = addLayer(layers, {
+          qty: delta,
+          remaining: delta,
+          unitCost: layerCost as number,
+          acquiredAt: new Date(),
+          source: "adjustment",
+          ref: sourceRef,
+        });
+      } else {
+        const consumption = consumeFifoLayers(layers, absDelta);
+        if (!consumption) {
+          // A concurrent sale exhausted the layers → fail safely, no mutation.
+          await cleanupClaim();
+          return {
+            ok: false,
+            status: 400,
+            error: "لایه‌های هزینه FIFO برای این کاهش کافی نیست — بدون تغییر اعمال شد",
+          };
+        }
+        newLayers = consumption.layers;
+        consumedCost = consumption.consumedCost;
+      }
+    }
+
     const version = variant
       ? (variant.stockVersion ?? 0)
       : (product.stockVersion ?? 0);
@@ -459,15 +523,39 @@ export async function applyInventoryAdjustment(
           totalCost = consumedCost;
         }
       }
-      movement = await InventoryMovement.findOneAndUpdate(
-        { sourceRef },
-        { $set: { unitCost, totalCost } },
+      // Finalize the claim: stamp completedAt TOGETHER with the cost figures in
+      // one atomic update. If a concurrent retry already completed it, we did
+      // not win the apply race — return their (authoritative) row idempotently.
+      movement = (await InventoryMovement.findOneAndUpdate(
+        { sourceRef, completedAt: null },
+        { $set: { unitCost, totalCost, completedAt: new Date() } },
         { new: true }
-      ).lean() as Record<string, unknown>;
+      ).lean()) as unknown as Record<string, unknown> | null;
+      if (!movement) {
+        const sibling = (await InventoryMovement.findOne({ sourceRef })
+          .lean()) as unknown as Record<string, unknown> | null;
+        movement = sibling;
+      }
       break;
     }
 
-    // Version conflict → re-read fresh state and recompute the layer effect.
+    // Version conflict → a concurrent write landed. If a sibling retry of THIS
+    // same adjustment completed it, return idempotent (never re-apply).
+    const freshMv = (await InventoryMovement.findOne({ sourceRef })
+      .lean()) as unknown as { completedAt?: Date | null } | null;
+    if (freshMv?.completedAt) {
+      const siblingProduct = (await Product.findById(productId)
+        .select("name slug stock stockVersion sourcing costLayers variants hasVariants")
+        .lean()) as unknown as Record<string, unknown> | null;
+      return {
+        ok: true,
+        idempotent: true,
+        movement: freshMv as unknown as Record<string, unknown>,
+        product: siblingProduct ?? product,
+      };
+    }
+
+    // Otherwise re-read fresh product state and retry the apply.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fresh: any = input.variantId
       ? await Product.findOne(
@@ -482,43 +570,27 @@ export async function applyInventoryAdjustment(
     if (input.variantId) {
       variant = fresh.variants?.[0] ?? null;
       if (!variant) break;
-      if ((variant.stock ?? 0) + delta < 0) break; // fail below
-    } else if ((product.stock ?? 0) + delta < 0) {
-      break;
-    }
-    if (sourcing === "purchased") {
-      const layers = (
-        variant ? (variant.costLayers ?? []) : (product.costLayers ?? [])
-      ) as InventoryCostLayer[];
-      if (delta > 0) {
-        newLayers = addLayer(layers, {
-          qty: delta,
-          remaining: delta,
-          unitCost: layerCost as number,
-          acquiredAt: new Date(),
-          source: "adjustment",
-          ref: sourceRef,
-        });
-      } else {
-        const consumption = consumeFifoLayers(layers, absDelta);
-        if (!consumption) {
-          // A concurrent sale exhausted the layers → fail safely.
-          await InventoryMovement.deleteOne({ sourceRef });
-          return {
-            ok: false,
-            status: 400,
-            error: "لایه‌های هزینه FIFO برای این کاهش کافی نیست — بدون تغییر اعمال شد",
-          };
-        }
-        newLayers = consumption.layers;
-        consumedCost = consumption.consumedCost;
+      if ((variant.stock ?? 0) + delta < 0) {
+        await cleanupClaim();
+        return {
+          ok: false,
+          status: 400,
+          error: `موجودی کافی نیست. موجودی فعلی: ${variant.stock ?? 0}`,
+        };
       }
+    } else if ((product.stock ?? 0) + delta < 0) {
+      await cleanupClaim();
+      return {
+        ok: false,
+        status: 400,
+        error: `موجودی کافی نیست. موجودی فعلی: ${product.stock ?? 0}`,
+      };
     }
   }
 
-  if (!applied) {
-    // Could not apply after retries — remove the claim so the client can retry.
-    await InventoryMovement.deleteOne({ sourceRef });
+  if (!applied || !movement) {
+    // Could not apply after retries — remove OUR claim so the client can retry.
+    await cleanupClaim();
     return {
       ok: false,
       status: 409,
@@ -526,5 +598,5 @@ export async function applyInventoryAdjustment(
     };
   }
 
-  return { ok: true, idempotent: false, movement, product };
+  return { ok: true, idempotent: claimOwned ? false : true, movement, product };
 }

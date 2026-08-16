@@ -61,6 +61,8 @@ export const MOVEMENT_LABELS: Record<string, string> = {
   cancellation_restock: "لغو سفارش",
   purchase_return: "برگشت خرید",
   adjustment: "تعدیل",
+  // RESERVED in the model enum (no code path produces it today) — kept so a
+  // legacy row still renders a label instead of blank.
   sourcing_change: "اصلاح",
 };
 

@@ -17,6 +17,9 @@ import mongoose from "mongoose";
  *  - purchase_return      — store returned goods to the supplier
  *  - adjustment           — manual stock adjustment (post-cutover, required)
  *  - sourcing_change      — consignment↔purchased ownership conversion
+ *                          (RESERVED — the init wizard converts sourcing but
+ *                          does not write this type today; no code path
+ *                          produces it, so it is excluded from the UI filters)
  *
  * INVARIANT: rows are never updated or deleted. Corrections are new rows
  * (adjustment/correction) referencing the original via sourceRef.
@@ -68,6 +71,18 @@ const InventoryMovementSchema = new mongoose.Schema(
     sourceRef: {
       type: String,
       default: "",
+    },
+    // Session 82 Phase C hardening — adjustment completion marker. The
+    // adjustment movement row is created BEFORE the stock/layer apply (the
+    // exactly-once claim). `completedAt` is stamped together with the final
+    // unitCost/totalCost ONLY after the apply succeeded, so a row with
+    // completedAt === null is a PENDING claim (a crash between insert and
+    // apply) that a retry with the same key COMPLETES instead of reporting
+    // idempotent. Unlike unitCost/totalCost, completedAt is unambiguous for
+    // legitimately zero-cost rows (consignment, zero-cost layers).
+    completedAt: {
+      type: Date,
+      default: null,
     },
     description: {
       type: String,

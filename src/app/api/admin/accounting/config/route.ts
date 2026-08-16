@@ -59,6 +59,16 @@ export async function PATCH(req: NextRequest) {
         { status: 400 }
       );
     }
+    // Session 82 Phase C hardening (MEDIUM-1): the cutover date is the point
+    // where FIFO costing becomes authoritative — it can never be in the
+    // future (a future-dated boundary would classify sales before it as
+    // post-cutover via the fifoUnitCost presence rule).
+    if (new Date(cutoverDate) > new Date()) {
+      return NextResponse.json(
+        { error: "تاریخ شروع حسابداری نمی‌تواند در آینده باشد" },
+        { status: 400 }
+      );
+    }
 
     await dbConnect();
 

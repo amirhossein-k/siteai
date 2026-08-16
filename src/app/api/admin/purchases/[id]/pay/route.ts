@@ -55,7 +55,18 @@ export async function POST(
 
     const total = Number(purchase.total || 0);
     const currentPaid = Number(purchase.amountPaid || 0);
-    const newPaid = Math.min(total, currentPaid + amount);
+    // Session 82 Phase C hardening (MEDIUM-7): reject over-payment explicitly
+    // instead of silently capping — a silently-capped entry masks a
+    // data-entry error in an accounting ledger. Nothing is mutated on 400.
+    if (amount + currentPaid > total) {
+      return NextResponse.json(
+        {
+          error: `مبلغ پرداخت بیش از مبلغ باقیمانده است (باقیمانده: ${total - currentPaid})`,
+        },
+        { status: 400 }
+      );
+    }
+    const newPaid = currentPaid + amount;
     const paymentStatus = derivePaymentStatus(newPaid, total);
 
     const updated = await PurchaseOrder.findByIdAndUpdate(

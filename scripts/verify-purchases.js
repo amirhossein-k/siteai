@@ -456,6 +456,35 @@ async function http(jar, method, url, body) {
     assert(r.status === 400, `invalid status → ${r.status}`);
   });
 
+  // ---- TEST 17b: over-payment → explicit 400, nothing mutated (MEDIUM-7) ----
+  // Runs AFTER the purchases-report assertion (which expects the main purchase
+  // to still have 470000 outstanding) — the exact-payment step below fully
+  // settles it.
+  await clearWriteKeys();
+  await testAsync("over-pay: amount beyond remaining → 400, no mutation", async () => {
+    const p = await getPurchase(purchaseId);
+    const total = Number(p.total);
+    const paid = Number(p.amountPaid);
+    const before = await getProduct(simpleId);
+    const r = await http(adminJar, "POST", `/api/admin/purchases/${purchaseId}/pay`, {
+      amount: total - paid + 1, // one toman over the remaining balance
+    });
+    assert(r.status === 400, `over-pay → ${r.status} (expected 400): ${JSON.stringify(r.json)}`);
+    assert((r.json.error || "").includes("بیش از مبلغ باقیمانده"), `error message: ${r.json.error}`);
+    const after = await getPurchase(purchaseId);
+    assert(Number(after.amountPaid) === paid, `amountPaid untouched (${after.amountPaid} vs ${paid})`);
+    assert(after.paymentStatus === "partial", `paymentStatus untouched (${after.paymentStatus})`);
+    const afterProd = await getProduct(simpleId);
+    assert(afterProd.stock === before.stock && afterProd.stockVersion === before.stockVersion, "no stock/version mutation");
+    // Exact payment remains accepted (idempotent path unchanged).
+    const exact = await http(adminJar, "POST", `/api/admin/purchases/${purchaseId}/pay`, {
+      amount: total - paid,
+    });
+    assert(exact.status === 200, `exact remaining pay → ${exact.status}`);
+    assert(Number(exact.json.purchase.amountPaid) === total, `fully paid amountPaid=${exact.json.purchase.amountPaid}`);
+    assert(exact.json.purchase.paymentStatus === "paid", `paymentStatus=${exact.json.purchase.paymentStatus}`);
+  });
+
   // ============================================================
   // CLEANUP (scoped to this suite's own PREFIX)
   // ============================================================

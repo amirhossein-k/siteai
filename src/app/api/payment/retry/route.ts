@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { dbConnect } from "@/lib/dbConnect";
 import { requireAuth, unauthorized, serverError } from "@/lib/auth-utils";
 import Order from "@/models/Order";
+import InventoryMovement from "@/models/InventoryMovement";
 import { requestPayment } from "@/lib/zarinpal";
 import { reserveStock, restoreStock } from "@/lib/inventory";
 
@@ -101,11 +102,30 @@ export async function POST(req: NextRequest) {
 
     // --- Stock handling ---
     const items = order.items || [];
-    const reserved: Array<{ product: string; quantity: number; variantId?: string }> = [];
+    // Session 82 Phase C hardening (HIGH-2): purchased re-reservations carry
+    // the FIFO consumption snapshot (fifoUnitCost) so a rollback restores the
+    // EXACT layers consumed by THIS retry (never current supplierPrice), and a
+    // success persists the actual re-consumed cost + a compensating movement.
+    const reserved: Array<{
+      product: string;
+      quantity: number;
+      variantId?: string;
+      fifoUnitCost?: number;
+    }> = [];
+    // index → fifoUnitCost for purchased items (order.items order), used to
+    // refresh the COGS snapshot on the order after a successful re-reservation.
+    const fifoSnapshots: Array<{ index: number; fifoUnitCost: number }> = [];
+    // Per-retry-cycle id: set on the payment doc while the retry is in flight
+    // and used as the sale-movement sourceRef suffix (unique per cycle, so a
+    // repeated request can never double-write a movement).
+    const retryToken = crypto.randomUUID();
+    const movementSuffix = "retry-" + retryToken;
 
     const rollbackReserved = async () => {
       await Promise.all(
-        reserved.map((r) => restoreStock(r.product, r.quantity, r.variantId))
+        reserved.map((r) =>
+          restoreStock(r.product, r.quantity, r.variantId, r.fifoUnitCost)
+        )
       );
     };
 
@@ -122,7 +142,14 @@ export async function POST(req: NextRequest) {
           "payment.status": { $in: ["failed", "canceled"] },
           stockRestored: true,
         },
-        { $set: { "payment.status": "pending" } }
+        {
+          $set: {
+            "payment.status": "pending",
+            // Mark this retry cycle on the order (unset on completion) — the
+            // movement ledger uses it to keep this cycle's sourceRefs unique.
+            "payment.retryToken": retryToken,
+          },
+        }
       ).lean();
 
       if (!claimed) {
@@ -135,7 +162,8 @@ export async function POST(req: NextRequest) {
       // Re-reserve every item; roll back everything on any failure and restore
       // the previous payment.status so a later retry can try again.
       try {
-        for (const item of items) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
           const reservedProduct = await reserveStock(
             String(item.product),
             item.quantity,
@@ -145,22 +173,34 @@ export async function POST(req: NextRequest) {
             await rollbackReserved();
             await Order.findByIdAndUpdate(orderId, {
               $set: { "payment.status": paymentStatus }, // back to failed/canceled
+              $unset: { "payment.retryToken": "" },
             });
             return NextResponse.json(
               { error: "موجودی کافی برای پرداخت مجدد در دسترس نیست" },
               { status: 409 }
             );
           }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const fifo = (reservedProduct as any)?.__fifoConsumption;
+          const fifoUnitCost =
+            typeof fifo?.fifoUnitCost === "number"
+              ? (fifo.fifoUnitCost as number)
+              : undefined;
           reserved.push({
             product: String(item.product),
             quantity: item.quantity,
             variantId: item.variantId || undefined,
+            fifoUnitCost,
           });
+          if (fifoUnitCost !== undefined) {
+            fifoSnapshots.push({ index: i, fifoUnitCost });
+          }
         }
       } catch (err) {
         await rollbackReserved();
         await Order.findByIdAndUpdate(orderId, {
           $set: { "payment.status": paymentStatus },
+          $unset: { "payment.retryToken": "" },
         });
         throw err;
       }
@@ -208,6 +248,7 @@ export async function POST(req: NextRequest) {
       if (order.stockRestored === true) {
         await Order.findByIdAndUpdate(orderId, {
           $set: { "payment.status": paymentStatus },
+          $unset: { "payment.retryToken": "" },
         });
       } else {
         // Release the retryToken claim so the order stays retryable.
@@ -243,6 +284,52 @@ export async function POST(req: NextRequest) {
         },
       },
     });
+
+    // Session 82 Phase C hardening (HIGH-2): persist the ACTUAL re-consumed
+    // FIFO cost on the order items and record the compensating sale
+    // movement(s) so the movement ledger reconciles (sale −N, cancellation/
+    // failure restock +N, then this retry's sale −N = the net held stock).
+    // Best-effort (fail-silent) — the retried payment redirect must never be
+    // blocked by a ledger write. Each movement's sourceRef is unique per retry
+    // cycle (retryToken), so a repeated request can never double-write.
+    if (fifoSnapshots.length > 0) {
+      try {
+        const itemSets: Record<string, number> = {};
+        for (const s of fifoSnapshots) {
+          itemSets[`items.${s.index}.fifoUnitCost`] = s.fifoUnitCost;
+        }
+        await Order.findByIdAndUpdate(orderId, { $set: itemSets });
+      } catch (err) {
+        console.error(
+          "[Retry] OrderItem fifoUnitCost refresh failed (non-blocking):",
+          err
+        );
+      }
+    }
+    for (const r of reserved) {
+      if (r.fifoUnitCost === undefined) continue; // consignment — no layers
+      const sourceRef = `sale-${orderId}-${String(r.product)}${
+        r.variantId ? "-" + String(r.variantId) : ""
+      }-${movementSuffix}`;
+      try {
+        await InventoryMovement.create({
+          product: String(r.product),
+          variantId: r.variantId ?? null,
+          type: "sale",
+          quantity: -r.quantity,
+          unitCost: Math.round(r.fifoUnitCost),
+          totalCost: Math.round(r.fifoUnitCost * r.quantity),
+          sourceRef,
+          description: `فروش ${r.quantity} واحد (پرداخت مجدد سفارش ${String(
+            orderId
+          ).slice(-8)})`,
+        });
+      } catch (err) {
+        if ((err as { code?: number })?.code !== 11000) {
+          console.error("[Retry] Sale movement failed:", err);
+        }
+      }
+    }
 
     return NextResponse.json(
       {

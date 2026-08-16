@@ -174,8 +174,15 @@ async function http(jar, method, url, body) {
     });
 
   const skuSuffix = String(Date.now()).slice(-8);
-  const vA = { _id: new mongoose.Types.ObjectId(), sku: `INV82-${skuSuffix}-A`, attributes: [], price: 300000, supplierPrice: 140000, stock: 0, stockVersion: 0, images: [], isActive: true, costLayers: [] };
-  const vB = { _id: new mongoose.Types.ObjectId(), sku: `INV82-${skuSuffix}-B`, attributes: [], price: 310000, supplierPrice: 145000, stock: 0, stockVersion: 0, images: [], isActive: true, costLayers: [] };
+  // Real Attribute doc so the admin-products PUT route's variant validation
+  // (≥1 attribute with a valid attributeId) accepts the MEDIUM-5 new-variant
+  // fixtures — otherwise the PUT 400s on the unrelated attributes rule.
+  const attrDoc = await d.collection("attributes").insertOne({
+    name: PREFIX + "Size", slug: PREFIX + "size", type: "text", values: ["M", "L", "XXL", "XXXL"], isActive: true,
+    createdAt: now, updatedAt: now,
+  });
+  const vA = { _id: new mongoose.Types.ObjectId(), sku: `INV82-${skuSuffix}-A`, attributes: [{ attributeId: String(attrDoc.insertedId), name: PREFIX + "Size", value: "M" }], price: 300000, supplierPrice: 140000, stock: 0, stockVersion: 0, images: [], isActive: true, costLayers: [] };
+  const vB = { _id: new mongoose.Types.ObjectId(), sku: `INV82-${skuSuffix}-B`, attributes: [{ attributeId: String(attrDoc.insertedId), name: PREFIX + "Size", value: "L" }], price: 310000, supplierPrice: 145000, stock: 0, stockVersion: 0, images: [], isActive: true, costLayers: [] };
 
   // simple purchased — stock 0, no layers (adjustments create them)
   const simpleId = (await seedProduct({ name: PREFIX + "Simple", slug: PREFIX + "simple", supplierPrice: 120000, price: 200000, stock: 0 })).insertedId.toString();
@@ -437,9 +444,61 @@ async function http(jar, method, url, body) {
         productId: variantId, variantId: vA._id.toString(), stock: 9,
       });
       assert(supStock.status === 400, `supplier stock edit → ${supStock.status}`);
+      // MEDIUM-5: a NEW variant carrying stock must also be rejected (no
+      // audited adjustment / cost layer behind it) — stock 0 stays allowed.
+      const pv = await getProduct(variantId);
+      const baseVariantBody = {
+        name: pv.name, slug: pv.slug, description: pv.description || "", images: [], brand: null, tags: [],
+        category: catDoc.insertedId.toString(), supplier: suppDoc._id.toString(),
+        supplierPrice: 0, price: pv.price, isActive: true, hasVariants: true,
+      };
+      const newVariantWithStock = { _id: new mongoose.Types.ObjectId(), sku: PREFIX + "-NV1", attributes: [{ attributeId: String(attrDoc.insertedId), name: PREFIX + "Size", value: "XXL" }], price: 50000, supplierPrice: 25000, stock: 3, stockVersion: 0, images: [], isActive: true, costLayers: [] };
+      const putNewVariant = await http(adminJar, "PUT", "/api/admin/products?id=" + variantId, {
+        ...baseVariantBody, variants: [...(pv.variants || []), newVariantWithStock],
+      });
+      assert(putNewVariant.status === 400, `new variant with stock → ${putNewVariant.status} (expected 400): ${JSON.stringify(putNewVariant.json)}`);
+      const newVariantZero = { ...newVariantWithStock, _id: new mongoose.Types.ObjectId(), sku: PREFIX + "-NV0", stock: 0 };
+      const putNewVariantZero = await http(adminJar, "PUT", "/api/admin/products?id=" + variantId, {
+        ...baseVariantBody, variants: [...(pv.variants || []), newVariantZero],
+      });
+      assert(putNewVariantZero.status === 200, `new variant stock 0 → ${putNewVariantZero.status} (should pass): ${JSON.stringify(putNewVariantZero.json)}`);
     } finally {
       await d.collection("accountingconfigs").deleteOne({ _id: "accounting" });
     }
+  });
+
+  // ---- TEST 14b: crash-recovery (MEDIUM-4) — pending claim completed on retry ----
+  await testAsync("crash-recovery: pending adjustment claim completed on retry, no double apply", async () => {
+    const key = PREFIX + "crash-" + Date.now();
+    const sourceRef = "adj-" + key;
+    const before = await getProduct(simpleId);
+    // Simulate the interrupted state: the claim row exists (completedAt null,
+    // costs 0) but the stock/layer apply never ran (crash between insert+apply).
+    await d.collection("inventorymovements").insertOne({
+      product: new mongoose.Types.ObjectId(simpleId), variantId: null, type: "adjustment",
+      quantity: 3, unitCost: 0, totalCost: 0, sourceRef,
+      description: "تعدیل موجودی — تست قطعی", createdBy: admin._id,
+      createdAt: new Date(), updatedAt: new Date(), completedAt: null,
+    });
+    const r = await http(adminJar, "POST", "/api/admin/inventory/adjustments", {
+      product: simpleId, quantityDelta: 3, unitCost: 80000, reason: "بازیابی پس از قطعی", key,
+    });
+    assert([200, 201].includes(r.status), `retry → ${r.status}: ${JSON.stringify(r.json)}`);
+    const after = await getProduct(simpleId);
+    assert(after.stock === before.stock + 3, `stock applied on retry (${after.stock} vs ${before.stock + 3})`);
+    const layer = (after.costLayers || []).find((l) => l.ref === sourceRef);
+    assert(!!layer && layer.unitCost === 80000 && layer.remaining === 3, `layer created at confirmed cost ${JSON.stringify(layer)}`);
+    const mv = await d.collection("inventorymovements").findOne({ sourceRef });
+    assert(mv && mv.completedAt && mv.unitCost === 80000 && mv.totalCost === 240000, `movement completed ${JSON.stringify(mv)}`);
+    assert((await d.collection("inventorymovements").countDocuments({ sourceRef })) === 1, "single movement row");
+    // Follow-up with the same key → idempotent, never a double apply.
+    const before2 = await getProduct(simpleId);
+    const r2 = await http(adminJar, "POST", "/api/admin/inventory/adjustments", {
+      product: simpleId, quantityDelta: 3, unitCost: 80000, reason: "بازیابی پس از قطعی", key,
+    });
+    assert(r2.status === 200 && r2.json.idempotent === true, `repeat → ${r2.status} idempotent=${r2.json?.idempotent}`);
+    const after2 = await getProduct(simpleId);
+    assert(after2.stock === before2.stock, `no double apply (${after2.stock} vs ${before2.stock})`);
   });
 
   // ---- TEST 15: reconciliation ----
@@ -469,6 +528,7 @@ async function http(jar, method, url, body) {
   await d.collection("suppliers").deleteMany({ businessName: { $regex: "^" + PREFIX } });
   await User.deleteMany({ phone: { $in: [SUPPLIER_PHONE, CUSTOMER_PHONE] } });
   await d.collection("ratelimits").deleteMany({ _id: { $regex: "^rl:inventory-write:" } });
+  await d.collection("attributes").deleteMany({ slug: { $regex: "^" + PREFIX } });
   // restore accounting singleton to the pre-run state
   await d.collection("accountingconfigs").deleteOne({ _id: "accounting" });
   await mongoose.disconnect();

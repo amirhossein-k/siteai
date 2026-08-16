@@ -230,6 +230,17 @@ async function http(jar, method, url, body) {
     assert(r.status === 400, `PATCH invalid → ${r.status}`);
   });
 
+  // ---- TEST 3b: config PATCH future cutover date → 400 (MEDIUM-1) ----
+  await testAsync("config PATCH future cutover date → 400 (never in the future)", async () => {
+    const future = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+    const r = await http(adminJar, "PATCH", "/api/admin/accounting/config", { cutoverDate: future });
+    assert(r.status === 400, `PATCH future → ${r.status} (expected 400): ${JSON.stringify(r.json)}`);
+    assert((r.json.error || "").includes("آینده"), `error message: ${r.json.error}`);
+    // A past/today date is still accepted (cutover semantics unchanged).
+    const ok = await http(adminJar, "PATCH", "/api/admin/accounting/config", { cutoverDate: CUTOVER_ISO });
+    assert(ok.status === 200, `PATCH past cutover → ${ok.status}`);
+  });
+
   // ---- TEST 4: config PATCH valid → sets cutover ----
   await testAsync("config PATCH valid cutover date", async () => {
     const r = await http(adminJar, "PATCH", "/api/admin/accounting/config", { cutoverDate: CUTOVER_ISO });
