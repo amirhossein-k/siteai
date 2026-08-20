@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Card,
@@ -41,7 +41,11 @@ const PNL_META: ReportMeta = {
   totalKeys: [],
 };
 
-export default function ReportDetailPage() {
+/**
+ * Report detail content — wrapped in <Suspense> because
+ * useSearchParams() is called (Next.js static-prerender requirement).
+ */
+function ReportDetailContent() {
   const { report } = useParams<{ report: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -230,5 +234,19 @@ export default function ReportDetailPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function ReportDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-20">
+          <p className="text-muted-foreground">در حال بارگذاری...</p>
+        </div>
+      }
+    >
+      <ReportDetailContent />
+    </Suspense>
   );
 }

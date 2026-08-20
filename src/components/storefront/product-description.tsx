@@ -37,7 +37,11 @@ function Leaf({
   if (node.underline) el = <u>{el}</u>;
   if (node.strikethrough) el = <s>{el}</s>;
   if (node.code) el = <code className="rounded bg-muted px-1 py-0.5 text-[0.9em]">{el}</code>;
-  if (node.highlight) el = <mark className="rounded bg-yellow-200/70 px-0.5 dark:bg-yellow-500/30">{el}</mark>;
+  // Session 86 — fixed highlight: the storefront is always dark (no `dark`
+  // class), so the old bg-yellow-200/70 was an OS-flippable light streak;
+  // yellow-500/30 reads correctly on both the dark storefront and the light
+  // admin preview (the component is shared by both).
+  if (node.highlight) el = <mark className="rounded bg-yellow-500/30 px-0.5">{el}</mark>;
   const style: React.CSSProperties = {};
   if (node.color) style.color = node.color;
   if (node.backgroundColor) style.backgroundColor = node.backgroundColor;

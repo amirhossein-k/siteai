@@ -40,7 +40,7 @@ export default function SuppliersListingPage() {
       </div>
 
       {/* Session 67 — become-a-supplier CTA */}
-      <div className="mb-8 flex flex-col items-center justify-between gap-3 rounded-xl border border-emerald-600/20 bg-emerald-50 p-4 sm:flex-row">
+      <div className="mb-8 flex flex-col items-center justify-between gap-3 rounded-xl border border-emerald-400/30 bg-emerald-500/15 p-4 sm:flex-row">
         <div className="text-center sm:text-right">
           <p className="font-medium">می‌خواهید فروشنده شوید؟</p>
           <p className="text-sm text-muted-foreground">
@@ -48,7 +48,7 @@ export default function SuppliersListingPage() {
           </p>
         </div>
         <Link href="/become-supplier">
-          <Button variant="outline" className="gap-2 border-emerald-600/40 text-emerald-700">
+          <Button variant="outline" className="gap-2 border-emerald-400/40 text-emerald-300">
             <Store className="h-4 w-4" />
             ثبت درخواست فروشندگی
           </Button>

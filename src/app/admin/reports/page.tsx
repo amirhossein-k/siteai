@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Card,
@@ -36,7 +36,11 @@ const DASHBOARD_META = {
   totalKeys: [],
 };
 
-export default function ReportsDashboardPage() {
+/**
+ * Reports dashboard content — wrapped in <Suspense> because
+ * useSearchParams() is called (Next.js static-prerender requirement).
+ */
+function ReportsDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -194,6 +198,20 @@ export default function ReportsDashboardPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function ReportsDashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-20">
+          <p className="text-muted-foreground">در حال بارگذاری...</p>
+        </div>
+      }
+    >
+      <ReportsDashboardContent />
+    </Suspense>
   );
 }
 

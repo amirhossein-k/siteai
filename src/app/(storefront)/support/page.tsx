@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -37,7 +37,11 @@ const statusFilters: Array<{ value: ConversationStatus | null; label: string }> 
   { value: "closed", label: "بسته" },
 ];
 
-export default function CustomerSupportPage() {
+/**
+ * Session 68 support content — must be wrapped in <Suspense> because
+ * useSearchParams() is called (Next.js static-prerender requirement).
+ */
+function SupportPageContent() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -347,5 +351,19 @@ export default function CustomerSupportPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function CustomerSupportPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-20">
+          <p className="text-muted-foreground">در حال بارگذاری...</p>
+        </div>
+      }
+    >
+      <SupportPageContent />
+    </Suspense>
   );
 }

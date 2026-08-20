@@ -32,12 +32,15 @@ const statusConfig: Record<
   OrderStatusV2,
   { label: string; variant: "default" | "secondary" | "destructive" | "success" | "warning"; icon: React.ElementType; color: string }
 > = {
-  pending_payment: { label: "در انتظار پرداخت", variant: "secondary", icon: Clock, color: "text-gray-500 bg-gray-100 dark:bg-gray-800 dark:text-gray-400" },
-  processing: { label: "در حال پردازش", variant: "warning", icon: Package, color: "text-amber-600 bg-amber-50 dark:bg-amber-950 dark:text-amber-300" },
-  confirmed: { label: "تأیید شده", variant: "default", icon: CheckCircle2, color: "text-blue-600 bg-blue-50 dark:bg-blue-950 dark:text-blue-300" },
-  shipped: { label: "ارسال شده", variant: "default", icon: Truck, color: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950 dark:text-indigo-300" },
-  delivered: { label: "تحویل شده", variant: "success", icon: CheckCircle2, color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-300" },
-  cancelled: { label: "لغو شده", variant: "destructive", icon: Ban, color: "text-red-600 bg-red-50 dark:bg-red-950 dark:text-red-300" },
+  // Session 86 — tinted dark status chips (the fixed-dark storefront never
+  // sets the `dark` class, so the old light bg-*-50 / dark:* pairs rendered
+  // OS-dependent light circles on the dark theme).
+  pending_payment: { label: "در انتظار پرداخت", variant: "secondary", icon: Clock, color: "bg-white/10 text-muted-foreground" },
+  processing: { label: "در حال پردازش", variant: "warning", icon: Package, color: "bg-amber-500/15 text-amber-300" },
+  confirmed: { label: "تأیید شده", variant: "default", icon: CheckCircle2, color: "bg-blue-500/15 text-blue-300" },
+  shipped: { label: "ارسال شده", variant: "default", icon: Truck, color: "bg-indigo-500/15 text-indigo-300" },
+  delivered: { label: "تحویل شده", variant: "success", icon: CheckCircle2, color: "bg-emerald-500/15 text-emerald-300" },
+  cancelled: { label: "لغو شده", variant: "destructive", icon: Ban, color: "bg-red-500/15 text-red-300" },
 };
 
 const statusFilters = [
@@ -250,7 +253,7 @@ export default function CustomerOrdersPage() {
 
                       {/* Right: Price + Status */}
                       <div className="text-left shrink-0">
-                        <p className="font-bold text-emerald-600 text-sm whitespace-nowrap">
+                        <p className="font-bold text-emerald-300 text-sm whitespace-nowrap">
                           {formatPrice(order.totalAmount)}
                         </p>
                         <Badge

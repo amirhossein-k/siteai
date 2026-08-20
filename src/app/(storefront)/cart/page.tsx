@@ -127,7 +127,7 @@ export default function CartPage() {
                         SKU: {item.sku}
                       </p>
                     )}
-                    <p className="mt-1 text-sm font-semibold text-emerald-600">
+                    <p className="mt-1 text-sm font-semibold text-emerald-300">
                       {formatPrice(item.price)}
                     </p>
 
@@ -222,7 +222,7 @@ export default function CartPage() {
               <div className="border-t pt-4">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold">جمع کل</span>
-                  <span className="text-xl font-bold text-emerald-600">
+                  <span className="text-xl font-bold text-emerald-300">
                     {formatPrice(totalPrice)}
                   </span>
                 </div>

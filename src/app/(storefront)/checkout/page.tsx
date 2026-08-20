@@ -135,8 +135,8 @@ export default function CheckoutPage() {
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-md text-center">
           <div className="mb-6 flex justify-center">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100">
-              <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/15">
+              <CheckCircle2 className="h-10 w-10 text-emerald-300" />
             </div>
           </div>
           <h1 className="mb-2 text-2xl font-bold tracking-tight">
@@ -242,10 +242,10 @@ export default function CheckoutPage() {
           <div className="lg:col-span-2 space-y-6">
             {/* Login reminder */}
             {!session && (
-              <Card className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+              <Card className="border-amber-400/30 bg-amber-500/15">
                 <CardContent className="flex items-center gap-3 p-4">
-                  <AlertCircle className="h-5 w-5 shrink-0 text-amber-600" />
-                  <p className="text-sm text-amber-700 dark:text-amber-300">
+                  <AlertCircle className="h-5 w-5 shrink-0 text-amber-300" />
+                  <p className="text-sm text-amber-300">
                     برای ثبت سفارش باید{" "}
                     <Link
                       href="/login?callbackUrl=/checkout"
@@ -340,7 +340,7 @@ export default function CheckoutPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  <label className="flex items-center gap-3 rounded-lg border p-4 cursor-pointer transition-colors hover:bg-accent has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50 dark:has-[:checked]:bg-emerald-950">
+                  <label className="flex items-center gap-3 rounded-lg border p-4 cursor-pointer transition-colors hover:bg-accent has-[:checked]:border-emerald-400/40 has-[:checked]:bg-emerald-500/15">
                     <input
                       type="radio"
                       name="payment"
@@ -357,7 +357,7 @@ export default function CheckoutPage() {
                     </div>
                   </label>
 
-                  <label className="flex items-center gap-3 rounded-lg border p-4 cursor-pointer transition-colors hover:bg-accent has-[:checked]:border-emerald-500 has-[:checked]:bg-emerald-50 dark:has-[:checked]:bg-emerald-950">
+                  <label className="flex items-center gap-3 rounded-lg border p-4 cursor-pointer transition-colors hover:bg-accent has-[:checked]:border-emerald-400/40 has-[:checked]:bg-emerald-500/15">
                     <input
                       type="radio"
                       name="payment"
@@ -439,7 +439,7 @@ export default function CheckoutPage() {
                 {/* Coupon (Session 39) */}
                 <div className="border-t pt-4 space-y-2">
                   {appliedCoupon ? (
-                    <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 dark:border-emerald-800 dark:bg-emerald-950">
+                    <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-3 py-2">
                       <div className="min-w-0">
                         <p className="text-xs font-bold font-mono" dir="ltr">
                           {appliedCoupon.code}
@@ -456,7 +456,7 @@ export default function CheckoutPage() {
                             : `${formatPrice(appliedCoupon.value)} تخفیف`}
                         </p>
                         {appliedCoupon.minSubtotal > totalPrice && (
-                          <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                          <p className="text-[10px] text-amber-300">
                             حداقل مبلغ سبد برای این کد:{" "}
                             {formatPrice(appliedCoupon.minSubtotal)}
                           </p>
@@ -517,7 +517,7 @@ export default function CheckoutPage() {
                     </span>
                   </div>
                   {couponDiscount > 0 && (
-                    <div className="flex items-center justify-between text-sm text-emerald-600">
+                    <div className="flex items-center justify-between text-sm text-emerald-300">
                       <span className="text-muted-foreground">
                         تخفیف ({appliedCoupon?.code})
                       </span>
@@ -535,7 +535,7 @@ export default function CheckoutPage() {
                 <div className="border-t pt-4">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold">قابل پرداخت</span>
-                    <span className="text-xl font-bold text-emerald-600">
+                    <span className="text-xl font-bold text-emerald-300">
                       {formatPrice(payable)}
                     </span>
                   </div>
@@ -596,7 +596,7 @@ function PublicCouponPicker({ onPick }: { onPick: (code: string) => void }) {
               onPick(c.code);
               showToast.info(`کد ${c.code} درج شد — دکمه اعمال را بزنید`);
             }}
-            className="rounded-md border border-dashed px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-emerald-400 hover:text-emerald-600 dark:hover:border-emerald-700 dark:hover:text-emerald-400"
+            className="rounded-md border border-dashed px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-emerald-400/40 hover:text-emerald-300"
             dir="ltr"
           >
             {c.code}

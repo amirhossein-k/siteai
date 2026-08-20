@@ -55,7 +55,7 @@ export default function PublicCouponsPage() {
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="mb-8 text-center">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-white shadow-lg">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-800 text-white shadow-lg">
           <Ticket className="h-8 w-8" />
         </div>
         <h1 className="text-3xl font-bold tracking-tight">کدهای تخفیف</h1>
@@ -116,7 +116,7 @@ export default function PublicCouponsPage() {
             {data.data.map((coupon) => (
               <Card
                 key={coupon._id}
-                className="group relative overflow-hidden border-emerald-200 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg dark:border-emerald-900"
+                className="group relative overflow-hidden border-emerald-400/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
               >
                 {/* Decorative ribbon */}
                 <div className="absolute left-0 top-0 h-full w-1.5 bg-gradient-to-b from-emerald-400 to-emerald-600" />
@@ -132,7 +132,7 @@ export default function PublicCouponsPage() {
                         {coupon.code}
                       </p>
                     </div>
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
                       {coupon.type === "percent" ? (
                         <Percent className="h-5 w-5" />
                       ) : (
@@ -162,7 +162,7 @@ export default function PublicCouponsPage() {
                     variant="default"
                     className={
                       copiedCode === coupon._id
-                        ? "w-full gap-2 bg-emerald-600 hover:bg-emerald-700"
+                        ? "w-full gap-2 bg-emerald-700 hover:bg-emerald-800"
                         : "w-full gap-2"
                     }
                     onClick={() => handleCopy(coupon)}
