@@ -16,6 +16,7 @@ import { ReportFilters } from "@/components/reports/report-filters";
 import { ReportTable } from "@/components/reports/report-table";
 import { ExportButton } from "@/components/reports/export-button";
 import { PnlView } from "@/components/reports/pnl-view";
+import { ProfitabilityView, type ProfitabilityViewProps } from "@/components/reports/profitability-view";
 import {
   SummaryCards,
   summaryCardsFromSummary,
@@ -51,7 +52,8 @@ function ReportDetailContent() {
   const searchParams = useSearchParams();
 
   const isPnl = report === "pnl";
-  const meta = isPnl ? PNL_META : REPORT_META[report];
+  const isProfitability = report === "profitability";
+  const meta = isPnl || isProfitability ? PNL_META : REPORT_META[report];
   const known = REPORT_NAV.some((n) => n.report === report);
 
   const params: Record<string, string> = useMemo(() => {
@@ -133,7 +135,11 @@ function ReportDetailContent() {
 
       {!isLoading && !isError && data && (
         <>
-          {isPnl ? (
+          {isProfitability ? (
+            <ProfitabilityView
+              {...(data as unknown as ProfitabilityViewProps)}
+            />
+          ) : isPnl ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">سود و زیان</CardTitle>

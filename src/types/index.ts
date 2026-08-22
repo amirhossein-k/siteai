@@ -1224,6 +1224,8 @@ export interface ReportFilters {
   expenseStatus?: string;
   /** Expense category enum — only for the expenses report (Session 82 Phase E). */
   expenseCategory?: string;
+  /** Profitability trend grouping requested by the report UI. */
+  trendGroup?: "day" | "week" | "month";
   paymentStatus?: string;
   paymentMethod?: string;
   coupon?: string;

@@ -1819,6 +1819,7 @@ export const REPORT_SLUGS = [
   "purchases",
   "expenses",
   "accounting",
+  "profitability",
 ] as const;
 
 export type ReportSlug = (typeof REPORT_SLUGS)[number];
@@ -1847,6 +1848,10 @@ export async function getReportData(slug: ReportSlug, filters: ReportFilters) {
       return getPurchasesReport(filters);
     case "expenses":
       return getExpensesReport(filters);
+    case "profitability": {
+      const { getProfitabilityReport } = await import("@/lib/profitability");
+      return getProfitabilityReport(filters);
+    }
     case "accounting": {
       // The accounting workbook's JSON envelope — reuses the standard reports
       // and assembles the V2 datasets (order items, movements, layers, COGS).

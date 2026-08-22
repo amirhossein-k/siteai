@@ -550,6 +550,39 @@ export function buildReportWorkbook<T>(
       );
       return workbook;
     }
+    case "profitability": {
+      // Profitability report — product profitability sheet
+      const profitData = data as unknown as {
+        products?: Array<Record<string, unknown>>;
+        categories?: Array<Record<string, unknown>>;
+        expenses?: Array<Record<string, unknown>>;
+      };
+      if (profitData.products && profitData.products.length > 0) {
+        const PROFITABILITY_COLUMNS: Column[] = [
+          { header: "محصول", key: "name", width: 34 },
+          { header: "SKU", key: "sku", width: 16 },
+          { header: "تعداد", key: "quantity", width: 10, numFmt: INTEGER, align: "right" },
+          { header: "فروش خالص", key: "netSales", width: 18, numFmt: MONEY, align: "right" },
+          { header: "COGS", key: "cogs", width: 18, numFmt: MONEY, align: "right" },
+          { header: "سود ناخالص", key: "grossProfit", width: 18, numFmt: MONEY, align: "right" },
+          { header: "حاشیه سود", key: "grossMargin", width: 12, numFmt: PERCENT, align: "right" },
+          { header: "سهم از سود", key: "profitShare", width: 12, numFmt: PERCENT, align: "right" },
+        ];
+        writeDetailSheet(workbook, "سودآوری محصولات", PROFITABILITY_COLUMNS, flattenRows(profitData.products, PROFITABILITY_COLUMNS));
+      }
+      if (profitData.categories && profitData.categories.length > 0) {
+        const CAT_COLUMNS: Column[] = [
+          { header: "دسته‌بندی", key: "categoryName", width: 26 },
+          { header: "تعداد فروش", key: "quantity", width: 12, numFmt: INTEGER, align: "right" },
+          { header: "فروش خالص", key: "netSales", width: 18, numFmt: MONEY, align: "right" },
+          { header: "COGS", key: "cogs", width: 18, numFmt: MONEY, align: "right" },
+          { header: "سود ناخالص", key: "grossProfit", width: 18, numFmt: MONEY, align: "right" },
+          { header: "حاشیه سود", key: "grossMargin", width: 12, numFmt: PERCENT, align: "right" },
+        ];
+        writeDetailSheet(workbook, "سودآوری دسته‌بندی", CAT_COLUMNS, flattenRows(profitData.categories, CAT_COLUMNS));
+      }
+      return workbook;
+    }
     default:
       return workbook;
   }

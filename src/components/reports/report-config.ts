@@ -49,6 +49,7 @@ export interface ReportMeta {
     category?: boolean;
     q?: boolean;
     coupon?: boolean;
+    trendGroup?: boolean;
   };
   /** Keys that receive a bold totals footer row. */
   totalKeys: string[];
@@ -265,6 +266,25 @@ export const REPORT_META: Record<string, ReportMeta> = {
       { key: "voidReason", label: "دلیل باطل‌سازی" },
     ],
   },
+  profitability: {
+    title: REPORT_TITLES.profitability,
+    description: "تحلیل سودآوری مدیریتی — سود ناخالص و خالص هر محصول و دسته‌بندی، تحلیل هزینه‌ها و شاخص‌های سلامت مالی",
+    filters: { preset: true, trendGroup: true },
+    totalKeys: ["netSales", "cogs", "grossProfit"],
+    columns: [
+      { key: "name", label: "محصول" },
+      { key: "sku", label: "SKU", className: "font-mono text-xs" },
+      { key: "quantity", label: "تعداد", format: "count", align: "right" },
+      moneyColumn("grossSales", "فروش ناخالص"),
+      moneyColumn("productDiscount", "تخفیف محصول"),
+      moneyColumn("couponAllocation", "تخفیف کوپن"),
+      moneyColumn("netSales", "فروش خالص"),
+      moneyColumn("cogs", "COGS"),
+      moneyColumn("grossProfit", "سود ناخالص"),
+      { key: "grossMargin", label: "حاشیه سود", format: "percent", align: "right" },
+      { key: "profitShare", label: "سهم از سود", format: "percent", align: "right" },
+    ],
+  },
 };
 
 export const REPORT_NAV: Array<{ report: string; title: string }> = [
@@ -278,6 +298,7 @@ export const REPORT_NAV: Array<{ report: string; title: string }> = [
   { report: "customers", title: REPORT_TITLES.customers },
   { report: "inventory", title: REPORT_TITLES.inventory },
   { report: "pnl", title: REPORT_TITLES.pnl },
+  { report: "profitability", title: REPORT_TITLES.profitability },
   { report: "purchases", title: REPORT_TITLES.purchases },
   { report: "expenses", title: REPORT_TITLES.expenses },
 ];
@@ -302,6 +323,7 @@ export function cleanParamsForReport(report: string, params: Record<string, stri
   if (meta?.filters.category) keep.add("category");
   if (meta?.filters.q) keep.add("q");
   if (meta?.filters.coupon) keep.add("coupon");
+  if (meta?.filters.trendGroup) keep.add("group");
   const out: Record<string, string> = {};
   for (const key of keep) {
     if (params[key]) out[key] = params[key];

@@ -12,4 +12,5 @@ export const REPORT_TITLES: Record<string, string> = {
   purchases: "گزارش خرید",
   expenses: "گزارش هزینه‌ها",
   accounting: "دفتر حسابداری (V2)",
+  profitability: "سودآوری",
 };

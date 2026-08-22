@@ -258,6 +258,21 @@ export function parseReportFilters(
     preset = rawPreset as ReportPreset;
   }
 
+  const trendGroupRaw = parseBoundedString(params.group, 10);
+  if (
+    trendGroupRaw &&
+    !( ["day", "week", "month"] as const).includes(
+      trendGroupRaw as "day" | "week" | "month"
+    )
+  ) {
+    return { error: "گروه‌بندی روند نامعتبر است" };
+  }
+  const trendGroup = trendGroupRaw as
+    | "day"
+    | "week"
+    | "month"
+    | undefined;
+
   const fromParam = params.from;
   const toParam = params.to;
   let from: string | null = null;
@@ -350,6 +365,7 @@ export function parseReportFilters(
       purchaseStatus,
       expenseStatus,
       expenseCategory,
+      trendGroup,
       paymentStatus,
       paymentMethod,
       coupon: parseBoundedString(params.coupon, 50),
