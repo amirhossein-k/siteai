@@ -27,6 +27,17 @@ const PRESETS: Array<{ value: string; label: string }> = [
   { value: "custom", label: "سفارشی" },
 ];
 
+/**
+ * Trend grouping options — rendered only for reports that opt in via
+ * `meta.filters.trendGroup` (profitability). The value is the SAME `group`
+ * query parameter the API validates (day | week | month).
+ */
+const TREND_GROUPS: Array<{ value: string; label: string }> = [
+  { value: "day", label: "روزانه" },
+  { value: "week", label: "هفتگی" },
+  { value: "month", label: "ماهانه" },
+];
+
 const STATUS_LABELS: Record<string, string> = {
   pending_payment: "در انتظار پرداخت",
   processing: "در حال پردازش",
@@ -174,6 +185,33 @@ export function ReportFilters({ meta, params, onParamsChange }: ReportFiltersPro
               className="w-36"
               aria-label="تاریخ پایان"
             />
+          </div>
+        )}
+
+        {/* Trend grouping — profitability only. Absent `group` lets the API
+            pick a sensible default for the selected range. */}
+        {filters.trendGroup && (
+          <div
+            className="flex flex-wrap items-center gap-1 rounded-lg border bg-card p-1"
+            role="group"
+            aria-label="گروه‌بندی روند"
+          >
+            {TREND_GROUPS.map((g) => (
+              <button
+                key={g.value}
+                type="button"
+                onClick={() => set({ group: g.value })}
+                aria-pressed={params.group === g.value}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                  params.group === g.value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {g.label}
+              </button>
+            ))}
           </div>
         )}
 

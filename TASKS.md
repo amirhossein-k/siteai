@@ -1,5 +1,47 @@
 # Tasks - فروشگاه من (Online Store)
 
+> **Docs gap:** this file last tracked Session 68. Sessions 69–87 lived in CHANGELOG.md / PROJECT_STATE.md only, and Sessions 85–87 were recorded nowhere until Session 88 reconstructed them from their commit messages. Session 88 is tracked below.
+
+---
+
+## ✅ Session 88 — Profitability Report Completion (سودآوری)
+
+### Scope + invariants
+- [x] Approved scope frozen — profitability UI wiring + Excel export + trend correctness + accessibility + tests; **no schema/migration/backfill, no accounting changes**
+- [x] `OrderItem.fifoUnitCost → historical OrderItem.supplierPrice snapshot → 0` COGS expression **unchanged** (aggregate + trend); current `Product.supplierPrice` never used
+- [x] Zero changes to P&L/FIFO/inventory/checkout/payment/refund logic, `src/models/Order.js`, `src/lib/report-matches.ts`, or the product schema
+
+### Excel export (the HTTP 500)
+- [x] `src/lib/reports-excel.ts` — generic `writeSummarySheet()` skipped for `profitability` (its payload has no generic `summary` → `Cannot read properties of undefined (reading 'orders')` → 500)
+- [x] Self-contained profitability branch → exactly **5 sheets**: خلاصه سودآوری · آبشار سودآوری · سودآوری محصولات · تحلیل هزینه‌ها · روند (reusing `writeDetailSheet`/`flattenRows`/`MONEY`/`PERCENT`/`INTEGER`)
+- [x] Product sheet column contract preserved from the foundation; conditional category-sheet logic preserved (`categories` intentionally `[]`)
+- [x] KPI/waterfall values stay **numeric** cells, each with its own money/percent format
+
+### Page metadata + filters
+- [x] `src/app/admin/reports/[report]/page.tsx` — new `PROFITABILITY_META` (title «سودآوری», description, `filters: { preset: true, trendGroup: true }`); **P&L still uses `PNL_META`**, other reports unchanged
+- [x] `src/components/reports/report-filters.tsx` — روزانه/هفتگی/ماهانه segmented control rendered only when `meta.filters.trendGroup`; writes the existing `?group=day|week|month`; `role="group"` + `aria-label` + `aria-pressed`; reset drops the param; backend validation not duplicated
+
+### Trend correctness
+- [x] `src/lib/profitability.ts` — pure exported `TrendGroup` / `startOfTrendGroup` / `nextTrendGroupStart` / `isoWeek` / `trendGroupLabel` / `computeTrendBuckets()` / `assembleTrendBuckets()`
+- [x] Each bucket now exposes its **own** `from`/`to` (previously the overall report window); contiguous + non-overlapping; labels match Mongo `$dateToString` (`%Y-%m-%d`, `%G-W%V` with a real ISO week-year, `%Y-%m`)
+- [x] **Zero-fill** every empty bucket covering the window; **expense-only** periods kept (previously lost from net-profit trend analysis); `expenses` exposed on the bucket; 3000-bucket defensive cap; degenerate windows guarded
+- [x] Date convention documented in-code (inclusive UTC calendar days for the API vocabulary, half-open instant window internally — no new timezone system)
+
+### Accessibility
+- [x] Sortable headers → `<th scope="col" aria-sort>` wrapping real keyboard-operable buttons (+ `sr-only` direction text, arrow glyph `aria-hidden`); all static `<th>`s scoped
+- [x] Decorative `ChangeIcon`/trend arrows `aria-hidden`; waterfall/trend/KPI/health expose textual alternatives; no new dependency
+
+### Tests
+- [x] `tests/unit/profitability.test.ts` — day/week/month boundaries, contiguity/non-overlap, ISO week-year transition (`2027-01-01 → 2026-W53`), zero-fill, expense-only period; existing cases unchanged
+- [x] `tests/unit/report-utils.test.ts` — `group` parsing day/week/month + absent → `undefined` + invalid → parser behaviour
+- [x] **`tests/unit/profitability-excel.test.ts` (new, offline)** — builds the real workbook and re-parses it (five sheets, no generic P&L summary sheet, numeric KPI/waterfall cells, product column contract)
+- [x] `scripts/verify-reports.js` extended — profitability JSON shape, `netSales − cogs = grossProfit`, `grossProfit − operatingExpenses = netProfit`, trend groups + boundaries + Σ trend = KPI, invalid `group` → 400, parsed export workbook
+
+### Verification + status
+- [x] tsc 0 · `npm run check` exit 0 (4 pre-existing warnings) · Vitest **623/623** · targeted 68/68 · `node --check scripts/verify-reports.js` OK · `git diff --check` clean
+- [ ] **BLOCKED:** `verify-reports.js` over HTTP, Playwright, full 49-suite regression — **MongoDB unreachable** (app-side `MongooseServerSelectionError`); re-run when the DB is back
+- [ ] Historical category profitability — deferred to a schema/migration session (`OrderItem` category snapshot + backfill decision)
+
 ---
 
 ## ✅ Session 68 — Customer Communication / Order Support

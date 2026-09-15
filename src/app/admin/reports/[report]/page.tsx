@@ -32,12 +32,28 @@ import {
 import { PaginationControls } from "@/components/ui/pagination";
 import { useReportData } from "@/hooks/use-admin-reports";
 import { REPORT_NAV } from "@/components/reports/report-config";
+import { REPORT_TITLES } from "@/lib/report-titles";
 import type { ProfitLossReport, ReportEnvelope } from "@/types";
 
 const PNL_META: ReportMeta = {
   title: "سود و زیان",
   description: "صورت سود و زیان با مقایسه دوره قبل",
   filters: { preset: true },
+  columns: [],
+  totalKeys: [],
+};
+
+/**
+ * The profitability report renders through <ProfitabilityView>, but it still
+ * needs its OWN meta: sharing PNL_META made the page show the «سود و زیان»
+ * heading and P&L description, and silently disabled the trend-group filter
+ * (PNL_META never declared `trendGroup`).
+ */
+const PROFITABILITY_META: ReportMeta = {
+  title: REPORT_TITLES.profitability,
+  description:
+    "تحلیل سودآوری مدیریتی — سود ناخالص و خالص، تحلیل هزینه‌ها، روند زمانی و شاخص‌های سلامت مالی",
+  filters: { preset: true, trendGroup: true },
   columns: [],
   totalKeys: [],
 };
@@ -53,7 +69,11 @@ function ReportDetailContent() {
 
   const isPnl = report === "pnl";
   const isProfitability = report === "profitability";
-  const meta = isPnl || isProfitability ? PNL_META : REPORT_META[report];
+  const meta = isPnl
+    ? PNL_META
+    : isProfitability
+      ? PROFITABILITY_META
+      : REPORT_META[report];
   const known = REPORT_NAV.some((n) => n.report === report);
 
   const params: Record<string, string> = useMemo(() => {

@@ -47,11 +47,32 @@ function pct(v: number | null): string {
   return `${new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 1 }).format(v)}٪`;
 }
 
+/** Screen-reader text for a period-over-period change (the icon is decorative). */
+function changeText(value: number | null): string {
+  if (value === null) return "بدون مقایسه با دوره قبل";
+  const magnitude = new Intl.NumberFormat("fa-IR", {
+    maximumFractionDigits: 1,
+  }).format(Math.abs(value));
+  if (value > 0) return `افزایش ${magnitude} درصد نسبت به دوره قبل`;
+  if (value < 0) return `کاهش ${magnitude} درصد نسبت به دوره قبل`;
+  return "بدون تغییر نسبت به دوره قبل";
+}
+
 function ChangeIcon({ value }: { value: number | null }) {
-  if (value === null) return <Minus className="h-3.5 w-3.5 text-muted-foreground" />;
-  if (value > 0) return <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />;
-  if (value < 0) return <TrendingDown className="h-3.5 w-3.5 text-red-600" />;
-  return <Minus className="h-3.5 w-3.5 text-muted-foreground" />;
+  return (
+    <span className="inline-flex items-center">
+      <span aria-hidden="true">
+        {value === null || value === 0 ? (
+          <Minus className="h-3.5 w-3.5 text-muted-foreground" />
+        ) : value > 0 ? (
+          <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
+        ) : (
+          <TrendingDown className="h-3.5 w-3.5 text-red-600" />
+        )}
+      </span>
+      <span className="sr-only">{changeText(value)}</span>
+    </span>
+  );
 }
 
 const INSIGHT_ICONS: Record<string, typeof TrendingUp> = {
@@ -101,6 +122,7 @@ function WaterfallCard({ steps }: { steps: WaterfallStep[] }) {
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <div
+                  aria-hidden="true"
                   className={`h-5 rounded-sm transition-all ${
                     isNeg
                       ? "bg-red-300 dark:bg-red-700"
@@ -122,6 +144,7 @@ function WaterfallCard({ steps }: { steps: WaterfallStep[] }) {
                   {isNeg ? "−" : ""}
                   {money(Math.abs(step.amount))}
                 </span>
+                <span className="sr-only">{`تجمعی پس از این مرحله: ${money(step.cumulative)}`}</span>
               </div>
             </div>
           </div>
@@ -157,15 +180,40 @@ function ProductTable({
     }
   };
 
-  const sortHeader = (label: string, field: keyof ProductProfitRow) => (
-    <th
-      className="cursor-pointer select-none px-3 py-2 text-right text-xs font-medium text-muted-foreground hover:text-foreground"
-      onClick={() => toggle(field)}
-    >
-      {label}{" "}
-      {sortKey === field ? (sortDir === "desc" ? "▼" : "▲") : ""}
-    </th>
-  );
+  /**
+   * Sortable header — a real <button> (keyboard operable, native focus ring)
+   * inside a <th scope="col"> that exposes the current sort direction.
+   */
+  const sortHeader = (label: string, field: keyof ProductProfitRow) => {
+    const active = sortKey === field;
+    return (
+      <th
+        scope="col"
+        aria-sort={
+          active ? (sortDir === "desc" ? "descending" : "ascending") : "none"
+        }
+        className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+      >
+        <button
+          type="button"
+          onClick={() => toggle(field)}
+          className="inline-flex cursor-pointer select-none items-center gap-1 rounded hover:text-foreground"
+        >
+          {label}
+          <span aria-hidden="true">
+            {active ? (sortDir === "desc" ? "▼" : "▲") : ""}
+          </span>
+          <span className="sr-only">
+            {active
+              ? sortDir === "desc"
+                ? " (مرتب‌سازی نزولی)"
+                : " (مرتب‌سازی صعودی)"
+              : " (برای مرتب‌سازی کلیک کنید)"}
+          </span>
+        </button>
+      </th>
+    );
+  };
 
   return (
     <Card>
@@ -252,22 +300,40 @@ function CategoryTable({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                  <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                     دسته‌بندی
                   </th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                  <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                     تعداد فروش
                   </th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                  <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                     فروش خالص
                   </th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                  <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                     COGS
                   </th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                  <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                     سود ناخالص
                   </th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                  <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                     حاشیه سود
                   </th>
                 </tr>
@@ -338,16 +404,28 @@ function ExpenseAnalysis({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                  <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                     دسته‌بندی
                   </th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                  <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                     مبلغ
                   </th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                  <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                     سهم از کل هزینه‌ها
                   </th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                  <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                     سهم از سود ناخالص
                   </th>
                 </tr>
@@ -473,11 +551,19 @@ function TrendChart({ trend }: { trend: TrendBucket[] }) {
           </div>
 
           {trend.map((t) => (
-            <div key={t.label} className="flex items-center gap-2">
-              <span className="w-20 shrink-0 text-left text-xs text-muted-foreground">
+            <div
+              key={t.label}
+              role="group"
+              aria-label={`${t.label} — فروش خالص ${money(t.netSales)}، COGS ${money(t.cogs)}، سود ناخالص ${money(t.grossProfit)}، هزینه‌های عملیاتی ${money(t.expenses)}، سود خالص ${money(t.netProfit)}`}
+              className="flex items-center gap-2"
+            >
+              <span
+                aria-hidden="true"
+                className="w-20 shrink-0 text-left text-xs text-muted-foreground"
+              >
                 {t.label}
               </span>
-              <div className="flex flex-1 gap-1">
+              <div aria-hidden="true" className="flex flex-1 gap-1">
                 {/* Stacked bars */}
                 <div
                   className="h-4 rounded-sm bg-emerald-400 dark:bg-emerald-600"
@@ -516,7 +602,10 @@ function TrendChart({ trend }: { trend: TrendBucket[] }) {
                   title={`سود خالص: ${money(t.netProfit)}`}
                 />
               </div>
-              <span className="w-24 shrink-0 text-left text-xs font-medium">
+              <span
+                aria-hidden="true"
+                className="w-24 shrink-0 text-left text-xs font-medium"
+              >
                 {money(t.netSales)}
               </span>
             </div>
@@ -720,16 +809,28 @@ export function ProfitabilityView({
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b">
-                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                        <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                           محصول
                         </th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                        <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                           فروش خالص
                         </th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                        <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                           سود ناخالص
                         </th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                        <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                           حاشیه سود
                         </th>
                       </tr>
@@ -773,19 +874,34 @@ export function ProfitabilityView({
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b">
-                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                        <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                           محصول
                         </th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                        <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                           فروش خالص
                         </th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                        <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                           COGS
                         </th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                        <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                           سود ناخالص
                         </th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                        <th
+                          scope="col"
+                          className="px-3 py-2 text-right text-xs font-medium text-muted-foreground"
+                        >
                           حاشیه سود
                         </th>
                       </tr>

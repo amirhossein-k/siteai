@@ -20,8 +20,11 @@ import {
   windowDates,
 } from "@/lib/report-matches";
 import {
+  addDays,
   roundToman,
   safePct,
+  startOfUtcDay,
+  startOfUtcMonth,
 } from "@/lib/report-utils";
 import type { ReportFilters } from "@/types";
 
@@ -83,11 +86,15 @@ export interface ExpenseAnalysisRow {
 
 export interface TrendBucket {
   label: string;
+  /** Inclusive bucket start (UTC). */
   from: Date;
+  /** Inclusive bucket end (UTC). */
   to: Date;
   netSales: number;
   cogs: number;
   grossProfit: number;
+  /** Non-void operating expenses recorded inside this bucket. */
+  expenses: number;
   netProfit: number;
 }
 
@@ -370,24 +377,188 @@ async function aggregateItemProfitability(
 // Trend: bucket orders by day/week/month
 // ---------------------------------------------------------------------------
 
+/** Trend grouping granularity (whitelist-validated by `parseReportFilters`). */
+export type TrendGroup = "day" | "week" | "month";
+
+/**
+ * MongoDB `$dateToString` formats used to group orders/expenses. The generated
+ * bucket labels MUST match these exactly — a mismatch would silently drop a
+ * group's data from the trend.
+ */
+const TREND_DATE_FORMATS: Record<TrendGroup, string> = {
+  day: "%Y-%m-%d",
+  week: "%G-W%V",
+  month: "%Y-%m",
+};
+
+const TREND_DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Hard cap on generated buckets (bounds the payload: ~8 years of daily buckets). */
+const TREND_MAX_BUCKETS = 3000;
+
+/** UTC start of the ISO week (Monday) containing `d`. */
+function startOfUtcWeek(d: Date): Date {
+  const day = startOfUtcDay(d);
+  return addDays(day, -((day.getUTCDay() + 6) % 7)); // Mon = 0 … Sun = 6
+}
+
+/** First UTC day of the trend group containing `d` (the inclusive bucket start). */
+export function startOfTrendGroup(d: Date, group: TrendGroup): Date {
+  if (group === "week") return startOfUtcWeek(d);
+  if (group === "month") return startOfUtcMonth(d);
+  return startOfUtcDay(d);
+}
+
+/** First day of the NEXT group — the exclusive upper bound of `d`'s bucket. */
+export function nextTrendGroupStart(d: Date, group: TrendGroup): Date {
+  if (group === "week") return addDays(d, 7);
+  if (group === "month") {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+  }
+  return addDays(d, 1);
+}
+
+/** ISO-8601 week-numbering year + week (matches Mongo's `%G` / `%V`). */
+export function isoWeek(d: Date): { year: number; week: number } {
+  const target = startOfUtcDay(d);
+  const dayNum = (target.getUTCDay() + 6) % 7; // Mon = 0 … Sun = 6
+  // The Thursday of this ISO week decides the ISO week-numbering year.
+  const thursday = addDays(target, 3 - dayNum);
+  const year = thursday.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const week1Monday = addDays(jan4, -((jan4.getUTCDay() + 6) % 7));
+  const week =
+    Math.round(
+      (thursday.getTime() - week1Monday.getTime()) / (7 * TREND_DAY_MS)
+    ) + 1;
+  return { year, week };
+}
+
+/** The group key for `d` — identical to the aggregation's `$dateToString` output. */
+export function trendGroupLabel(d: Date, group: TrendGroup): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (group === "week") {
+    const { year, week } = isoWeek(d);
+    return `${year}-W${pad(week)}`;
+  }
+  if (group === "month") {
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`;
+  }
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+export interface TrendBucketBoundaries {
+  /** Group key — matches the `$dateToString` grouping key exactly. */
+  label: string;
+  /** Inclusive bucket start (UTC). */
+  from: Date;
+  /** Inclusive bucket end (UTC) — the last millisecond of the group. */
+  to: Date;
+}
+
+/**
+ * Build EVERY bucket covering `[windowFrom, windowTo)` for `group`, each with
+ * its OWN boundaries (never the overall report window).
+ *
+ * Empty periods are included so the caller can zero-fill them — without this,
+ * a period containing only expenses would vanish from the trend entirely.
+ *
+ * DATE CONVENTION (matches the rest of the reports subsystem): the report's
+ * `filters.from`/`filters.to` and `ReportSummary.from`/`to` are INCLUSIVE UTC
+ * calendar days, while `windowDates()` turns them into the half-open query
+ * window `[from 00:00Z, to 00:00Z + 1d)` used by `buildOrderMatch()`. A bucket
+ * therefore reports its inclusive span — `from` = the group's first instant,
+ * `to` = the group's LAST instant (e.g. daily `2026-09-01T00:00:00.000Z` →
+ * `2026-09-01T23:59:59.999Z`), which prints as the same inclusive date when
+ * sliced. The exclusive form is derivable because the buckets are contiguous:
+ * `bucket[i].to + 1ms === bucket[i + 1].from`, and the final bucket's `to` is
+ * exactly `windowTo − 1ms` — so buckets tile the window with no gap or overlap.
+ */
+export function computeTrendBuckets(
+  windowFrom: Date,
+  windowTo: Date,
+  group: TrendGroup
+): TrendBucketBoundaries[] {
+  if (
+    !(windowFrom instanceof Date) ||
+    !(windowTo instanceof Date) ||
+    Number.isNaN(windowFrom.getTime()) ||
+    Number.isNaN(windowTo.getTime()) ||
+    windowTo.getTime() <= windowFrom.getTime()
+  ) {
+    return [];
+  }
+
+  const out: TrendBucketBoundaries[] = [];
+  let cursor = startOfTrendGroup(windowFrom, group);
+  while (
+    cursor.getTime() < windowTo.getTime() &&
+    out.length < TREND_MAX_BUCKETS
+  ) {
+    const next = nextTrendGroupStart(cursor, group);
+    out.push({
+      label: trendGroupLabel(cursor, group),
+      from: cursor,
+      to: new Date(next.getTime() - 1),
+    });
+    cursor = next;
+  }
+  return out;
+}
+
+/** Per-group sales totals emitted by the order aggregation. */
+export interface TrendSalesAgg {
+  netSales: number;
+  cogs: number;
+}
+
+/**
+ * Map the grouped aggregation results onto the bucket skeleton.
+ *
+ * EVERY bucket in `buckets` is returned — a bucket with no sales and no
+ * expenses is zero-filled rather than dropped, and a bucket with expenses but
+ * no sales still carries its expense total (so period costs never disappear
+ * from trend/net-profit analysis).
+ */
+export function assembleTrendBuckets(
+  buckets: TrendBucketBoundaries[],
+  salesByGroup: Map<string, TrendSalesAgg>,
+  expenseByGroup: Map<string, number>
+): TrendBucket[] {
+  return buckets.map((bucket) => {
+    const sales = salesByGroup.get(bucket.label) ?? { netSales: 0, cogs: 0 };
+    const expenses = expenseByGroup.get(bucket.label) ?? 0;
+    const grossProfit = sales.netSales - sales.cogs;
+    return {
+      label: bucket.label,
+      from: bucket.from,
+      to: bucket.to,
+      netSales: sales.netSales,
+      cogs: sales.cogs,
+      grossProfit,
+      expenses,
+      netProfit: grossProfit - expenses,
+    };
+  });
+}
+
 async function computeTrend(
   filters: ReportFilters
 ): Promise<TrendBucket[]> {
   const { from, to } = windowDates(filters);
-  const rangeDays = Math.ceil(
-    (to.getTime() - from.getTime()) / (24 * 60 * 60 * 1000)
-  );
+  const rangeDays = Math.ceil((to.getTime() - from.getTime()) / TREND_DAY_MS);
 
   // Use the requested grouping when present; otherwise choose a sensible
   // default for the selected range.
-  const groupBy = filters.trendGroup ??
+  const groupBy: TrendGroup =
+    filters.trendGroup ??
     (rangeDays <= 31 ? "day" : rangeDays <= 180 ? "week" : "month");
-  const dateFormat =
-    groupBy === "day"
-      ? "%Y-%m-%d"
-      : groupBy === "week"
-        ? "%G-W%V"
-        : "%Y-%m";
+  const dateFormat = TREND_DATE_FORMATS[groupBy];
+
+  // Every bucket covering the window is generated up-front, so periods with no
+  // orders are still represented (zero-filled) instead of being dropped.
+  const skeleton = computeTrendBuckets(from, to, groupBy);
+  if (skeleton.length === 0) return [];
 
   const orderMatch = await buildOrderMatch(filters);
 
@@ -462,25 +633,20 @@ async function computeTrend(
     },
   ]);
 
-  const expenseByGroup = new Map(
+  const salesByGroup = new Map<string, TrendSalesAgg>(
+    buckets.map((b) => [
+      String(b._id ?? ""),
+      {
+        netSales: roundToman(b.netSales ?? 0),
+        cogs: roundToman(b.cogs ?? 0),
+      },
+    ])
+  );
+  const expenseByGroup = new Map<string, number>(
     expenseAgg.map((e) => [e._id, roundToman(e.expenses)])
   );
 
-  return buckets.map((b) => {
-    const ns = roundToman(b.netSales ?? 0);
-    const cogs = roundToman(b.cogs ?? 0);
-    const gp = ns - cogs;
-    const exp = expenseByGroup.get(b._id.group) ?? 0;
-    return {
-      label: String(b._id ?? ""),
-      from,
-      to,
-      netSales: ns,
-      cogs,
-      grossProfit: gp,
-      netProfit: gp - exp,
-    };
-  });
+  return assembleTrendBuckets(skeleton, salesByGroup, expenseByGroup);
 }
 
 // ---------------------------------------------------------------------------

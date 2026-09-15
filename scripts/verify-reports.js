@@ -16,6 +16,15 @@
  *      (parsed with exceljs)
  *   8. Export rate limit → 429 after the budget is consumed
  *   9. Dashboard full workbook contains all 9 sheets
+ *  10. Profitability report (Session 88): JSON shape, netSales − cogs =
+ *      grossProfit, grossProfit − operatingExpenses = netProfit, product rows
+ *      reconcile with the KPIs, COGS from the historical item snapshot,
+ *      category profitability intentionally empty, waterfall reconciliation
+ *  11. Profitability trend: per-bucket from/to boundaries, contiguity, window
+ *      coverage, zero-filled empty periods, Σ buckets = report totals, and the
+ *      day/week/month groups (+ invalid group → 400)
+ *  12. Profitability Excel export: valid xlsx with the 5 dedicated sheets and
+ *      a product-sheet Σ that reconciles with the report
  *
  * Usage: node scripts/verify-reports.js  (dev server on :3000, real DB)
  * Self-cleaning: removes every PREFIX'd row + its own rate-limit keys.
@@ -562,10 +571,217 @@ async function run() {
     }
   });
 
+  // --- 12. Profitability report (Session 88) ---
+  let profitKpi = null;
+  await testAsync("Profitability report: shape + accounting reconciliation", async () => {
+    const res = await http("GET", "/api/admin/reports/profitability?" + RANGE, adminJar);
+    assert(res.status === 200, "profitability 200: " + JSON.stringify(res.data).slice(0, 140));
+    const p = res.data;
+    for (const key of ["kpis", "waterfall", "products", "categories", "expenses", "diagnostics", "health", "trend"]) {
+      assert(Array.isArray(p[key]), "missing array: " + key);
+    }
+
+    const kpi = Object.fromEntries(p.kpis.map((k) => [k.key, k.value]));
+    profitKpi = kpi;
+    // Hand-computed from the SAME seeded snapshots the sales/dashboard suites assert
+    assert(kpi.grossSales === 6000, "grossSales 6000, got " + kpi.grossSales);
+    assert(kpi.productDiscount === 200, "productDiscount 200, got " + kpi.productDiscount);
+    assert(kpi.couponDiscount === 350, "couponDiscount 350, got " + kpi.couponDiscount);
+    assert(kpi.netSales === 5450, "netSales 5450, got " + kpi.netSales);
+    assert(kpi.cogs === 2300, "cogs 2300, got " + kpi.cogs);
+    assert(kpi.grossProfit === 3150, "grossProfit 3150, got " + kpi.grossProfit);
+
+    // Reconciliation: netSales − cogs = grossProfit; grossProfit − opex = netProfit
+    assert(kpi.netSales - kpi.cogs === kpi.grossProfit, "netSales − cogs = grossProfit");
+    assert(
+      kpi.grossProfit - (kpi.operatingExpenses ?? 0) === kpi.netProfit,
+      "grossProfit − operatingExpenses = netProfit, got " +
+        JSON.stringify({ gp: kpi.grossProfit, opex: kpi.operatingExpenses, np: kpi.netProfit })
+    );
+
+    // Product rows reconcile with the KPIs
+    const sum = (f) => p.products.reduce((s, r) => s + f(r), 0);
+    assert(sum((r) => r.netSales) === kpi.netSales, "Σ product netSales = netSales, got " + sum((r) => r.netSales));
+    assert(sum((r) => r.cogs) === kpi.cogs, "Σ product cogs = cogs, got " + sum((r) => r.cogs));
+    assert(sum((r) => r.grossProfit) === kpi.grossProfit, "Σ product grossProfit = grossProfit");
+
+    // COGS must come from the HISTORICAL item snapshot: prodA/prodB current
+    // supplierPrice was mutated to 88888/66666 after seeding.
+    const a = p.products.find((r) => r.productId === String(prodA._id));
+    const b = p.products.find((r) => r.productId === String(prodB._id));
+    const d = p.products.find((r) => r.productId === String(prodD._id));
+    assert(a && a.cogs === 1200, "prodA cogs 1200 from snapshot, got " + (a && a.cogs));
+    assert(b && b.cogs === 800, "prodB cogs 800 from snapshot, got " + (b && b.cogs));
+    assert(d && d.cogs === 300, "prodD cogs 300 from snapshot, got " + (d && d.cogs));
+    assert(a.netSales === 2700 && b.netSales === 1950 && d.netSales === 800, "per-product net sales");
+
+    // Category profitability stays INTENTIONALLY unavailable (no immutable
+    // category snapshot exists on OrderItem).
+    assert(p.categories.length === 0, "categories intentionally empty");
+
+    // Waterfall reconciles to the KPIs
+    const wf = Object.fromEntries(p.waterfall.map((s) => [s.key, s]));
+    assert(wf.grossProfit.amount === kpi.grossProfit, "waterfall grossProfit = KPI grossProfit");
+    assert(wf.cogs.amount === -kpi.cogs, "waterfall cogs is subtractive");
+    assert(wf.netProfit.amount === kpi.netProfit, "waterfall netProfit = KPI netProfit");
+    assert(wf.netProfit.cumulative === kpi.netProfit, "waterfall netProfit cumulative");
+    console.log("\n      netSales=" + kpi.netSales + " cogs=" + kpi.cogs + " gp=" + kpi.grossProfit + " np=" + kpi.netProfit);
+  });
+
+  await testAsync("Profitability trend: buckets carry their OWN boundaries + zero-fill", async () => {
+    const res = await http("GET", "/api/admin/reports/profitability?" + RANGE, adminJar);
+    assert(res.status === 200, "profitability 200");
+    const trend = res.data.trend;
+
+    // A 3-day window auto-selects `day` → exactly 3 daily buckets
+    assert(trend.length === 3, "3 daily buckets, got " + trend.length);
+    const prefix = RANGE_FROM.slice(0, 8); // e.g. "2026-08-"
+    const expected = [1, 2, 3].map((d) => prefix + String(d).padStart(2, "0"));
+    assert(trend.map((t) => t.label).join(",") === expected.join(","), "labels " + trend.map((t) => t.label).join(","));
+
+    // The Session 87 bug: EVERY bucket carried the whole report window.
+    const distinct = new Set(trend.map((t) => t.from + "|" + t.to));
+    assert(distinct.size === trend.length, "bucket boundaries must be distinct per bucket");
+
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    for (const t of trend) {
+      assert(new Date(t.to).getTime() - new Date(t.from).getTime() === DAY_MS - 1, "daily bucket spans exactly one day");
+    }
+
+    // Coverage + contiguity (window start = day 1 00:00 UTC)
+    const windowStart = new Date(RANGE_FROM + "T00:00:00.000Z").getTime();
+    assert(new Date(trend[0].from).getTime() <= windowStart, "first bucket covers the window start");
+    for (let i = 1; i < trend.length; i++) {
+      assert(new Date(trend[i].from).getTime() === new Date(trend[i - 1].to).getTime() + 1, "buckets are contiguous");
+    }
+
+    // All seeded orders sit on day 3 (SEED_DATE 12:00 UTC)
+    const last = trend[trend.length - 1];
+    assert(last.netSales === 5450, "day-3 bucket netSales 5450, got " + last.netSales);
+    assert(last.cogs === 2300, "day-3 bucket cogs 2300, got " + last.cogs);
+    assert(last.grossProfit === 3150, "day-3 bucket grossProfit 3150");
+    assert(last.grossProfit - last.expenses === last.netProfit, "bucket netProfit = grossProfit − expenses");
+
+    // Zero-filled empty periods (days 1 and 2 held no orders/expenses)
+    assert(trend[0].netSales === 0 && trend[0].cogs === 0 && trend[0].grossProfit === 0, "day 1 zero-filled");
+    assert(trend[0].expenses === 0 && trend[0].netProfit === 0, "day 1 expenses/profit zero");
+    assert(trend[1].netSales === 0 && trend[1].netProfit === 0, "day 2 zero-filled");
+
+    // Σ over buckets reconciles with the report totals → bucketing loses nothing
+    assert(trend.reduce((s, t) => s + t.netSales, 0) === profitKpi.netSales, "Σ trend netSales = KPI netSales");
+    assert(trend.reduce((s, t) => s + t.cogs, 0) === profitKpi.cogs, "Σ trend cogs = KPI cogs");
+    assert(trend.reduce((s, t) => s + t.netProfit, 0) === profitKpi.netProfit, "Σ trend netProfit = KPI netProfit");
+    console.log("\n      trend buckets: " + trend.map((t) => t.label + "=" + t.netSales).join(" | "));
+  });
+
+  await testAsync("Profitability trend groups: week / month honoured, invalid -> 400", async () => {
+    const dayRes = await http("GET", "/api/admin/reports/profitability?" + rangeOf("group=day"), adminJar);
+    assert(dayRes.status === 200, "group=day 200");
+    assert(dayRes.data.trend.length === 3, "group=day -> 3 buckets, got " + dayRes.data.trend.length);
+
+    const weekRes = await http("GET", "/api/admin/reports/profitability?" + rangeOf("group=week"), adminJar);
+    assert(weekRes.status === 200, "group=week 200");
+    const weeks = weekRes.data.trend;
+    assert(weeks.length >= 1 && weeks.length <= 2, "a 3-day window spans 1-2 ISO weeks, got " + weeks.length);
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    for (let i = 0; i < weeks.length; i++) {
+      const from = new Date(weeks[i].from);
+      assert(from.getUTCDay() === 1, "week bucket starts on a Monday");
+      assert(new Date(weeks[i].to).getTime() - from.getTime() === WEEK_MS - 1, "week bucket spans 7 days");
+      if (i > 0) {
+        assert(new Date(weeks[i].from).getTime() === new Date(weeks[i - 1].to).getTime() + 1, "weeks are contiguous");
+      }
+    }
+    assert(weeks.reduce((s, t) => s + t.netSales, 0) === profitKpi.netSales, "Σ weekly netSales = KPI netSales");
+
+    const monthRes = await http("GET", "/api/admin/reports/profitability?" + rangeOf("group=month"), adminJar);
+    assert(monthRes.status === 200, "group=month 200");
+    assert(monthRes.data.trend.length === 1, "one UTC month -> 1 bucket, got " + monthRes.data.trend.length);
+    assert(monthRes.data.trend[0].netSales === profitKpi.netSales, "monthly bucket netSales = KPI netSales");
+    assert(
+      monthRes.data.trend[0].grossProfit - monthRes.data.trend[0].expenses === monthRes.data.trend[0].netProfit,
+      "monthly bucket netProfit relation"
+    );
+
+    // Invalid non-empty group -> 400 (case-sensitive whitelist)
+    assert((await http("GET", "/api/admin/reports/profitability?" + rangeOf("group=yearly"), adminJar)).status === 400, "group=yearly 400");
+    assert((await http("GET", "/api/admin/reports/profitability?" + rangeOf("group=DAY"), adminJar)).status === 400, "group=DAY 400");
+    // Empty group is treated as absent (the existing parser semantics)
+    assert((await http("GET", "/api/admin/reports/profitability?" + rangeOf("group="), adminJar)).status === 200, "empty group ignored -> 200");
+  });
+
+  await testAsync("Profitability export -> valid xlsx with the 5 dedicated sheets", async () => {
+    const res = await http("GET", "/api/admin/reports/profitability/export?" + RANGE, adminJar);
+    assert(res.status === 200, "profitability export 200, got " + res.status + " " + JSON.stringify(res.data).slice(0, 140));
+    const ct = res.headers.get("content-type") || "";
+    assert(ct.includes("spreadsheetml"), "xlsx content-type: " + ct);
+    assert((res.headers.get("content-disposition") || "").includes("attachment"), "attachment header");
+    const buf = Buffer.from(await res.raw.arrayBuffer());
+    assert(buf.length > 1000, "non-trivial xlsx size");
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    const names = wb.worksheets.map((ws) => ws.name);
+    for (const expected of ["خلاصه سودآوری", "آبشار سودآوری", "سودآوری محصولات", "تحلیل هزینه‌ها", "روند"]) {
+      assert(names.includes(expected), "missing sheet " + expected + " in " + names.join(","));
+    }
+    // The generic (order-labeled) summary sheet must not leak in — it threw the
+    // `summary.orders` TypeError that made this endpoint 500 before Session 88.
+    assert(!names.includes("خلاصه"), "no generic summary sheet: " + names.join(","));
+
+    // KPI sheet carries the report's net sales
+    const kpiSheet = wb.getWorksheet("خلاصه سودآوری");
+    let netFound = false;
+    kpiSheet.eachRow((row) => {
+      if (String(row.getCell(1).value).includes("فروش خالص")) {
+        netFound = true;
+        assert(Number(row.getCell(2).value) === profitKpi.netSales, "KPI sheet net sales, got " + row.getCell(2).value);
+      }
+    });
+    assert(netFound, "net-sales KPI row present");
+
+    // Waterfall sheet lists the net-profit step
+    const wfSheet = wb.getWorksheet("آبشار سودآوری");
+    let npFound = false;
+    wfSheet.eachRow((row) => {
+      if (String(row.getCell(1).value) === "سود خالص") npFound = true;
+    });
+    assert(npFound, "waterfall net-profit row present");
+    assert(wfSheet.rowCount === 9, "waterfall sheet = header + 8 steps, got " + wfSheet.rowCount);
+
+    // Product sheet: Σ netSales reconciles with the report
+    const prodSheet = wb.getWorksheet("سودآوری محصولات");
+    assert(String(prodSheet.getRow(1).getCell(4).value).includes("فروش خالص"), "product sheet header");
+    let sumNet = 0;
+    let productRows = 0;
+    prodSheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const v = row.getCell(4).value;
+      if (typeof v === "number") {
+        sumNet += v;
+        productRows++;
+      }
+    });
+    assert(productRows === 3, "3 product rows in the sheet, got " + productRows);
+    assert(sumNet === profitKpi.netSales, "Σ product-sheet netSales = KPI netSales, got " + sumNet);
+
+    // Trend sheet: header + one row per bucket
+    const trendSheet = wb.getWorksheet("روند");
+    assert(String(trendSheet.getRow(1).getCell(4).value).includes("فروش خالص"), "trend sheet header");
+    assert(trendSheet.rowCount === 4, "trend sheet = header + 3 buckets, got " + trendSheet.rowCount);
+
+    // Expense sheet exists (rows depend on the ledger, so only the header is asserted)
+    const expSheet = wb.getWorksheet("تحلیل هزینه‌ها");
+    assert(String(expSheet.getRow(1).getCell(1).value).includes("دسته"), "expense sheet header");
+
+    console.log("\n      profitability sheets: " + names.join(", "));
+  });
+
   await testAsync("Export rate limit -> 429 after budget consumed", async () => {
-    // We have consumed 2 exports above; the limit is 10/15min → 8 more allowed.
+    // We have consumed 3 exports above (sales, dashboard, profitability); the
+    // limit is 10/15min → 7 more allowed, so request #11 is the first 429.
     let last = null;
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 8; i++) {
       last = await http("GET", "/api/admin/reports/orders/export?" + RANGE, adminJar);
     }
     assert(last.status === 429, "expected 429 after budget, got " + last.status + " " + JSON.stringify(last.data).slice(0, 80));

@@ -168,6 +168,66 @@ describe("parseReportFilters", () => {
     expect("filters" in res && res.filters.page).toBe(1);
     expect("filters" in res && res.filters.limit).toBe(100);
   });
+
+  // --- Session 88: trend grouping (`group` query parameter) ---
+  describe("trendGroup (group param)", () => {
+    it("accepts day / week / month", () => {
+      for (const group of ["day", "week", "month"] as const) {
+        const res = parseReportFilters({ preset: "today", group });
+        expect("error" in res).toBe(false);
+        expect("filters" in res && res.filters.trendGroup).toBe(group);
+      }
+    });
+
+    it("leaves trendGroup undefined when group is absent", () => {
+      const res = parseReportFilters({ preset: "today" });
+      expect("filters" in res && res.filters.trendGroup).toBeUndefined();
+    });
+
+    it("leaves trendGroup undefined for an empty group (not an error)", () => {
+      const res = parseReportFilters({ preset: "today", group: "" });
+      expect("error" in res).toBe(false);
+      expect("filters" in res && res.filters.trendGroup).toBeUndefined();
+    });
+
+    it("rejects an unknown group (the API maps this to HTTP 400)", () => {
+      const res = parseReportFilters({ preset: "today", group: "yearly" });
+      expect("error" in res).toBe(true);
+      expect("error" in res && res.error).toContain("گروه‌بندی");
+    });
+
+    it("is case-sensitive (matching the Mongo $dateToString contract)", () => {
+      expect(
+        "error" in parseReportFilters({ preset: "today", group: "DAY" })
+      ).toBe(true);
+      expect(
+        "error" in parseReportFilters({ preset: "today", group: "Week" })
+      ).toBe(true);
+    });
+
+    it("rejects an over-long group (truncated, then fails the whitelist)", () => {
+      const res = parseReportFilters({
+        preset: "today",
+        group: "day".padEnd(50, "x"),
+      });
+      expect("error" in res).toBe(true);
+    });
+
+    it("does not disturb the other filters", () => {
+      const res = parseReportFilters({
+        preset: "custom",
+        from: "2026-08-01",
+        to: "2026-08-13",
+        group: "week",
+        status: "confirmed",
+      });
+      expect("error" in res).toBe(false);
+      expect("filters" in res && res.filters.trendGroup).toBe("week");
+      expect("filters" in res && res.filters.orderStatus).toBe("confirmed");
+      expect("filters" in res && res.filters.from).toBe("2026-08-01");
+      expect("filters" in res && res.filters.to).toBe("2026-08-13");
+    });
+  });
 });
 
 describe("allocateCouponToLines", () => {

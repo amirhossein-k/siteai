@@ -1,9 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
+  assembleTrendBuckets,
   computeProductRow,
+  computeTrendBuckets,
   computeWaterfallSteps,
+  isoWeek,
+  nextTrendGroupStart,
+  startOfTrendGroup,
+  trendGroupLabel,
   type AggProductLine,
   type AggSummary,
+  type TrendSalesAgg,
 } from "@/lib/profitability";
 
 // ---------------------------------------------------------------------------
@@ -426,5 +433,273 @@ describe("profitability — pure calculation formulas", () => {
         expect(step.amount).toBe(0);
       }
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TREND BUCKETS (Session 88)
+//
+// The Foundation returned the OVERALL report window as every bucket's
+// `from`/`to`, and only emitted buckets that actually had orders — so empty
+// periods (including expense-only periods) silently vanished. These tests pin
+// the corrected boundaries, contiguity/coverage and zero-fill behaviour.
+// ---------------------------------------------------------------------------
+
+/** UTC day-start helper for readable fixtures. */
+const day = (s: string) => new Date(s + "T00:00:00.000Z");
+
+describe("profitability — trend bucket boundaries", () => {
+  describe("daily buckets", () => {
+    it("gives each bucket its OWN day, not the overall report window", () => {
+      const from = day("2026-09-01");
+      const to = day("2026-09-04"); // exclusive
+      const buckets = computeTrendBuckets(from, to, "day");
+
+      expect(buckets).toHaveLength(3);
+      expect(buckets.map((b) => b.label)).toEqual([
+        "2026-09-01",
+        "2026-09-02",
+        "2026-09-03",
+      ]);
+      expect(buckets[0].from.toISOString()).toBe("2026-09-01T00:00:00.000Z");
+      expect(buckets[0].to.toISOString()).toBe("2026-09-01T23:59:59.999Z");
+      expect(buckets[1].from.toISOString()).toBe("2026-09-02T00:00:00.000Z");
+      expect(buckets[2].to.toISOString()).toBe("2026-09-03T23:59:59.999Z");
+      // The regression: every bucket used to carry the SAME window 01→04.
+      const distinct = new Set(
+        buckets.map((b) => `${b.from.toISOString()}|${b.to.toISOString()}`)
+      );
+      expect(distinct.size).toBe(3);
+    });
+
+    it("tiles the window without gaps or overlaps", () => {
+      const from = day("2026-09-01");
+      const to = day("2026-09-04");
+      const buckets = computeTrendBuckets(from, to, "day");
+
+      expect(buckets[0].from.getTime()).toBeLessThanOrEqual(from.getTime());
+      expect(buckets[buckets.length - 1].to.getTime()).toBe(to.getTime() - 1);
+      for (let i = 1; i < buckets.length; i++) {
+        expect(buckets[i].from.getTime()).toBe(buckets[i - 1].to.getTime() + 1);
+      }
+    });
+  });
+
+  describe("weekly buckets (ISO Monday start — matches Mongo %G-W%V)", () => {
+    it("uses the containing Monday → Sunday as the boundaries", () => {
+      // 2026-09-02 is a Wednesday; its ISO week is Mon 2026-08-31 → Sun 2026-09-06.
+      const buckets = computeTrendBuckets(
+        day("2026-09-02"),
+        day("2026-09-03"),
+        "week"
+      );
+
+      expect(buckets).toHaveLength(1);
+      expect(buckets[0].from.toISOString()).toBe("2026-08-31T00:00:00.000Z");
+      expect(buckets[0].to.toISOString()).toBe("2026-09-06T23:59:59.999Z");
+      expect(buckets[0].from.getUTCDay()).toBe(1); // Monday
+    });
+
+    it("emits one bucket per ISO week across a multi-week window", () => {
+      const buckets = computeTrendBuckets(
+        day("2026-08-31"), // Monday
+        day("2026-09-14"), // Monday (exclusive)
+        "week"
+      );
+
+      expect(buckets).toHaveLength(2);
+      expect(buckets.map((b) => b.from.toISOString())).toEqual([
+        "2026-08-31T00:00:00.000Z",
+        "2026-09-07T00:00:00.000Z",
+      ]);
+      expect(buckets[1].to.toISOString()).toBe("2026-09-13T23:59:59.999Z");
+    });
+
+    it("labels weeks with the ISO week-numbering year", () => {
+      // 2027-01-01 is a Friday → ISO week 53 of 2026.
+      expect(isoWeek(day("2027-01-01"))).toEqual({ year: 2026, week: 53 });
+      expect(trendGroupLabel(day("2027-01-01"), "week")).toBe("2026-W53");
+      // 2026-01-01 is a Thursday → week 1 of 2026.
+      expect(isoWeek(day("2026-01-01"))).toEqual({ year: 2026, week: 1 });
+      expect(trendGroupLabel(day("2026-01-01"), "week")).toBe("2026-W01");
+    });
+
+    it("crosses the ISO year boundary: 2026-W53 → 2027-W01 (no overlap/gap)", () => {
+      // 2026-12-28 is a Monday; 2027-01-11 is the following-next Monday.
+      const buckets = computeTrendBuckets(
+        day("2026-12-28"),
+        day("2027-01-11"),
+        "week"
+      );
+
+      expect(buckets.map((b) => b.label)).toEqual(["2026-W53", "2027-W01"]);
+      expect(buckets[0].from.toISOString()).toBe("2026-12-28T00:00:00.000Z");
+      // The week that contains 2027-01-01 still belongs to ISO year 2026.
+      expect(buckets[0].to.toISOString()).toBe("2027-01-03T23:59:59.999Z");
+      expect(buckets[1].from.toISOString()).toBe("2027-01-04T00:00:00.000Z");
+      expect(buckets[1].to.toISOString()).toBe("2027-01-10T23:59:59.999Z");
+      expect(buckets[1].from.getUTCDay()).toBe(1);
+      expect(buckets[1].from.getTime()).toBe(buckets[0].to.getTime() + 1);
+    });
+  });
+
+  describe("monthly buckets", () => {
+    it("uses the real month start → month end", () => {
+      const buckets = computeTrendBuckets(
+        day("2026-09-01"),
+        day("2026-11-15"),
+        "month"
+      );
+
+      expect(buckets.map((b) => b.label)).toEqual([
+        "2026-09",
+        "2026-10",
+        "2026-11",
+      ]);
+      expect(buckets[0].from.toISOString()).toBe("2026-09-01T00:00:00.000Z");
+      expect(buckets[0].to.toISOString()).toBe("2026-09-30T23:59:59.999Z");
+      expect(buckets[1].to.toISOString()).toBe("2026-10-31T23:59:59.999Z");
+      expect(buckets[2].to.toISOString()).toBe("2026-11-30T23:59:59.999Z");
+    });
+
+    it("crosses the calendar year boundary with no missing or overlapping month", () => {
+      const buckets = computeTrendBuckets(
+        day("2026-11-15"),
+        day("2027-02-10"),
+        "month"
+      );
+
+      expect(buckets.map((b) => b.label)).toEqual([
+        "2026-11",
+        "2026-12",
+        "2027-01",
+        "2027-02",
+      ]);
+      expect(buckets[1].to.toISOString()).toBe("2026-12-31T23:59:59.999Z");
+      expect(buckets[2].from.toISOString()).toBe("2027-01-01T00:00:00.000Z");
+      expect(buckets[2].to.toISOString()).toBe("2027-01-31T23:59:59.999Z");
+      // February 2027 is not a leap year.
+      expect(buckets[3].to.toISOString()).toBe("2027-02-28T23:59:59.999Z");
+      for (let i = 1; i < buckets.length; i++) {
+        expect(buckets[i].from.getTime()).toBe(buckets[i - 1].to.getTime() + 1);
+      }
+    });
+  });
+
+  describe("group helpers + degenerate windows", () => {
+    it("startOfTrendGroup / nextTrendGroupStart agree on the group", () => {
+      const d = new Date("2026-09-17T13:45:00.000Z"); // Thursday
+
+      expect(startOfTrendGroup(d, "day").toISOString()).toBe(
+        "2026-09-17T00:00:00.000Z"
+      );
+      expect(
+        nextTrendGroupStart(startOfTrendGroup(d, "day"), "day").toISOString()
+      ).toBe("2026-09-18T00:00:00.000Z");
+      expect(startOfTrendGroup(d, "week").toISOString()).toBe(
+        "2026-09-14T00:00:00.000Z"
+      );
+      expect(
+        nextTrendGroupStart(
+          startOfTrendGroup(d, "week"),
+          "week"
+        ).toISOString()
+      ).toBe("2026-09-21T00:00:00.000Z");
+      expect(startOfTrendGroup(d, "month").toISOString()).toBe(
+        "2026-09-01T00:00:00.000Z"
+      );
+      expect(
+        nextTrendGroupStart(startOfTrendGroup(d, "month"), "month").toISOString()
+      ).toBe("2026-10-01T00:00:00.000Z");
+    });
+
+    it("returns [] for an empty or inverted window", () => {
+      expect(
+        computeTrendBuckets(day("2026-09-02"), day("2026-09-02"), "day")
+      ).toEqual([]);
+      expect(
+        computeTrendBuckets(day("2026-09-03"), day("2026-09-01"), "day")
+      ).toEqual([]);
+    });
+  });
+});
+
+describe("profitability — trend zero-fill", () => {
+  const skeleton = computeTrendBuckets(
+    day("2026-09-01"),
+    day("2026-09-04"),
+    "day"
+  );
+
+  it("keeps every empty DAILY bucket with zero values", () => {
+    const sales = new Map<string, TrendSalesAgg>([
+      ["2026-09-02", { netSales: 1000, cogs: 400 }],
+    ]);
+    const rows = assembleTrendBuckets(skeleton, sales, new Map());
+
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => r.netSales)).toEqual([0, 1000, 0]);
+    expect(rows[0].cogs).toBe(0);
+    expect(rows[0].grossProfit).toBe(0);
+    expect(rows[0].expenses).toBe(0);
+    expect(rows[0].netProfit).toBe(0);
+  });
+
+  it("keeps every empty WEEKLY bucket with zero values", () => {
+    const weeks = computeTrendBuckets(
+      day("2026-08-31"),
+      day("2026-09-21"),
+      "week"
+    );
+    const rows = assembleTrendBuckets(weeks, new Map(), new Map());
+
+    expect(rows).toHaveLength(3);
+    for (const r of rows) {
+      expect(r.netSales).toBe(0);
+      expect(r.cogs).toBe(0);
+      expect(r.grossProfit).toBe(0);
+      expect(r.expenses).toBe(0);
+      expect(r.netProfit).toBe(0);
+    }
+  });
+
+  it("keeps every empty MONTHLY bucket with zero values", () => {
+    const months = computeTrendBuckets(
+      day("2026-09-01"),
+      day("2026-12-01"),
+      "month"
+    );
+    const rows = assembleTrendBuckets(months, new Map(), new Map());
+
+    expect(rows.map((r) => r.label)).toEqual(["2026-09", "2026-10", "2026-11"]);
+    for (const r of rows) expect(r.netProfit).toBe(0);
+  });
+
+  it("represents an EXPENSE-ONLY period and subtracts it from net profit", () => {
+    const expenses = new Map<string, number>([["2026-09-03", 250_000]]);
+    const rows = assembleTrendBuckets(skeleton, new Map(), expenses);
+
+    const expenseOnly = rows.find((r) => r.label === "2026-09-03")!;
+    expect(expenseOnly.netSales).toBe(0);
+    expect(expenseOnly.grossProfit).toBe(0);
+    // The expense must not be dropped just because the period had no sales.
+    expect(expenseOnly.expenses).toBe(250_000);
+    expect(expenseOnly.netProfit).toBe(-250_000);
+
+    expect(rows[0].expenses).toBe(0);
+    expect(rows[0].netProfit).toBe(0);
+    expect(rows.reduce((s, r) => s + r.netProfit, 0)).toBe(-250_000);
+  });
+
+  it("computes netProfit = grossProfit − expenses inside a bucket", () => {
+    const sales = new Map<string, TrendSalesAgg>([
+      ["2026-09-01", { netSales: 1000, cogs: 600 }],
+    ]);
+    const expenses = new Map<string, number>([["2026-09-01", 150]]);
+    const rows = assembleTrendBuckets(skeleton, sales, expenses);
+
+    expect(rows[0].grossProfit).toBe(400);
+    expect(rows[0].expenses).toBe(150);
+    expect(rows[0].netProfit).toBe(250);
   });
 });

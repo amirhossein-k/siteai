@@ -483,8 +483,12 @@ export function buildReportWorkbook<T>(
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "فروشگاه من";
   // The purchases report gets its own purchase-labeled summary sheet below —
-  // the generic (order-labeled) sheet would mislabel procurement KPIs.
-  if (slug !== "purchases") {
+  // the generic (order-labeled) sheet would mislabel procurement KPIs. The
+  // profitability report is ALSO excluded: its payload has no `summary`
+  // envelope (it returns KPIs, a waterfall, products, expenses and a trend
+  // instead), so writing the generic sheet would throw on `summary.orders`.
+  // Profitability builds its five dedicated sheets in its own branch below.
+  if (slug !== "purchases" && slug !== "profitability") {
     writeSummarySheet(workbook, REPORT_TITLES[slug] ?? slug, filters, data.summary);
   }
 
@@ -551,25 +555,147 @@ export function buildReportWorkbook<T>(
       return workbook;
     }
     case "profitability": {
-      // Profitability report — product profitability sheet
+      // Profitability report — SELF-CONTAINED workbook (the generic summary
+      // sheet is skipped for this slug above). Five sheets are always written
+      // so the sheet set is stable regardless of the data in the window.
       const profitData = data as unknown as {
+        kpis?: Array<{
+          key: string;
+          label: string;
+          value: number | null;
+          format: "money" | "percent";
+          prevValue: number | null;
+          changePercent: number | null;
+        }>;
+        waterfall?: Array<{
+          key: string;
+          label: string;
+          amount: number;
+          cumulative: number;
+          subtractive: boolean;
+        }>;
         products?: Array<Record<string, unknown>>;
         categories?: Array<Record<string, unknown>>;
         expenses?: Array<Record<string, unknown>>;
+        trend?: Array<{
+          label: string;
+          from: string;
+          to: string;
+          netSales: number;
+          cogs: number;
+          grossProfit: number;
+          expenses: number;
+          netProfit: number;
+        }>;
       };
-      if (profitData.products && profitData.products.length > 0) {
-        const PROFITABILITY_COLUMNS: Column[] = [
-          { header: "محصول", key: "name", width: 34 },
-          { header: "SKU", key: "sku", width: 16 },
-          { header: "تعداد", key: "quantity", width: 10, numFmt: INTEGER, align: "right" },
-          { header: "فروش خالص", key: "netSales", width: 18, numFmt: MONEY, align: "right" },
-          { header: "COGS", key: "cogs", width: 18, numFmt: MONEY, align: "right" },
-          { header: "سود ناخالص", key: "grossProfit", width: 18, numFmt: MONEY, align: "right" },
-          { header: "حاشیه سود", key: "grossMargin", width: 12, numFmt: PERCENT, align: "right" },
-          { header: "سهم از سود", key: "profitShare", width: 12, numFmt: PERCENT, align: "right" },
-        ];
-        writeDetailSheet(workbook, "سودآوری محصولات", PROFITABILITY_COLUMNS, flattenRows(profitData.products, PROFITABILITY_COLUMNS));
-      }
+
+      // --- خلاصه سودآوری (KPI summary). Money and percent KPIs live in
+      // separate columns so every cell keeps its own correct number format;
+      // percent values are stored as fractions (the Excel `0.0%` convention).
+      const KPI_COLUMNS: Column[] = [
+        { header: "شاخص", key: "label", width: 34 },
+        { header: "مقدار (تومان)", key: "valueMoney", width: 20, numFmt: MONEY, align: "right" },
+        { header: "مقدار (٪)", key: "valuePercent", width: 14, numFmt: PERCENT, align: "right" },
+        { header: "دوره قبل (تومان)", key: "prevMoney", width: 20, numFmt: MONEY, align: "right" },
+        { header: "دوره قبل (٪)", key: "prevPercent", width: 14, numFmt: PERCENT, align: "right" },
+        { header: "تغییر (٪)", key: "changePercent", width: 14, numFmt: PERCENT, align: "right" },
+      ];
+      const kpiRows = (profitData.kpis ?? []).map((k) => {
+        const isMoney = k.format === "money";
+        return {
+          label: k.label,
+          valueMoney: isMoney && k.value !== null ? k.value : "",
+          valuePercent: !isMoney && k.value !== null ? k.value / 100 : "",
+          prevMoney: isMoney && k.prevValue !== null ? k.prevValue : "",
+          prevPercent: !isMoney && k.prevValue !== null ? k.prevValue / 100 : "",
+          changePercent: k.changePercent !== null ? k.changePercent / 100 : "",
+        };
+      });
+      writeDetailSheet(workbook, "خلاصه سودآوری", KPI_COLUMNS, kpiRows);
+
+      // --- آبشار سودآوری (waterfall: one row per existing step).
+      const WATERFALL_COLUMNS: Column[] = [
+        { header: "مرحله", key: "label", width: 28 },
+        { header: "نوع", key: "kind", width: 12 },
+        { header: "مبلغ (تومان)", key: "amount", width: 20, numFmt: MONEY, align: "right" },
+        { header: "تجمعی (تومان)", key: "cumulative", width: 20, numFmt: MONEY, align: "right" },
+      ];
+      const waterfallRows = (profitData.waterfall ?? []).map((s) => ({
+        label: s.label,
+        kind: s.subtractive ? "کاهشی" : "افزایشی",
+        amount: s.amount,
+        cumulative: s.cumulative,
+      }));
+      writeDetailSheet(workbook, "آبشار سودآوری", WATERFALL_COLUMNS, waterfallRows);
+
+      // --- سودآوری محصولات (columns preserved from the Foundation).
+      const PROFITABILITY_COLUMNS: Column[] = [
+        { header: "محصول", key: "name", width: 34 },
+        { header: "SKU", key: "sku", width: 16 },
+        { header: "تعداد", key: "quantity", width: 10, numFmt: INTEGER, align: "right" },
+        { header: "فروش خالص", key: "netSales", width: 18, numFmt: MONEY, align: "right" },
+        { header: "COGS", key: "cogs", width: 18, numFmt: MONEY, align: "right" },
+        { header: "سود ناخالص", key: "grossProfit", width: 18, numFmt: MONEY, align: "right" },
+        { header: "حاشیه سود", key: "grossMargin", width: 12, numFmt: PERCENT, align: "right" },
+        { header: "سهم از سود", key: "profitShare", width: 12, numFmt: PERCENT, align: "right" },
+      ];
+      writeDetailSheet(
+        workbook,
+        "سودآوری محصولات",
+        PROFITABILITY_COLUMNS,
+        flattenRows(profitData.products ?? [], PROFITABILITY_COLUMNS)
+      );
+
+      // --- تحلیل هزینه‌ها (non-void expense analysis).
+      const EXPENSE_ANALYSIS_COLUMNS: Column[] = [
+        { header: "دسته‌بندی", key: "categoryLabel", width: 26 },
+        { header: "مبلغ (تومان)", key: "amount", width: 20, numFmt: MONEY, align: "right" },
+        { header: "سهم از کل هزینه‌ها (٪)", key: "pctOfTotalExpenses", width: 22, numFmt: PERCENT, align: "right" },
+        { header: "سهم از سود ناخالص (٪)", key: "pctOfGrossProfit", width: 22, numFmt: PERCENT, align: "right" },
+      ];
+      const expenseRows = (profitData.expenses ?? []).map((e) => {
+        const pctGross = e.pctOfGrossProfit;
+        return {
+          categoryLabel: e.categoryLabel,
+          amount: e.amount,
+          pctOfTotalExpenses: Number(e.pctOfTotalExpenses ?? 0) / 100,
+          pctOfGrossProfit: typeof pctGross === "number" ? pctGross / 100 : "",
+        };
+      });
+      writeDetailSheet(
+        workbook,
+        "تحلیل هزینه‌ها",
+        EXPENSE_ANALYSIS_COLUMNS,
+        expenseRows
+      );
+
+      // --- روند (every bucket covering the window, zero-filled).
+      const TREND_COLUMNS: Column[] = [
+        { header: "گروه", key: "label", width: 14 },
+        { header: "از تاریخ", key: "from", width: 18 },
+        { header: "تا تاریخ", key: "to", width: 18 },
+        { header: "فروش خالص", key: "netSales", width: 18, numFmt: MONEY, align: "right" },
+        { header: "COGS", key: "cogs", width: 18, numFmt: MONEY, align: "right" },
+        { header: "سود ناخالص", key: "grossProfit", width: 18, numFmt: MONEY, align: "right" },
+        { header: "هزینه‌های عملیاتی", key: "expenses", width: 20, numFmt: MONEY, align: "right" },
+        { header: "سود خالص", key: "netProfit", width: 18, numFmt: MONEY, align: "right" },
+      ];
+      const trendRows = (profitData.trend ?? []).map((t) => ({
+        label: t.label,
+        from: iso(t.from),
+        to: iso(t.to),
+        netSales: t.netSales,
+        cogs: t.cogs,
+        grossProfit: t.grossProfit,
+        expenses: t.expenses,
+        netProfit: t.netProfit,
+      }));
+      writeDetailSheet(workbook, "روند", TREND_COLUMNS, trendRows);
+
+      // --- Category profitability stays intentionally UNAVAILABLE until an
+      // immutable category snapshot exists on OrderItem (`categories` is always
+      // empty today, so no sheet is emitted). Logic preserved from the
+      // Foundation so the sheet appears automatically once the data exists.
       if (profitData.categories && profitData.categories.length > 0) {
         const CAT_COLUMNS: Column[] = [
           { header: "دسته‌بندی", key: "categoryName", width: 26 },
