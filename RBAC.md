@@ -6,7 +6,7 @@ The access control system has three layers:
 
 ```
 ┌─────────────────────────────────────────────┐
-│ Layer 1: Middleware (src/middleware.js)       │
+│ Layer 1: Proxy (src/proxy.js)                 │
 │ Route-level protection for /admin and /supplier│
 ├─────────────────────────────────────────────┤
 │ Layer 2: API Routes (requireRole helper)     │
@@ -88,11 +88,11 @@ if (!token) return unauthorized();
 
 ---
 
-## Middleware Protection
+## Proxy Protection
 
-**File:** `src/middleware.js`
+**File:** `src/proxy.js` (Next.js 16 renamed the `middleware` file convention to `proxy` — Session 89)
 
-The middleware runs before route handlers and checks JWT validity + role:
+The proxy runs before route handlers and checks JWT validity + role:
 
 ```javascript
 // /admin/* — requires admin role

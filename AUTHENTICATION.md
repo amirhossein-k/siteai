@@ -44,7 +44,7 @@ Login/Register page (OTP tab)
 | `src/models/OtpCode.js` | OTP rows (codeHash, attempts, codeConsumedAt, loginTokenHash, TTL index) |
 | `src/models/User.js` | `passwordHash` now optional (OTP accounts); additive `tokenVersion` |
 | `src/types/next-auth.d.ts` | TypeScript augmentation for custom `role`/`id`/`phone`/`tokenVersion` fields |
-| `src/middleware.js` | Route-level protection for `/admin/*` and `/supplier/*` |
+| `src/proxy.js` | Route-level protection for `/admin/*` and `/supplier/*` (Next.js 16 renamed the `middleware` file convention to `proxy` — Session 89) |
 
 ---
 
@@ -113,9 +113,9 @@ if (!token) return unauthorized();
 
 These helpers call `getToken()` from `next-auth/jwt` behind the scenes. **Authorization always happens server-side** — never trust client-side role checks.
 
-### Route-level (Middleware)
+### Route-level (Proxy)
 
-The `src/middleware.js` file protects entire route groups:
+The `src/proxy.js` file protects entire route groups:
 
 | Route | Required Role |
 |-------|---------------|
@@ -190,7 +190,7 @@ Logout is **pure client-side cookie termination** — it rides the built-in Next
   - **Customer — profile page:** a «خروج از حساب» button in the Account Info card.
   - **Admin / supplier — dashboards:** the sidebar «خروج» button (desktop + the mobile drawer via `MobileDrawer`) — **unchanged** (Session 63 only verified it).
 - **Immediate, no confirmation** — matches the admin/supplier behavior.
-- **Post-logout behavior:** `useSession()` re-renders the header to the logged-out state (ورود / ثبت‌نام); `/profile` shows its existing sign-in prompt; the middleware still guards `/admin/*` and `/supplier/*`, bouncing signed-out visitors to `/login`.
+- **Post-logout behavior:** `useSession()` re-renders the header to the logged-out state (ورود / ثبت‌نام); `/profile` shows its existing sign-in prompt; the proxy still guards `/admin/*` and `/supplier/*`, bouncing signed-out visitors to `/login`.
 - **`GET /api/auth/signout`** serves NextAuth's built-in signout page (200) when no custom `pages.signOut` is configured; the actual termination always goes through POST.
 - **Session 64:** `tokenVersion`-based server-side revocation is now ENFORCED (see below) — the current session dies with the cookie, and the `change-password` / `logout-all` flows go one step further by revoking every issued JWT.
 
@@ -201,7 +201,7 @@ Logout is **pure client-side cookie termination** — it rides the built-in Next
 ### The mechanism
 - Every JWT carries the `tokenVersion` captured at sign-in (Session 62). **`src/lib/token-version.ts`** provides a pure `createTokenVersionChecker` factory: it resolves the user's CURRENT `tokenVersion` (DB read, cached per-user for **60s** on `globalThis`) and compares it against the token's claim.
 - **Asymmetric comparison** (deliberate): equal → valid; cached version NEWER than the token → **revoked** (the token predates a bump); cached version OLDER than the token → the cache is stale (a fresh sign-in issued a newer token) → refetch from the DB instead of falsely revoking a legitimate session. A deleted user is treated as revoked. A checker error **fails open** (logs) — a transient DB blip must never break authentication, and the route's own DB work would fail anyway.
-- **Enforcement point:** `auth-utils.getServerToken` (the single gate behind `requireAuth` / `requireRoleOrError`) runs the check after JWT extraction and returns `null` → 401 for revoked sessions. **Every protected API route inherits this with zero per-route changes.** (Page-level `middleware.js` intentionally stays claim-only — it runs on the edge without DB access.)
+- **Enforcement point:** `auth-utils.getServerToken` (the single gate behind `requireAuth` / `requireRoleOrError`) runs the check after JWT extraction and returns `null` → 401 for revoked sessions. **Every protected API route inherits this with zero per-route changes.** (Page-level `proxy.js` intentionally stays claim-only — it verifies the JWT claim only, with no DB access.)
 - **Immediate in-process revocation:** the three bumping endpoints call `invalidateTokenVersionCache(userId)` right after the `$inc`, so the same server enforces the bump instantly; only OTHER processes (e.g. a second instance) wait out the 60s cache TTL.
 
 ### Endpoints

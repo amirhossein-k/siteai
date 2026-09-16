@@ -1,9 +1,10 @@
 import { getToken } from "next-auth/jwt";
 import { NextResponse } from "next/server";
 
-// این middleware قبل از رندر صفحات /admin و /supplier اجرا میشه
+// این proxy قبل از رندر صفحات /admin و /supplier اجرا میشه
 // و اگه نقش کاربر درست نباشه، به صفحه‌ی اصلی ریدایرکت می‌کنه
-export async function middleware(req) {
+// (Session 89 — Next.js 16 renamed the `middleware` file convention to `proxy`.)
+export async function proxy(req) {
   const { pathname } = req.nextUrl;
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
 

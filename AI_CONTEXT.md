@@ -69,7 +69,7 @@ A Persian (RTL) e-commerce platform built with Next.js 16 App Router. Supports t
 - JWT contains: `id`, `phone`, `role`, `name`
 - Session strategy: JWT (no database sessions)
 - API route auth: `requireAuth()` / `requireRole()` from `@/lib/auth-utils`
-- Middleware: protects `/admin/*` (role=admin), `/supplier/*` (role=supplier)
+- Proxy (`src/proxy.js`, formerly `middleware.js` — Next.js 16 rename, Session 89): protects `/admin/*` (role=admin), `/supplier/*` (role=supplier)
 
 ### Roles
 - **customer:** Browse products, manage cart, checkout, view orders, edit profile
@@ -213,7 +213,7 @@ All pagination at database level. Preserve existing search, sorting, and filteri
 
 | File | Purpose |
 |------|---------|
-| `middleware.js` | Role-based route protection (admin/supplier) |
+| `src/proxy.js` | Role-based route protection (admin/supplier) — Next.js 16 `proxy` (formerly `middleware`), Session 89 |
 | `src/lib/auth.js` | NextAuth configuration |
 | `src/lib/auth-utils.ts` | `requireAuth()`, `requireRole()`, `unauthorized()`, `forbidden()`, `serverError()` |
 | `src/lib/dbConnect.js` | Mongoose singleton connection |

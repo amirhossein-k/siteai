@@ -30,7 +30,7 @@ The application follows **Next.js 16 App Router** conventions with a **monolithi
 │  │  Supplier: /api/supplier/* (5 routes)                   │
 │  └─────────────────────────────────────────────────────────┘
 │  ┌─────────────────────────────────────────────────────────┐
-│  │              Middleware + Telegram Service               │
+│  │              Proxy + Telegram Service                   │
 │  │  Role-based route protection (admin/supplier)           │
 │  │  Fire-and-forget Telegram notifications to suppliers    │
 │  └─────────────────────────────────────────────────────────┘
@@ -53,7 +53,7 @@ User → Login Page → signIn("credentials") → NextAuth authorize()
   → dbConnect() → User.findOne(phone) → bcrypt.compare(password)
   → JWT Token { id, name, phone, role }
   → Session callback adds role/id to session.user
-  → Middleware checks token.role for route access (/admin, /supplier)
+  → Proxy checks token.role for route access (/admin, /supplier)
 ```
 
 ### JWT Token Fields
