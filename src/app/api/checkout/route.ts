@@ -195,9 +195,9 @@ export async function POST(req: NextRequest) {
             : undefined;
         const variant = cartItem.variantId
           ? (productAny.variants || []).find(
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              (v: any) => String(v._id) === String(cartItem.variantId)
-            )
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (v: any) => String(v._id) === String(cartItem.variantId)
+          )
           : null;
 
         // Session 77 — the SERVER recomputes the effective (post-discount)
@@ -282,17 +282,17 @@ export async function POST(req: NextRequest) {
 
       const variant = (variantId
         ? (productAny.variants || []).find(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (v: any) => String(v._id) === String(variantId)
-          )
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (v: any) => String(v._id) === String(variantId)
+        )
         : null) as
         | {
-            price?: number;
-            supplierPrice?: number;
-            sku?: string;
-            attributes?: Array<{ name: string; value: string }>;
-            images?: string[];
-          }
+          price?: number;
+          supplierPrice?: number;
+          sku?: string;
+          attributes?: Array<{ name: string; value: string }>;
+          images?: string[];
+        }
         | null;
 
       // Session 77 — server-authoritative discounted unit price:
@@ -505,9 +505,8 @@ export async function POST(req: NextRequest) {
     const saleMovementPromises = reservedProducts
       .filter((r) => r.fifoUnitCost !== undefined)
       .map((r) => {
-        const sourceRef = `sale-${order._id}-${String(r.product._id)}${
-          r.variantId ? "-" + String(r.variantId) : ""
-        }`;
+        const sourceRef = `sale-${order._id}-${String(r.product._id)}${r.variantId ? "-" + String(r.variantId) : ""
+          }`;
         return InventoryMovement.create({
           product: String(r.product._id),
           variantId: r.variantId ?? null,
@@ -608,18 +607,18 @@ export async function POST(req: NextRequest) {
             notificationKey: `order_${order._id}_new_order`,
             telegram: supplier.telegramChatId
               ? () =>
-                  sendNewOrderNotification(
-                    supplier.telegramChatId,
-                    orderShortId,
-                    customerName,
-                    itemsSummary,
-                    supplierItems.reduce(
-                      (sum, item) =>
-                        sum + item.supplierPrice * item.quantity,
-                      0
-                    ),
-                    `${shippingAddress.fullName} - ${shippingAddress.address}`
-                  )
+                sendNewOrderNotification(
+                  supplier.telegramChatId,
+                  orderShortId,
+                  customerName,
+                  itemsSummary,
+                  supplierItems.reduce(
+                    (sum, item) =>
+                      sum + item.supplierPrice * item.quantity,
+                    0
+                  ),
+                  `${shippingAddress.fullName} - ${shippingAddress.address}`
+                )
               : undefined,
           });
         } catch (err) {
@@ -634,8 +633,13 @@ export async function POST(req: NextRequest) {
 
     // --- Handle Zarinpal payment (if selected) ---
     if (paymentMethod === "zarinpal") {
+      const isZarinpalMock =
+        process.env.NODE_ENV === "development" &&
+        process.env.ZARINPAL_MOCK === "1";
+
       const merchantId = process.env.ZARINPAL_MERCHANT_ID;
-      if (!merchantId) {
+
+      if (!merchantId && !isZarinpalMock) {
         return NextResponse.json(
           {
             error:

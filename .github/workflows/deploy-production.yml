@@ -1,0 +1,53 @@
+name: Deploy Production
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [master]
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          port: ${{ secrets.VPS_PORT }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+
+            cd /home/deploy/siteai
+
+            echo "==> Fetch latest code"
+            git fetch origin master
+            git reset --hard origin/master
+
+            echo "==> Install dependencies"
+            npm ci
+
+            echo "==> Build application"
+            npm run build
+
+            echo "==> Restart application"
+            pm2 restart siteai
+
+            echo "==> Wait for application"
+            sleep 5
+
+            echo "==> Health check"
+            curl --fail --silent --show-error \
+              http://127.0.0.1:3000/api/health
+
+            echo
+            echo "==> Deployment successful"
