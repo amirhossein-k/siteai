@@ -86,6 +86,7 @@ Telegram (fire-and-forget):
 ### Customer / Public API Routes (no auth required)
 | Route | Methods | Auth | Description |
 |-------|---------|------|-------------|
+| `/api/health` | GET | none | **Liveness / readiness probe (Session 89)** — public, unauthenticated, `force-dynamic` + `Cache-Control: no-store`, non-mutating (its only query is the Mongo `ping` command) and **bounded to 4 s** so a dead database answers instead of hanging. **200** `{status:"ok",db:"up",uptimeSeconds,latencyMs,timestamp}` when the app + database are ready; **503** `{status:"degraded",db:"down",…}` otherwise — never a false 200. The payload is a closed field set carrying no connection string, host, database name, credential or error detail. Safe to point a load balancer / uptime monitor at. Contract in `src/lib/health.ts` |
 | `/api/products` | GET | none | Public catalog: search, category filter, price range, sort, slug lookup |
 | `/api/categories` | GET | none | Active categories only |
 

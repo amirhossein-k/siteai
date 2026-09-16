@@ -4,18 +4,22 @@ name: CI
 # Session 58 (Vitest 152/152) + Session 59 (Playwright 21/21) test layers.
 #
 # Design (approved Session 60 design — frozen):
-# - Three independent merge-gating jobs run in parallel on every push/PR:
+# - Four independent merge-gating jobs run in parallel on every push/PR:
 #   `static` (tsc + scoped eslint — the project's established gates) · `unit`
 #   (Vitest — hermetic, no DB/network) · `e2e` (Playwright — hermetic via the
 #   dev-only ZARINPAL_MOCK seam + a fresh MongoDB service container, so NO
-#   CI secrets are required; global-setup auto-seeds the admin + per-run users).
+#   CI secrets are required; global-setup auto-seeds the admin + per-run users)
+#   · `build` (Session 89 — `next build` must succeed; hermetic: the build is
+#   DB-independent and needs only the CI-only placeholder env in that job).
 # - Lint gate scope: `src/lib tests/unit tests/e2e` — the surface the project
 #   actually keeps lint-clean (money-critical helpers + both test layers).
 #   Project-wide `npm run lint` reports 174 PRE-EXISTING errors across
 #   scripts/* and src/** (documented debt, Milestone 15) — deliberately NOT a
 #   merge gate; the repo convention has always been "ESLint clean on changed
-#   files", never whole-project. `next build` is also NOT a gate (Turbopack
-#   fails here when Google Fonts are unreachable — network constraint).
+#   files", never whole-project. Session 89 ADDED `next build` as a gate (the
+#   `build` job below) — it passes on a network-enabled runner; its only
+#   external dependency is the Google Fonts fetch done by next/font at build
+#   time (a runner without outbound network would fail that step).
 # - The full 33-suite real-sandbox regression lives in the separate
 #   `regression.yml` nightly workflow (needs real Zarinpal/Liara/Telegram
 #   secrets) — it must never block merges.
@@ -52,6 +56,31 @@ jobs:
         run: npx tsc --noEmit
       - name: ESLint (scoped — src/lib + both test layers)
         run: npx eslint src/lib tests/unit tests/e2e
+
+  build:
+    name: Build (next build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Session 89 — production-build gate. `next build` is hermetic: it needs NO
+    # database (verified — the build succeeds with an unreachable MONGODB_URI)
+    # and no real secrets. The values below are CI-only placeholders, present
+    # because the build evaluates two fail-fast guards: NEXT_PUBLIC_APP_URL
+    # (src/lib/constants.ts) and the required env vars (src/lib/env.ts).
+    env:
+      NEXT_PUBLIC_APP_URL: https://example.com
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ci-build-only-nextauth-secret
+      MONGODB_URI: mongodb://localhost:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Production build
+        run: npm run build
 
   unit:
     name: Unit (Vitest)

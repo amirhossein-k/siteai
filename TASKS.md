@@ -1,6 +1,63 @@
 # Tasks - فروشگاه من (Online Store)
 
-> **Docs gap:** this file last tracked Session 68. Sessions 69–87 lived in CHANGELOG.md / PROJECT_STATE.md only, and Sessions 85–87 were recorded nowhere until Session 88 reconstructed them from their commit messages. Session 88 is tracked below.
+> **Docs gap:** this file last tracked Session 68. Sessions 69–87 lived in CHANGELOG.md / PROJECT_STATE.md only, and Sessions 85–87 were recorded nowhere until Session 88 reconstructed them from their commit messages. Sessions 88 and 89 are tracked below.
+
+---
+
+## ✅ Session 89 — Production Readiness: proxy migration, health endpoint, deployment & CI build gate (وضعیت تولید)
+
+### Scope + invariants
+- [x] Approved scope: deployment readiness (no invented platform config), `/api/health`, CI production-build gate, proxy migration, runbook; **Sentry/monitoring EXCLUDED** (future session)
+- [x] Zero changes to `src/models/*`, FIFO/COGS/P&L/inventory/checkout/payment/refund/coupon logic, RBAC/authentication semantics, or historical profitability; no schema change and **no migration/backfill**
+- [x] `OrderItem.fifoUnitCost → historical supplierPrice snapshot → 0` preserved (untouched — no accounting file was edited at all)
+
+### Phase 1 — production build
+- [x] `npm run build` → **exit 0** (compiled, TypeScript finished, 123 static pages); only warning was the middleware deprecation (fixed in Phase 2)
+- [x] Proved the build is **DB-independent**: `MONGODB_URI=mongodb://127.0.0.1:1/nope npm run build` → exit 0 (this is what lets the CI gate run without a database)
+
+### Phase 2 — Next 16 `middleware` → `proxy` (isolated, revertible checkpoint)
+- [x] `src/middleware.js` → `src/proxy.js`; `export async function middleware` → `export async function proxy`; matcher + both redirect targets + RBAC decisions byte-identical (git rename `R081`)
+- [x] Deprecation warning gone from a clean build
+- [x] Route-guard E2E (the proxy's real behaviour) **25/25**: `logout` (post-logout `/admin` + `/supplier` → `/login`), `session-security`, `customer-login`, `otp-login` — desktop + mobile
+- [x] Current-state docs repointed (`AUTHENTICATION.md`, `RBAC.md`, `AI_CONTEXT.md`, `ARCHITECTURE.md`); historical session narratives left as written
+- [x] Committed separately as `refactor(auth): migrate middleware to proxy`
+
+### Phase 3 — deployment configuration (platform model first)
+- [x] Deployment model established from Chabokan's own documentation: managed **NextJs** cloud hosting runs the project's `build` + `start` scripts, expects port 3000, takes Node 14–24, config lives in the **service dashboard**; deploy via `chabok deploy` / git / FTP
+- [x] **No platform manifest invented** — no `vercel.json`, no Dockerfile (that host reads neither); no fake secrets, no hard-coded credentials
+- [x] `package.json` → `"engines": { "node": ">=20.9.0" }` (Next 16's floor — protects against the dashboard's Node 14/16/18 options); `build`/`start` already correct (`next build` / `next start`, honours `PORT`)
+
+### Phase 4 — `/api/health` readiness endpoint
+- [x] `src/lib/health.ts` — pure `DbReadiness`/`HealthStatus`/`isHealthy()`/`healthStatusCode()`/`buildHealthPayload()`; closed payload type
+- [x] `src/app/api/health/route.ts` — public, unauthenticated, `force-dynamic`, `Cache-Control: no-store`
+- [x] Non-mutating (Mongo `ping` only) and **bounded to 4 s** (raced against the driver's 30 s `serverSelectionTimeoutMS`) so a dead DB answers instead of hanging
+- [x] **200**/`db:up` when ready · **503**/`db:down` when not (never a false 200); no URI/host/db-name/credential/error detail (driver errors swallowed, never logged or returned)
+- [x] Verified live both ways — positive against the real database, negative **503 @ 4077 ms** against an intentionally unreachable `MONGODB_URI`
+- [x] `tests/unit/health.test.ts` (8 tests) — status-code mapping, payload shape, metric normalisation, no-secret property
+- [x] `scripts/verify-health.js` (9 real-HTTP probes) — unauthenticated 200, closed field set, `no-store`, latency budget, no-leak scan, idempotence, `db:up` cross-checked against a DB-backed route
+
+### Phase 5 — CI production-build gate
+- [x] `.github/workflows/ci.yml` — new merge-gating job `build` (`npm ci` + `npm run build`) with CI-only placeholder env (no DB, no secrets); existing `static`/`unit`/`e2e` jobs untouched; stale "`next build` is NOT a gate" comment corrected
+- [x] No new services, no Sentry, no test-semantics changes
+
+### Phase 6 — deployment verification
+- [x] `scripts/verify-deployment.js` — build artifact, real production boot on its own port (`VERIFY_DEPLOY_PORT`, default 3100; asserts `scripts.start === "next start"`), `/api/health` 200/`db:up`, DB-backed route, **production-vs-dev static-cache discriminator**, no-secret server-log scan, no legacy MongoDB target (negative guard + behavioural proof) → **7/7 PASS**
+- [x] Deliberately **not** wired into the regression runner (that drives a dev server on :3000; this needs a build + its own port) — documented in the script and the README
+- [x] `scripts/run-regression.js` → **50 suites** (`verify-health` added second, after the hermetic `verify-db-reconnect`); `.github/workflows/regression.yml` title + count trail updated
+
+### Phase 7 — documentation + credential hygiene
+- [x] `README.md` replaced (boilerplate gone) — requirements, local setup, admin bootstrap, env-variable contract, scripts, production build + Chabokan deployment model, health probe, verification layers, rollback/checkpoint procedure, known constraints
+- [x] **⚠️ `.env.example` contained the real environment** — gitignored (nothing in git history) but on disk 11/12 values byte-identical to `.env.local`; replaced with a **placeholders-only template** + explicit no-real-secrets warning, and `!.env.example` added to `.gitignore` so the sanitized template is committable while `.env.local` stays ignored
+- [x] Template documents `PORT`, `NODE_ENV`, the `NEXT_PUBLIC_APP_URL` build guard, the health probe, `node scripts/verify-deployment.js`, and that `JWT_SECRET` is read by no source file
+- [x] Docs updated: `CHANGELOG.md`, `PROJECT_STATE.md`, `NEXT_SESSION.md`, `TASKS.md`, `ROADMAP.md`, `ARCHITECTURE.md` (the known-issue "middleware deprecation" item marked resolved)
+
+### Verification gates
+- [x] `npx tsc --noEmit` 0 errors · `npm run check` exit 0 (0 errors, same 4 pre-existing warnings)
+- [x] Vitest **631/631** (623 + 8 health)
+- [x] Route-guard E2E subset **25/25** (Playwright, both projects)
+- [x] `scripts/verify-health.js` **9/9** · `scripts/verify-deployment.js` **7/7** · health negative path **503 @ 4077 ms**
+- [x] Full **50-suite** `node scripts/run-regression.js` (normal env, no mocks/overrides; the known external Zarinpal-sandbox flake in `verify-payment-retry` is reported, never masked)
+- [ ] **Live rollout to the Chabokan service** — operator action (dashboard env vars + Node version + port + health check, then deploy). Monitoring/Sentry remains a future session.
 
 ---
 

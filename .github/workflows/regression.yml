@@ -1,4 +1,4 @@
-name: Regression (49 suites)
+name: Regression (50 suites)
 
 # Session 60 — the full real-API regression (`scripts/run-regression.js`, 33
 # sequential suites) as a NON-gating nightly / on-demand workflow. Session 62
@@ -9,7 +9,13 @@ name: Regression (49 suites)
 # Session 68 added `verify-customer-support` → 39.
 # Session 77 added `verify-product-discounts` → 41.
 # Session 81 added `verify-reports` → 42; Session 82 Phase A added
-# `verify-accounting` → 43; Phase B added `verify-purchases` → 44.
+# `verify-accounting` → 43; Phase B added `verify-purchases` → 44; Phases C–F
+# added `verify-fifo`, `verify-inventory`, `verify-expenses` and
+# `verify-accounting-excel` → 49. Session 89 added `verify-health` (the
+# /api/health readiness probe) → 50. `scripts/run-regression.js` is the
+# definitive list — production-build/deployment readiness is a separate gate
+# (`npm run build` in ci.yml, `scripts/verify-deployment.js`) and is NOT part
+# of this dev-server-driven sequence.
 #
 # Unlike `ci.yml` (hermetic, zero secrets), these suites exercise the REAL
 # Zarinpal sandbox, the real Liara S3 uploads, and the real Telegram bot — so

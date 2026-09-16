@@ -4,6 +4,19 @@
 
 ## ✅ Completed Milestones
 
+### Production Readiness — deployable & verifiable (Session 89)
+- [x] **Next.js 16 `middleware` → `proxy` migration** — `src/middleware.js` → `src/proxy.js`, export renamed to `proxy`; matcher + both redirects + every RBAC decision byte-identical (git rename `R081`); the build-time deprecation warning is gone; route-guard E2E **25/25**; zero auth/OTP/password/`auth-utils`/`token-version`/model changes
+- [x] **Production build verified** — `npm run build` exits 0 (123 static pages); **DB-independent** (a build against an unreachable `MONGODB_URI` also exits 0), which is what makes the CI gate hermetic
+- [x] **Deployment model established from the platform's documentation, not assumed** — Chabokan's managed **NextJs** cloud-hosting service runs the project's own `build` + `start` scripts and keeps env/Node/port in its dashboard (`chabok deploy` / git / FTP to ship) ⇒ **no `vercel.json`, no Dockerfile**: there is no manifest for that platform to read
+- [x] **Minimal production config** — `"engines": { "node": ">=20.9.0" }` (Next 16's floor; Chabokan also offers Node 14/16/18, which would break at runtime). `build`/`start` were already correct (`next build` / `next start`, honours `PORT`)
+- [x] **`GET /api/health`** — public, uncached, non-mutating (Mongo `ping` only), **bounded to 4 s**, 200/`db:up` when ready and **503**/`db:down` when not; closed payload with no URI/host/db-name/credential/error detail (`src/lib/health.ts` + route). Verified live both ways (negative: **503 @ 4077 ms**) using an intentionally unreachable database
+- [x] **CI production-build gate** — `.github/workflows/ci.yml` gains a fourth merge-gating job `build` (`npm ci` + `npm run build`) with CI-only placeholder env; the existing static/unit/e2e jobs are untouched; no new services, no Sentry, no test-semantics changes
+- [x] **Verification** — `scripts/verify-health.js` **9/9** (wired into the regression runner → **50 suites**) and `scripts/verify-deployment.js` **7/7** (build artifact · real production boot on its own port · health · production-vs-dev static-cache discriminator · no secret in the server log · no legacy MongoDB target). The deployment suite stays outside the regression by design (production build + separate port)
+- [x] **Runbook + credential hygiene** — `README.md` is now the operational runbook (setup, env contract, deploy, health, verification, rollback, constraints); `.env.example` was a gitignored copy of the **real** environment (11/12 values identical to `.env.local`) and is now a **placeholders-only template**, with `!.env.example` added to `.gitignore` so the sanitized file is committable while `.env.local` stays ignored
+- [x] **Verified** — tsc 0 · `npm run check` exit 0 (4 pre-existing warnings) · Vitest **631/631** · route-guard E2E **25/25** · `verify-health` **9/9** · `verify-deployment` **7/7** · full **50-suite** regression
+- [ ] **Live rollout to the Chabokan service** — an operator action (env vars + Node version + port + health check in the dashboard, then `chabok deploy`); see `README.md` §5
+- [ ] **Monitoring / error tracking** — explicitly out of scope for Session 89 (future session)
+
 ### Profitability Report (Sessions 87–88)
 - [x] **`src/lib/profitability.ts`** (Session 87 foundation) — line-level profitability aggregation: `$unwind` over order items with coupon discounts allocated proportionally by line, 10 KPIs + previous-period comparison (`changePercent`), an 8-step waterfall, product rows, expense analysis (non-void only), rule-based diagnostics, financial-health indicators and trend buckets; **COGS = `$ifNull: [items.fifoUnitCost, items.supplierPrice]` → 0** — historical FIFO cost first, immutable snapshot as fallback, **never** the current `Product.supplierPrice`; zero model/schema changes
 - [x] **`src/components/reports/profitability-view.tsx`** (Session 87) — executive KPI grid, waterfall bars, sortable product table, category/expense tables, diagnostics, health indicators, trend chart and a 3-tab ranking section; served at `/admin/reports/profitability` (slug wired additively into `REPORT_SLUGS` / `getReportData` / `REPORT_TITLES` / `REPORT_META` / export dispatch, so the existing reports — incl. P&L — were unaffected)
@@ -502,7 +515,7 @@
 
 ### Session 62 — Candidate (pick one)
 > **Session 61 closed the perf/a11y tranche's front-end half.** Candidates for the next session:
-- **Production Readiness (next tranche):** Core Web Vitals + Lighthouse CI gate, Playwright journey expansion (admin product CRUD, supplier products, SSE/notifications — uploads stay API-level: browser file choosers aren't automatable), Deployment (Vercel/Docker), Monitoring (Sentry).
+- **Production Readiness (next tranche):** Core Web Vitals + Lighthouse CI gate, Playwright journey expansion (admin product CRUD, supplier products, SSE/notifications — uploads stay API-level: browser file choosers aren't automatable), **live deployment rollout** (deployment readiness landed in Session 89 — see the milestone above), Monitoring (Sentry).
 - **Growth features:** SMS/OTP authentication (replaces the password login — touches NextAuth/middleware/RBAC + the E2E login journeys), admin real charts (recharts), customer email/SMS order notifications, customer segments → first-purchase / birthday / spending coupons via the Session 55 `eligibility` seam.
 
 ---
@@ -515,7 +528,7 @@
 - [x] Unit tests (Vitest — 152 hermetic tests, Session 58; Testing Library component tests remaining)
 - [x] E2E tests (Playwright — 22 tests / 11 journeys incl. the axe accessibility journey, Session 59 + 61)
 - [x] CI/CD pipeline (GitHub Actions — `ci.yml` merge gates, Session 60; optional nightly `regression.yml` needs the real-sandbox secrets)
-- [ ] Deployment to production (Vercel, Docker)
+- [x] Deployment readiness (Session 89 — build/start contract verified, `/api/health`, CI `build` gate, deploy runbook); **the live rollout to the Chabokan service remains an operator action**
 - [ ] Monitoring and error tracking (Sentry)
 
 ### Milestone 15: Growth Features

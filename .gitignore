@@ -37,6 +37,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the sanitized template: it holds placeholders only (Session 89).
+# Real values stay in .env.local / the hosting panel and remain ignored.
+!.env.example
 
 # vercel
 .vercel

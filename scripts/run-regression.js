@@ -27,6 +27,7 @@ const mongoose = require("mongoose");
 const scriptsDir = path.resolve(__dirname);
 const suites = [
   "verify-db-reconnect", // hermetic — runs first, needs no server/DB
+  "verify-health", // Session 89 — /api/health readiness probe (unauthenticated 200, closed payload shape, no-store, DB "up" cross-checked against a DB-backed route, no secret leakage); production deployment path is covered separately by scripts/verify-deployment.js (needs a build + its own port)
   "verify-notifications",
   "verify-sse",
   "verify-supplier-replies",
