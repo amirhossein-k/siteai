@@ -150,7 +150,14 @@ export async function createProduct(
   throw new Error(`createProduct → ${code}: ${body.slice(0, 300)}`);
 }
 
-/** Create an Attribute then a 2-variant product (for the variant journey). */
+/**
+ * Create an Attribute then a 2-variant product (for the variant journey).
+ * IDEMPOTENT: if the attribute or the product already exists (e.g. the describe
+ * `beforeAll` re-ran after a failed sibling test on retry), the existing
+ * exact-slug rows are reused instead of failing with 409 — same convention as
+ * createCategory/createProduct above: fixtures must never leave partial state
+ * behind.
+ */
 export async function createVariantProduct(
   admin: APIRequestContext,
   seed: ProductSeed & { values: [string, string] }
@@ -165,12 +172,33 @@ export async function createVariantProduct(
       isActive: true,
     },
   });
-  await expectOk(attrRes, "createAttribute");
-  const attr = (await attrRes.json()) as { _id: string };
+  const attrCode =
+    typeof attrRes.status === "function" ? attrRes.status() : (attrRes as never as { status: number }).status;
+  let attrId: string;
+  if (attrCode >= 200 && attrCode < 300) {
+    const attr = (await attrRes.json()) as { _id: string };
+    attrId = attr._id;
+  } else if (attrCode === 409) {
+    // Duplicate slug (the admin attributes endpoint is a bare array):
+    // reuse the existing attribute by exact slug.
+    const existing = await admin.get("/api/admin/attributes");
+    await expectOk(existing, "listAttributes");
+    const rows = (await existing.json()) as Array<{ _id: string; slug: string }>;
+    const found = rows.find((r) => r.slug === attrSlug);
+    if (found) {
+      attrId = found._id;
+    } else {
+      const body = await attrRes.text();
+      throw new Error(`createAttribute → ${attrCode}: ${body.slice(0, 300)}`);
+    }
+  } else {
+    const body = await attrRes.text();
+    throw new Error(`createAttribute → ${attrCode}: ${body.slice(0, 300)}`);
+  }
 
   const variants = seed.values.map((value, i) => ({
     sku: `${seed.slug.toUpperCase()}-SKU${i + 1}`,
-    attributes: [{ attributeId: attr._id, name: "اندازه", value }],
+    attributes: [{ attributeId: attrId, name: "اندازه", value }],
     price: seed.price + i * 10_000,
     supplierPrice: seed.supplierPrice + i * 10_000,
     stock: seed.stock,
@@ -194,13 +222,41 @@ export async function createVariantProduct(
       isActive: true,
     },
   });
-  await expectOk(res, "createVariantProduct");
-  const body = (await res.json()) as { _id: string; variants: Array<{ _id: string }> };
-  return {
-    productId: body._id,
-    attributeId: attr._id,
-    variantIds: body.variants.map((v) => v._id),
-  };
+  const code =
+    typeof res.status === "function" ? res.status() : (res as never as { status: number }).status;
+  if (code >= 200 && code < 300) {
+    const body = (await res.json()) as { _id: string; variants: Array<{ _id: string }> };
+    return {
+      productId: body._id,
+      attributeId: attrId,
+      variantIds: body.variants.map((v) => v._id),
+    };
+  }
+  if (code === 409) {
+    // Duplicate slug: reuse the existing product by exact slug. The admin list
+    // returns full documents, including the embedded variant _ids, so the
+    // return contract is preserved.
+    const existing = await admin.get(
+      `/api/admin/products?search=${encodeURIComponent(seed.slug)}&limit=50`
+    );
+    await expectOk(existing, "listProducts");
+    const body = (await existing.json()) as {
+      products?: Array<{ _id: string; slug: string; variants?: Array<{ _id: string }> }>;
+      items?: Array<{ _id: string; slug: string; variants?: Array<{ _id: string }> }>;
+      data?: Array<{ _id: string; slug: string; variants?: Array<{ _id: string }> }>;
+    };
+    const rows = body.products ?? body.items ?? body.data ?? [];
+    const found = rows.find((r) => r.slug === seed.slug);
+    if (found && found.variants?.length) {
+      return {
+        productId: found._id,
+        attributeId: attrId,
+        variantIds: found.variants.map((v) => v._id),
+      };
+    }
+  }
+  const body = await res.text();
+  throw new Error(`createVariantProduct → ${code}: ${body.slice(0, 300)}`);
 }
 
 export interface CouponSeed {
