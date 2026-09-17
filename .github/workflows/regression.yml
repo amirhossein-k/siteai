@@ -90,7 +90,9 @@ jobs:
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "ZARINPAL_MERCHANT_ID is NOT set — skipping (non-gating workflow)."
           fi
-
+      - name: Install Chromium
+        if: steps.secrets.outputs.configured == 'true'
+        run: npx playwright install --with-deps chromium
       # The 38 verify suites authenticate as the seeded admin
       # (ADMIN_PHONE=09120000000 / admin123456 — hardcoded in every script) and
       # assume it already exists in the shared dev DB. On this fresh service
@@ -125,6 +127,10 @@ jobs:
       - name: Run regression
         if: steps.secrets.outputs.configured == 'true'
         run: node scripts/run-regression.js
+
+      - name: Run Liara upload integration E2E
+        if: steps.secrets.outputs.configured == 'true'
+        run: npx playwright test --grep "Liara upload integration"
 
       - name: Upload dev-server log on failure
         if: failure() && steps.secrets.outputs.configured == 'true'
