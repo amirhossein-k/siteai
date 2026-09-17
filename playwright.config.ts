@@ -37,7 +37,7 @@ export default defineConfig({
   webServer: {
     command: "npm run dev",
     url: `${BASE_URL}/api/auth/csrf`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !process.env.CI || process.env.REGRESSION_SERVER === "1",
     timeout: 120_000,
     env: process.env.CI
       ? { ...process.env, ZARINPAL_MOCK: "1", SMS_MOCK: "1" }

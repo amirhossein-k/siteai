@@ -130,6 +130,8 @@ jobs:
 
       - name: Run Liara upload integration E2E
         if: ${{ !cancelled() && steps.secrets.outputs.configured == 'true' }}
+        env:
+          REGRESSION_SERVER: "1"
         run: npx playwright test --grep "Liara upload integration"
 
       - name: Upload dev-server log on failure
