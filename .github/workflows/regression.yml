@@ -129,7 +129,7 @@ jobs:
         run: node scripts/run-regression.js
 
       - name: Run Liara upload integration E2E
-        if: steps.secrets.outputs.configured == 'true'
+        if: ${{ !cancelled() && steps.secrets.outputs.configured == 'true' }}
         run: npx playwright test --grep "Liara upload integration"
 
       - name: Upload dev-server log on failure
