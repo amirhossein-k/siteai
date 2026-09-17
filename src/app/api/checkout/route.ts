@@ -13,6 +13,7 @@ import { reserveStock, restoreStock } from "@/lib/inventory";
 import InventoryMovement from "@/models/InventoryMovement";
 import { claimCouponForOrder, releaseCouponClaim } from "@/lib/coupons";
 import { getEffectivePrice } from "@/lib/product-pricing";
+import { rollbackUnavailablePaymentCheckout } from "@/lib/checkout-rollback";
 
 interface CheckoutItem {
   id: string;
@@ -640,6 +641,27 @@ export async function POST(req: NextRequest) {
       const merchantId = process.env.ZARINPAL_MERCHANT_ID;
 
       if (!merchantId && !isZarinpalMock) {
+        // Same class of leak as the 502 gateway-unavailable path below: the
+        // gateway is unusable AFTER the order, its SupplierOrders, the FIFO
+        // sale movements and the stock reservation were already committed.
+        // Return the 503 only after cancelling the order and releasing the
+        // reservation through the SAME established lifecycle (cancel +
+        // restoreOrderStock + releaseCouponUsage, never delete — see
+        // src/lib/checkout-rollback.ts). The client keeps its cart on an
+        // error, so without this every retry would reserve the units again.
+        //
+        // The helper guards each step and never throws; this catch is
+        // belt-and-braces so a rollback failure can NEVER change the response
+        // the customer sees — it is logged, never swallowed silently.
+        try {
+          await rollbackUnavailablePaymentCheckout(orderShortId);
+        } catch (err) {
+          console.error(
+            `[Checkout] Gateway-unconfigured rollback threw for order ${orderShortId} — inventory/coupon may need reconciliation:`,
+            err
+          );
+        }
+
         return NextResponse.json(
           {
             error:
@@ -659,6 +681,32 @@ export async function POST(req: NextRequest) {
       );
 
       if (!paymentResult) {
+        // Session 89 fix — the gateway refused to issue a payment authority
+        // AFTER the order, its SupplierOrders, the FIFO sale movements and the
+        // stock reservation were already committed. Returning 502 without a
+        // rollback leaked that reservation: the client KEEPS the cart on an
+        // error (it only clears it on success), so every retry created another
+        // phantom pending order and reserved the same units again — until the
+        // variant/product was falsely reported as out of stock.
+        //
+        // Cancelled through the established payment-failure lifecycle — never
+        // deleted (deleting would orphan the committed FIFO sale movements and
+        // strand the admin/supplier notifications already dispatched).
+        // See src/lib/checkout-rollback.ts (cancel + restoreOrderStock +
+        // releaseCouponUsage, each fail-safe and idempotent).
+        //
+        // The helper guards each step and never throws; this catch is
+        // belt-and-braces so a rollback failure can NEVER change the response
+        // the customer sees — it is logged, never swallowed silently.
+        try {
+          await rollbackUnavailablePaymentCheckout(orderShortId);
+        } catch (err) {
+          console.error(
+            `[Checkout] Gateway-failure rollback threw for order ${orderShortId} — inventory/coupon may need reconciliation:`,
+            err
+          );
+        }
+
         return NextResponse.json(
           {
             error:
