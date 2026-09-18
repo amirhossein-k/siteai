@@ -16,6 +16,14 @@
  *  10.  resend cooldown → 429 with Retry-After
  *  11.  OTP-created account cannot password-login (no hash); password user can
  *  12.  per-IP request cap → 429 (SMS-bombing guard)
+ *  13.  CONCURRENT verify of the SAME valid code → the code is consumed and
+ *       AT MOST ONE of the issued tokens can ever authenticate (real HTTP,
+ *       real MongoDB — no mocks; pins the end-to-end single-session invariant:
+ *       the row stores one loginTokenHash, authorize() claims it atomically)
+ *  14.  wrong-code LOCKOUT boundary: exactly 5 wrong attempts lock the code
+ *       (row consumed at the 5th), and the CORRECT code is still rejected
+ *       afterwards — the per-phone verify budget is isolated first so the
+ *       lockout — not the shared 429 limiter — is what rejects it
  *
  * REQUIRES: dev server on http://localhost:3000 started with SMS_MOCK=1
  * (the hermetic seam — src/lib/sms.ts + /api/auth/otp/dev-last). Without it
@@ -161,7 +169,10 @@ async function run() {
     register: uniquePhone(),
     passwordUser: uniquePhone(), // also reused by the resend-cooldown test
     unknown: uniquePhone(),
+    concurrent: uniquePhone(), // #13 same-code concurrent verify
+    lockout: uniquePhone(), // #14 wrong-code lockout boundary
     // + up to 16 unique phones for the per-IP cap test
+
   };
   const createdUserIds = [];
   let registerToken = null;
@@ -169,6 +180,14 @@ async function run() {
 
   // --- Idempotency sweep + setup ---
   await db.collection("otpcodes").deleteMany({ phone: { $in: Object.values(phones) } });
+  // Test-state budget isolation (the verify-password-reset convention): this
+  // suite registers users and issues OTPs from ONE test IP, so re-running it
+  // within the limiter windows would 429 on the shared per-IP fixtures keys.
+  // These are FIXTURE keys in the shared dev DB — the production limiter is
+  // untouched and its budgets are exercised by the dedicated cap tests.
+  await db.collection("ratelimits").deleteMany({
+    _id: { $regex: "^rl:(register|otp_request_ip):" },
+  });
 
   await testAsync("Mock seam active: register OTP request -> 200 { sent: true }", async () => {
     // If SMS_MOCK=1 is NOT set on the dev server, sendOtp returns the
@@ -306,6 +325,142 @@ async function run() {
     const pwLogin = await login(phones.passwordUser, { password: "otp-password-123" });
     assert(pwLogin.session && pwLogin.session.user, "password user must still login with password");
     assert(pwLogin.session.user.phone === phones.passwordUser, "session phone mismatch");
+  });
+
+  // --- #13 Concurrent verify of the SAME valid code ---------------------
+  // Real HTTP against the real verify route + real MongoDB, no mocks.
+  //
+  // DISCOVERED CONTRACT (pinned by this test): the verify route consumes the
+  // CODE via findOne + updateOne({ _id }) — last writer wins the row's single
+  // loginTokenHash — so two racing verifies of one valid code can BOTH get
+  // 200, each with its own loginToken (one hash overwrites the other). The
+  // single-use guarantee therefore lives one layer up, and this test pins it
+  // END-TO-END: (a) the code is consumed after the race (a third verify is
+  // rejected), and (b) exactly ONE of the issued tokens can ever mint a
+  // session — authorize() looks up the row by hash and claims it CONDITIONALLY
+  // ATOMICALLY (updateOne({ _id, consumedAt: null }) + modifiedCount check),
+  // so the overwritten token is dead on arrival and the surviving one is
+  // single-use. Net: no code reuse, no second session, no auth bypass.
+  await testAsync("CONCURRENT verify of the SAME valid code -> code consumed, at most ONE usable session", async () => {
+    const reg = await http("POST", "/api/register", {
+      name: "OTP Concurrent " + PREFIX,
+      phone: phones.concurrent,
+      password: "otp-concurrent-123",
+    });
+    assert(reg.status === 201, "register failed " + reg.status + " " + JSON.stringify(reg.data).slice(0, 150));
+    createdUserIds.push(reg.data.id);
+
+    const req = await http("POST", "/api/auth/otp/request", {
+      phone: phones.concurrent,
+      purpose: "login",
+    });
+    assert(req.status === 200, "OTP request expected 200, got " + req.status);
+    const codeRes = await http("GET", "/api/auth/otp/dev-last?phone=" + phones.concurrent);
+    assert(codeRes.status === 200, "dev-last expected 200, got " + codeRes.status);
+    const code = codeRes.data.code;
+
+    const [a, b] = await Promise.allSettled([
+      http("POST", "/api/auth/otp/verify", { phone: phones.concurrent, code, purpose: "login" }),
+      http("POST", "/api/auth/otp/verify", { phone: phones.concurrent, code, purpose: "login" }),
+    ]);
+    const results = [a, b].map((r) => (r.status === "fulfilled" ? r.value.status : "rejected"));
+    assert(
+      results.every((s) => s === 200 || s === 400),
+      "each racing verify must be 200 or 400, got " + JSON.stringify(results)
+    );
+    const tokens = [a, b]
+      .filter((r) => r.status === "fulfilled" && r.value.status === 200)
+      .map((r) => r.value.data && r.value.data.loginToken)
+      .filter(Boolean);
+    assert(tokens.length >= 1, "at least one verify must succeed, got " + JSON.stringify(results));
+
+    // (a) The code is consumed either way — a THIRD verify must be rejected.
+    const third = await http("POST", "/api/auth/otp/verify", {
+      phone: phones.concurrent,
+      code,
+      purpose: "login",
+    });
+    assert(
+      third.status === 400,
+      "the code must be consumed after the race, got " + third.status + " " + JSON.stringify(third.data).slice(0, 120)
+    );
+
+    // (b) THE single-use invariant: exactly ONE of the issued tokens
+    // authenticates (the overwritten hash is dead on arrival; the surviving
+    // hash is claimed atomically and single-use).
+    let sessions = 0;
+    for (const t of tokens) {
+      const { session } = await login(phones.concurrent, { loginToken: t });
+      if (session && session.user) sessions++;
+    }
+    assert(
+      sessions === 1,
+      "exactly ONE of the racing tokens must authenticate, got " + sessions + " (tokens issued: " + tokens.length + ")"
+    );
+  });
+
+  // --- #14 Wrong-code LOCKOUT boundary ----------------------------------
+  // Exactly OTP_MAX_ATTEMPTS (5) well-formed wrong codes lock the row at the
+  // 5th (codeConsumedAt set); the CORRECT code is then still rejected. The
+  // per-phone verify budget is reset first (suite-wide test-state isolation
+  // convention — the shared 429 limiter is exercised by its own tests) so
+  // the LOCKOUT — not the rate limiter — is provably what rejects it.
+  await testAsync("Wrong-code LOCKOUT boundary: 5 wrong attempts lock the code; the CORRECT code is then rejected", async () => {
+    const reg = await http("POST", "/api/register", {
+      name: "OTP Lockout " + PREFIX,
+      phone: phones.lockout,
+      password: "otp-lockout-123",
+    });
+    assert(reg.status === 201, "register failed " + reg.status + " " + JSON.stringify(reg.data).slice(0, 150));
+    createdUserIds.push(reg.data.id);
+
+    const req = await http("POST", "/api/auth/otp/request", {
+      phone: phones.lockout,
+      purpose: "login",
+    });
+    assert(req.status === 200, "OTP request expected 200, got " + req.status);
+    const codeRes = await http("GET", "/api/auth/otp/dev-last?phone=" + phones.lockout);
+    assert(codeRes.status === 200, "dev-last expected 200, got " + codeRes.status);
+    const code = codeRes.data.code;
+    // Well-formed but wrong for this row (and never equal to the real code).
+    const wrongCode = code === "000000" ? "111111" : "000000";
+
+    let sawLock = false;
+    for (let i = 1; i <= 5; i++) {
+      const res = await http("POST", "/api/auth/otp/verify", {
+        phone: phones.lockout,
+        code: wrongCode,
+        purpose: "login",
+      });
+      assert(res.status === 400, "wrong verify " + i + " expected 400, got " + res.status);
+      if (/ناموفق بیش از حد مجاز بود/.test(res.data.error || "")) {
+        sawLock = i === 5; // the lock must fire exactly at the 5th attempt
+        break;
+      }
+    }
+    assert(sawLock, "the 5th wrong attempt must return the lock message (4 earlier ones must not)");
+
+    // Real row state: consumed by the lock, 5 attempts recorded.
+    const row = await db.collection("otpcodes").findOne({ phone: phones.lockout });
+    assert(row && row.codeConsumedAt, "the locked row must have codeConsumedAt set");
+    assert(row.attempts === 5, "attempts must be 5 after the lock, got " + row.attempts);
+
+    // Isolate THIS phone's verify budget so the shared limiter cannot mask
+    // the lockout boundary with a 429 (fixture key only — production limiter
+    // logic untouched; the budget itself is exercised by its own tests).
+    await db.collection("ratelimits").deleteMany({ _id: "rl:otp_verify:" + phones.lockout });
+
+    const correct = await http("POST", "/api/auth/otp/verify", {
+      phone: phones.lockout,
+      code,
+      purpose: "login",
+    });
+    assert(
+      correct.status === 400,
+      "the CORRECT code must still be rejected after lockout, got " + correct.status + " " + JSON.stringify(correct.data).slice(0, 120)
+    );
+    assert(!(correct.data && correct.data.loginToken), "a locked OTP must never mint a loginToken");
+    assert(/صحیح نیست/.test(correct.data.error || ""), "expected the uniform rejection message, got " + JSON.stringify(correct.data));
   });
 
   await testAsync("Per-IP request cap (15/15min) -> 429 (SMS-bombing guard)", async () => {

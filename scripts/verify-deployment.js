@@ -11,6 +11,9 @@
  *   5. A DB-backed endpoint serves traffic (the "ready" claim is backed)
  *   6. No secret is written to the server log (URI / password / keys)
  *   7. No legacy MongoDB target is in use (negative guard + behavioural proof)
+ *   8. The OTP dev seam (/api/auth/otp/dev-last) is DEAD on the production
+ *      build (404) — the SMS_MOCK-only plaintext-code reader must never
+ *      answer outside NODE_ENV=development
  *
  * Usage:
  *   npm run build && node scripts/verify-deployment.js
@@ -214,7 +217,25 @@ async function run() {
     assert(health && health.db === "up", "health disagreed with a working DB-backed route");
   });
 
-  // --- TEST 6: no secret in the server log ------------------------------
+  // --- TEST 6: the OTP dev seam is dead on the production build ---------
+  // GET /api/auth/otp/dev-last is the SMS_MOCK plaintext-code reader. It must
+  // answer ONLY when NODE_ENV=development AND SMS_MOCK=1; on a production
+  // build it must 404 (route guard: src/app/api/auth/otp/dev-last/route.js
+  // via isSmsMockEnabled in src/lib/sms.ts). Asserted here because the
+  // regression runner's dev server legitimately has the seam OPEN — only a
+  // production-mode instance can prove the closed state. No OTP request is
+  // issued (zero fixture writes; the negative assertion needs none).
+  await testAsync("OTP dev seam /api/auth/otp/dev-last is unavailable on the production build (404)", async () => {
+    const res = await fetch(BASE + "/api/auth/otp/dev-last?phone=09120000000", {
+      signal: AbortSignal.timeout(20000),
+    });
+    const text = await res.text();
+    assert(res.status === 404, "expected 404 on the production build, got " + res.status + " " + text.slice(0, 120));
+    // The seam must never reveal a code shape, even in an error body.
+    assert(!/\b\d{6}\b/.test(text), "dev-last body must not contain a 6-digit code");
+  });
+
+  // --- TEST 7: no secret in the server log ------------------------------
   await testAsync("Server log contains no secret value", async () => {
     const log = readLog();
     assert(log.length > 0, "server log is empty — cannot prove non-leakage");
@@ -225,7 +246,7 @@ async function run() {
     assert(!/mongodb(\+srv)?:\/\//i.test(log), "server log leaked a mongodb connection string");
   });
 
-  // --- TEST 7: no legacy MongoDB target ---------------------------------
+  // --- TEST 8: no legacy MongoDB target ---------------------------------
   await testAsync("No legacy MongoDB target in use", async () => {
     const host = uriHost();
     assert(host, "MONGODB_URI host could not be read");
