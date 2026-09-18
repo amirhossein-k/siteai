@@ -121,12 +121,21 @@ function PaymentResultContent() {
         {message || "متأسفانه پرداخت شما با خطا مواجه شد. لطفاً مجدداً تلاش کنید."}
       </p>
       <div className="flex flex-col gap-3">
-        <Button asChild>
-          <Link href="/checkout">
-            <ArrowLeft className="ml-2 h-4 w-4" />
-            بازگشت به تسویه حساب
-          </Link>
-        </Button>
+        {orderId ? (
+          <Button asChild>
+            <Link href={`/orders/${orderId}`}>
+              <ClipboardList className="ml-2 h-4 w-4" />
+              مشاهده سفارش و پرداخت مجدد
+            </Link>
+          </Button>
+        ) : (
+          <Button asChild>
+            <Link href="/checkout">
+              <ArrowLeft className="ml-2 h-4 w-4" />
+              بازگشت به تسویه حساب
+            </Link>
+          </Button>
+        )}
         <Button variant="outline" asChild>
           <Link href="/products">
             <ShoppingBag className="ml-2 h-4 w-4" />

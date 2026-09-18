@@ -126,4 +126,85 @@ test.describe("Payment flow", () => {
     expect(order.status).toBe("pending_payment");
     expect(order.payment.status).toBe("canceled");
   });
+
+  test("failed payment result points to the order for retry", async ({
+    page,
+  }) => {
+    // With a known order: the primary CTA must lead to the order detail
+    // page (the retry-payment action already lives there), never to the
+    // now-empty checkout. Secondary CTA keeps shopping on /products.
+    const orderId = "507f1f77bcf86cd799439011";
+    await page.goto(`/payment/result?status=failed&orderId=${orderId}`);
+    const primary = page.getByRole("link", {
+      name: "مشاهده سفارش و پرداخت مجدد",
+    });
+    await expect(primary).toBeVisible();
+    expect(await primary.getAttribute("href")).toBe(`/orders/${orderId}`);
+    const secondary = page.getByRole("link", { name: "ادامه خرید" });
+    await expect(secondary).toBeVisible();
+    expect(await secondary.getAttribute("href")).toBe("/products");
+
+    // Without a known order there is nothing to show, so the checkout
+    // fallback destination must remain.
+    await page.goto("/payment/result?status=failed");
+    const fallback = page.getByRole("link", { name: "بازگشت به تسویه حساب" });
+    await expect(fallback).toBeVisible();
+    expect(await fallback.getAttribute("href")).toBe("/checkout");
+  });
+
+  test("browser back from the gateway returns to My Orders", async ({
+    page,
+  }) => {
+    await page.goto(`/products/${state.prefix}${slug}`);
+    await page.getByRole("button", { name: "افزودن به سبد خرید" }).click();
+    // Readiness signal: the item reached the cart and survives navigation
+    // (asserted via the checkout summary). The success toast is incidental
+    // and has a known render race (CI run 35227292913), so it is not used
+    // as a synchronization point here.
+    await page.goto("/checkout");
+    await expect(page.getByText(`ساعت هوشمند ${state.prefix}`)).toBeVisible();
+    await page.getByPlaceholder("مثال: علی محمدی").fill(`مشتری ${state.prefix}`);
+    await page.getByPlaceholder("مثال: ۰۹۱۲۳۴۵۶۷۸۹").fill(state.customerPhone);
+    await page
+      .getByPlaceholder("استان، شهر، خیابان، پلاک، واحد")
+      .fill("تهران، خیابان ونک، پلاک ۳");
+    await page.getByPlaceholder("مثال: ۱۲۳۴۵۶۷۸۹۰").fill("1122334455");
+    await page.locator('input[name="payment"][value="zarinpal"]').check();
+
+    // Simulate the customer backing out at the gateway: the mock verify
+    // navigation is answered with the same redirect the real NOK callback
+    // produces (302 → cancelled result), so the order is never paid and
+    // stays pending_payment.
+    let nokedOrderId = "";
+    await page.route("**/api/payment/verify*", async (route) => {
+      const url = new URL(route.request().url());
+      nokedOrderId = url.searchParams.get("orderId") ?? "";
+      await route.fulfill({
+        status: 302,
+        headers: {
+          location: `/payment/result?status=cancelled&orderId=${nokedOrderId}`,
+        },
+      });
+    });
+
+    // Submit → mock gateway → result. The checkout history entry was
+    // replaced with /orders right before the redirect, so going Back must
+    // land on My Orders (with the pending order visible), never on the
+    // emptied checkout page.
+    await page.getByRole("button", { name: "ثبت سفارش" }).click();
+    await page.waitForURL(/\/payment\/result/);
+    await expect(page.getByText("پرداخت لغو شد")).toBeVisible();
+    expect(nokedOrderId).toBeTruthy();
+    await page.goBack();
+    await page.waitForURL("**/orders");
+    // The order just created is the newest entry and shows its
+    // pending-payment badge on My Orders — not the emptied checkout page.
+    const orderCard = page.getByText(
+      `سفارش #${nokedOrderId.slice(-8)}`
+    );
+    await expect(orderCard).toBeVisible();
+    await expect(
+      orderCard.locator("xpath=ancestor::a")
+    ).toContainText("در انتظار پرداخت");
+  });
 });

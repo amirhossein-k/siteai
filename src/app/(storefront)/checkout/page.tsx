@@ -207,6 +207,11 @@ export default function CheckoutPage() {
       if (data.paymentUrl) {
         setIsRedirecting(true);
         showToast.success("در حال انتقال به درگاه پرداخت...");
+        // Back-from-gateway UX: rewrite the checkout history entry with
+        // /orders so browser Back from the payment gateway lands on My
+        // Orders instead of this now-empty page. clearCart() above is
+        // intentional and unchanged.
+        window.history.replaceState(null, "", "/orders");
         window.location.href = data.paymentUrl;
         return;
       }
