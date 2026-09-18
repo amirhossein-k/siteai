@@ -97,7 +97,7 @@ export async function sendOtp(
       body: JSON.stringify({
         mobile: phone.replace(/^0/, ""),
         templateId: Number(env.SMS_IR_TEMPLATE_ID),
-        parameters: [{ name: "Code", value: code }],
+        parameters: [{ name: "OTP", value: code }],
       }),
     });
 

@@ -110,7 +110,7 @@ describe("sendOtp — sms.ir adapter", () => {
     const body = JSON.parse(init.body as string);
     expect(body.mobile).toBe("9123456789"); // leading zero stripped
     expect(body.templateId).toBe(100);
-    expect(body.parameters).toEqual([{ name: "Code", value: "123456" }]);
+    expect(body.parameters).toEqual([{ name: "OTP", value: "123456" }]);
   });
 
   it("returns SMS_IR_API_ERROR when the gateway rejects", async () => {
