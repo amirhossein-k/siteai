@@ -4,6 +4,7 @@ import {
   createCategory,
   createProduct,
   placeOrder,
+  addToCartAndAwaitToast,
   type E2EState,
 } from "./helpers/fixtures";
 
@@ -55,7 +56,7 @@ test.describe("Payment flow", () => {
     // Add to cart, then checkout with the online payment method.
     await page.goto(`/products/${state.prefix}${slug}`);
     await page.getByRole("button", { name: "افزودن به سبد خرید" }).click();
-    await expect(page.getByText(/به سبد خرید اضافه شد/)).toBeVisible();
+    await addToCartAndAwaitToast(page);
 
     await page.goto("/checkout");
     await page.getByPlaceholder("مثال: علی محمدی").fill(`مشتری ${state.prefix}`);

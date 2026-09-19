@@ -3,6 +3,7 @@ import {
   getState,
   createCategory,
   createProduct,
+  addToCartAndAwaitToast,
   type E2EState,
 } from "./helpers/fixtures";
 
@@ -159,10 +160,7 @@ test.describe("Product Discount Journey", () => {
 
     // 1. Add to cart from the product page (cart stores the EFFECTIVE price).
     await customerPage.goto(`/products/${productSlug()}`);
-    await customerPage
-      .getByRole("button", { name: "افزودن به سبد خرید" })
-      .click();
-    await expect(customerPage.getByText(/به سبد خرید اضافه شد/)).toBeVisible();
+    await addToCartAndAwaitToast(customerPage);
 
     // 2. Checkout — fill the shipping form.
     await customerPage.goto("/checkout");

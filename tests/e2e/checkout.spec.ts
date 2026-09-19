@@ -3,6 +3,7 @@ import {
   getState,
   createCategory,
   createProduct,
+  addToCartAndAwaitToast,
   type E2EState,
 } from "./helpers/fixtures";
 
@@ -48,7 +49,7 @@ test.describe("Checkout", () => {
     // 1. Add to cart from the product page.
     await page.goto(`/products/${state.prefix}${slug}`);
     await page.getByRole("button", { name: "افزودن به سبد خرید" }).click();
-    await expect(page.getByText(/به سبد خرید اضافه شد/)).toBeVisible();
+    await addToCartAndAwaitToast(page);
 
     // 2. Checkout page — the shipping-form card renders (proves the cart has
     // items; the breadcrumb "تسویه حساب" is a span, not a heading).

@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import type { APIRequestContext } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 /**
  * E2E fixtures — PREFIX'd test-data seeding through the REAL public + admin
@@ -55,6 +55,167 @@ export async function expectOk(
   if (code >= 200 && code < 300) return;
   const body = await res.text();
   throw new Error(`${label} → ${code}: ${body.slice(0, 300)}`);
+}
+
+/**
+ * Wait for the page's network activity to settle before interacting.
+ *
+ * Storefront pages are server-rendered and hydrate progressively; in CI the
+ * chunk storm (cold dev-server compiles) can outlast `load`, and a click
+ * dispatched before React attaches its delegated handlers is swallowed. The
+ * wait is EVENT-BASED (network idle), not a sleep, and resolves immediately
+ * when the page is already idle; a chatty dev server only caps the wait.
+ */
+async function waitForNetworkIdle(page: Page): Promise<void> {
+  try {
+    await page.waitForLoadState("networkidle", { timeout: 10_000 });
+  } catch {
+    /* dev-server chatter — proceed; the effect polling below still guards */
+  }
+}
+
+/**
+ * Click a hydration-sensitive button whose effect is a change of EXACTLY +1
+ * in the persisted cart quantity, optionally awaiting the success toast.
+ *
+ * Root cause this guards (CI runs 35440576635 attempts 1+2, and the earlier
+ * 4cda88d red run): storefront/cart pages are server-rendered; a click
+ * dispatched before React attaches its delegated handlers is either SWALLOWED
+ * (no effect — the original CI failure mode) or, when hydration lands shortly
+ * after the dispatch, the queued event is REPLAYED on top of a live handler,
+ * double-firing it (seen locally as cart quantity 2 and 3 after one click).
+ *
+ * Semantics (event-based; no waitForTimeout, no timeout inflation):
+ * - Exactly ONE click per attempt. The effect is verified as a delta of
+ *   EXACTLY +1 against the pre-click baseline of the persisted zustand cart
+ *   (`cart-storage*` localStorage keys — persist writes on every mutation).
+ * - Δ0 (swallowed) or Δ≥2 (double-fired replay) → REPAIR: restore the exact
+ *   pre-click cart bytes and reload so the store rehydrates the clean state,
+ *   then retry on the fresh page. Repaired retries never stack adds.
+ * - Δ1 → success. The toast (asserted via `options.toast`, fired
+ *   synchronously in the same handler) is checked AFTER verification and its
+ *   failure propagates — no retry there, so a slow-but-successful add can
+ *   never be double-added, and a genuine add-to-cart failure (e.g. an
+ *   out-of-stock error toast) still fails the test. Nothing is swallowed.
+ */
+export async function cartClickWithExactQuantityChange(
+  page: Page,
+  click: () => Promise<void>,
+  options?: { toast?: () => Promise<void>; maxAttempts?: number }
+): Promise<void> {
+  const maxAttempts = options?.maxAttempts ?? 3;
+  await waitForNetworkIdle(page);
+
+  // Raw pre-click bytes of every persisted cart key (for the Δ≥2 repair).
+  const snapshot = () =>
+    page.evaluate(() => {
+      const entries: Array<{ key: string; value: string }> = [];
+      for (let i = 0; i < window.localStorage.length; i += 1) {
+        const key = window.localStorage.key(i);
+        if (key && key.startsWith("cart-storage")) {
+          entries.push({ key, value: window.localStorage.getItem(key) ?? "" });
+        }
+      }
+      return entries;
+    });
+  const restore = (entries: Array<{ key: string; value: string }>) =>
+    page.evaluate((data) => {
+      for (let i = 0; i < window.localStorage.length; i += 1) {
+        const key = window.localStorage.key(i);
+        if (
+          key &&
+          key.startsWith("cart-storage") &&
+          !data.some((e) => e.key === key)
+        ) {
+          window.localStorage.removeItem(key);
+        }
+      }
+      for (const entry of data) {
+        window.localStorage.setItem(entry.key, entry.value);
+      }
+    }, entries);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const before = await getPersistedCartQuantity(page);
+    const preClick = await snapshot();
+    await click();
+    try {
+      await expect
+        .poll(async () => (await getPersistedCartQuantity(page)) - before, {
+          timeout: 10_000,
+          intervals: [100],
+        })
+        .toBe(1);
+    } catch (error) {
+      if (attempt === maxAttempts) throw error;
+      // Δ0 = swallowed pre-hydration click; Δ≥2 = replayed double-fire.
+      // Either way: restore the exact pre-click cart bytes and reload so the
+      // store rehydrates the repaired state before retrying.
+      await restore(preClick);
+      await page.reload();
+      await waitForNetworkIdle(page);
+      continue;
+    }
+    // Exactly one verified add/increment.
+    if (options?.toast) await options.toast();
+    return;
+  }
+}
+
+/**
+ * Ground truth for cart mutations: the summed item quantity across the
+ * persisted guest + per-user zustand carts (`cart-storage*` localStorage
+ * keys — persist writes on EVERY mutation). Works identically for guest and
+ * logged-in contexts and is immune to toast/animation timing.
+ */
+export function getPersistedCartQuantity(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    let total = 0;
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (!key || !key.startsWith("cart-storage")) continue;
+      try {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) continue;
+        const items = (
+          JSON.parse(raw) as {
+            state?: { items?: Array<{ quantity?: number }> };
+          }
+        ).state?.items;
+        if (Array.isArray(items)) {
+          for (const item of items) total += item.quantity || 0;
+        }
+      } catch {
+        /* unreadable key — skip */
+      }
+    }
+    return total;
+  });
+}
+
+/**
+ * Add to cart and deterministically await the success toast.
+ *
+ * The add's ground truth is the persisted zustand cart (every addItem writes
+ * the summed quantity to localStorage `cart-storage*` keys — guest and
+ * per-user keys alike), so success is verified by the ACTUAL cart mutation,
+ * not by toast timing. After the mutation is verified, the success toast
+ * (fired synchronously in the same handler) is asserted — a genuine
+ * add-to-cart failure (e.g. an out-of-stock error toast) still fails the
+ * test; nothing is swallowed.
+ */
+export async function addToCartAndAwaitToast(
+  page: Page,
+  options?: { buttonName?: string }
+): Promise<void> {
+  const toast = page.getByText(/به سبد خرید اضافه شد/).first();
+  const buttonName = options?.buttonName ?? "افزودن به سبد خرید";
+
+  await cartClickWithExactQuantityChange(
+    page,
+    () => page.getByRole("button", { name: buttonName }).first().click(),
+    { toast: () => expect(toast).toBeVisible({ timeout: 3_500 }) }
+  );
 }
 
 /**
@@ -269,6 +430,15 @@ export interface CouponSeed {
   isPublic?: boolean;
 }
 
+/**
+ * Create a coupon via the admin API. IDEMPOTENT: if a coupon with the same
+ * code already exists (e.g. the describe `beforeAll` re-ran after a failed
+ * sibling test on retry — seen as 409 on CI run 35440576635 attempt 2), the
+ * existing row is reused instead of failing — same convention as
+ * createCategory/createProduct/createVariantProduct: fixtures must never
+ * leave partial state behind. The existing coupon is reused AS-IS (never
+ * deleted/recreated) so state another test may depend on is preserved.
+ */
 export async function createCoupon(
   admin: APIRequestContext,
   seed: CouponSeed
@@ -286,9 +456,23 @@ export async function createCoupon(
       perUserLimit: 0,
     },
   });
-  await expectOk(res, "createCoupon");
-  const body = (await res.json()) as { _id: string };
-  return body._id;
+  const code =
+    typeof res.status === "function" ? res.status() : (res as never as { status: number }).status;
+  if (code >= 200 && code < 300) {
+    const body = (await res.json()) as { _id: string };
+    return body._id;
+  }
+  if (code === 409) {
+    // Duplicate code (admin list is a bare array, codes stored uppercased):
+    // reuse the existing coupon by exact code.
+    const existing = await admin.get("/api/admin/coupons");
+    await expectOk(existing, "listCoupons");
+    const rows = (await existing.json()) as Array<{ _id: string; code: string }>;
+    const found = rows.find((r) => r.code === seed.code.toUpperCase().trim());
+    if (found) return found._id;
+  }
+  const body = await res.text();
+  throw new Error(`createCoupon → ${code}: ${body.slice(0, 300)}`);
 }
 
 export interface CheckoutItem {

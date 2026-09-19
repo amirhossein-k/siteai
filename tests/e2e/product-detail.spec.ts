@@ -4,6 +4,7 @@ import {
   createCategory,
   createProduct,
   createVariantProduct,
+  addToCartAndAwaitToast,
   type E2EState,
 } from "./helpers/fixtures";
 import { formatPrice } from "./helpers/money";
@@ -64,7 +65,7 @@ test.describe("Product detail", () => {
     await expect(page.getByText("موجود در انبار")).toBeVisible();
 
     await page.getByRole("button", { name: "افزودن به سبد خرید" }).click();
-    await expect(page.getByText(/به سبد خرید اضافه شد/)).toBeVisible();
+    await addToCartAndAwaitToast(page);
   });
 
   test("variant product pre-selects a variant and adds to cart", async ({
@@ -84,6 +85,6 @@ test.describe("Product detail", () => {
     await expect(page.getByText(formatPrice(variantBase)).first()).toBeVisible();
 
     await page.getByRole("button", { name: "افزودن به سبد خرید" }).click();
-    await expect(page.getByText(/به سبد خرید اضافه شد/)).toBeVisible();
+    await addToCartAndAwaitToast(page);
   });
 });

@@ -3,6 +3,8 @@ import {
   getState,
   createCategory,
   createProduct,
+  addToCartAndAwaitToast,
+  cartClickWithExactQuantityChange,
   type E2EState,
 } from "./helpers/fixtures";
 import { formatPrice } from "./helpers/money";
@@ -55,18 +57,18 @@ test.describe("Cart", () => {
     await page.goto(`/products/${specSlug}`);
     // .first(): the Session 85 mobile sticky buy bar adds a second CTA with
     // the same label on <lg viewports — either button adds to the cart.
-    await page
-      .getByRole("button", { name: "افزودن به سبد خرید" })
-      .first()
-      .click();
-    await expect(page.getByText(/به سبد خرید اضافه شد/)).toBeVisible();
+    await addToCartAndAwaitToast(page);
 
     await page.goto("/cart");
     await expect(page.getByText(`ماگ سرامیکی ${state.prefix}`)).toBeVisible();
     await expect(page.getByText(formatPrice(price)).first()).toBeVisible();
 
-    // Quantity: 1 → 2 (plus button), item total doubles.
-    await page.locator("button:has(svg.lucide-plus)").click();
+    // Quantity: 1 → 2 (plus button), item total doubles. The cart page is
+    // hydration-race-prone too — same helper, same exact-+1 semantics; the
+    // failure propagates if the increment never verifiably lands.
+    await cartClickWithExactQuantityChange(page, () =>
+      page.locator("button:has(svg.lucide-plus)").click()
+    );
     await expect(
       page.getByText(formatPrice(price * 2)).first()
     ).toBeVisible();
@@ -87,7 +89,7 @@ test.describe("Cart", () => {
       .getByRole("button", { name: "افزودن به سبد خرید" })
       .first()
       .click();
-    await expect(page.getByText(/به سبد خرید اضافه شد/)).toBeVisible();
+    await addToCartAndAwaitToast(page);
 
     await page.goto("/cart");
     await page.getByRole("link", { name: /تسویه حساب/ }).click();

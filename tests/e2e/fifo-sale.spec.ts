@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { getState, createCategory, createProduct, type E2EState } from "./helpers/fixtures";
+import { getState, createCategory, createProduct, addToCartAndAwaitToast, type E2EState } from "./helpers/fixtures";
 
 /**
  * Journey 20 — FIFO sale + refund (Session 82 Phase C).
@@ -163,10 +163,7 @@ test.describe("FIFO sale + refund", () => {
     const customerPage = await ctx.newPage();
 
     await customerPage.goto(`/products/${state.prefix}fifo-prod`);
-    await customerPage
-      .getByRole("button", { name: "افزودن به سبد خرید" })
-      .click();
-    await expect(customerPage.getByText(/به سبد خرید اضافه شد/)).toBeVisible();
+    await addToCartAndAwaitToast(customerPage);
 
     await customerPage.goto("/checkout");
     await expect(

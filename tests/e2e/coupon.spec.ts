@@ -4,6 +4,7 @@ import {
   createCategory,
   createProduct,
   createCoupon,
+  addToCartAndAwaitToast,
   type E2EState,
 } from "./helpers/fixtures";
 import { formatPrice, couponDiscount } from "./helpers/money";
@@ -62,8 +63,7 @@ test.describe("Coupon application", () => {
   }) => {
     // Cart with a single item → subtotal = price.
     await page.goto(`/products/${state.prefix}${slug}`);
-    await page.getByRole("button", { name: "افزودن به سبد خرید" }).click();
-    await expect(page.getByText(/به سبد خرید اضافه شد/)).toBeVisible();
+    await addToCartAndAwaitToast(page);
 
     await page.goto("/checkout");
     await page.getByPlaceholder("مثال: علی محمدی").fill(`مشتری ${state.prefix}`);
