@@ -24,7 +24,7 @@
     "@hookform/resolvers": "^5.5.7",
     "@platejs/basic-nodes": "53.0.0",
     "@platejs/basic-styles": "53.0.0",
-    "@platejs/core": "53.3.3",
+    "@platejs/core": "53.3.11",
     "@platejs/floating": "53.0.0",
     "@platejs/link": "53.3.1",
     "@platejs/list": "53.1.3",
