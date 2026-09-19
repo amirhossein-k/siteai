@@ -4,6 +4,18 @@
 
 ## ✅ Completed Milestones
 
+### Admin Business SMS (Session 90 Phase 1)
+- [x] **Template management** — `SmsTemplate` model (unique name, business-type enum, optional digits-only `providerTemplateId` stored in MongoDB — not env vars, **server-derived** `variables`, body ≤500 with `{{var}}` placeholders, isActive, audit refs) + admin CRUD at `/api/admin/sms/templates` (duplicate 409, malformed 400/unknown 404) + the قالب‌ها tab on the new `/admin/sms` page
+- [x] **Manual sending** — `/api/admin/sms/send`: template-based (rendered server-side, fail-closed missing/extra variable validation, **inactive template refused**) or free-form (sanitized, ≤500); strict server-side phone normalization; sender identity always the authenticated admin; every attempt audited
+- [x] **Delivery logs** — `SmsLog` model (canonical recipient, optional user/order/template refs, **templateName snapshot surviving deletion**, provider, messageId, final sent/failed status written after the provider returns, controlled error codes, rendered message, sentAt, actor; **intentionally no TTL / no dedupe key**) + the paginated گزارش ارسال tab (status/type/recipient/template filters)
+- [x] **Admin UI** — `/admin/sms` («پیامک‌ها» sidebar entry, /admin/suppliers tab pattern): templates · logs · manual send; React Query hooks + shared types
+- [x] **Mock-first business provider abstraction** — independent `src/lib/sms-business.ts` (no `sendOtp` import, never reads the OTP-specific `SMS_IR_TEMPLATE_ID`): mock (dev + `SMS_MOCK=1`, no network) → smsir `/v1/send/bulk` → none; pure `renderTemplate()`; injectable fetch; controlled never-throw failures
+- [x] **Production kill-switch** — business SMS disabled by default: the real provider activates only when `SMS_BUSINESS_ENABLED=1` AND `SMS_IR_API_KEY` are set; with the current production env every send returns controlled `SMS_BUSINESS_DISABLED` (unit-pinned); no env var changed anywhere
+- [x] **OTP isolation** — `sms.ts`, `otp.ts`, all OTP routes, `auth.js`, password-reset, `OtpCode` and every OTP test/verify suite byte-for-byte untouched; independent `sms-send:` / `sms-template-write:` rate-limit namespaces (10 and 30 per admin per 15min) leave the OTP limiter keys alone; `verify-sms.js` **17/17 ×2** (51-suite regression) · Vitest **669/669** · admin-sms E2E **3/3** · OTP suites green after the change (13/13 · 22/22 · E2E 9/9)
+- [ ] **Order-event automation (Phase 1d)** — automatic order confirmation / shipping / tracking-code / delivery-follow-up SMS with order-event dedupe (NOT implemented)
+- [ ] **Real SMS.ir business-pattern activation** — register business patterns in the sms.ir dashboard and set real `providerTemplateId` values (NOT implemented)
+- [ ] **Bulk campaigns + scheduling** — explicitly out of Phase 1 (NOT implemented)
+
 ### Production Readiness — deployable & verifiable (Session 89)
 - [x] **Next.js 16 `middleware` → `proxy` migration** — `src/middleware.js` → `src/proxy.js`, export renamed to `proxy`; matcher + both redirects + every RBAC decision byte-identical (git rename `R081`); the build-time deprecation warning is gone; route-guard E2E **25/25**; zero auth/OTP/password/`auth-utils`/`token-version`/model changes
 - [x] **Production build verified** — `npm run build` exits 0 (123 static pages); **DB-independent** (a build against an unreachable `MONGODB_URI` also exits 0), which is what makes the CI gate hermetic

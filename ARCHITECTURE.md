@@ -123,6 +123,9 @@ Telegram (fire-and-forget):
 | `/api/admin/expenses/[id]` | GET, PATCH | admin | Expense detail (voided rows stay visible for audit) · PATCH: edit while NOT void — voided → 400 (corrections are NEW rows). Malformed → 400, unknown → 404 |
 | `/api/admin/expenses/[id]/pay` | POST | admin | pending → paid (**idempotent**); voided → 400 (financial history immutable) |
 | `/api/admin/expenses/[id]/void` | POST | admin | **AUDITED VOID** — voidReason REQUIRED (2–500, before the limiter), stamps voidedAt/voidedBy/voidReason, row NEVER deleted; paid/pending → void, already-voided → idempotent 200; voids are final |
+| `/api/admin/sms/templates` | GET, POST, PUT, DELETE | admin | Business-SMS template CRUD (Session 90 Phase 1b): list (newest first), create (duplicate name → 409; client-declared `variables` ignored — always re-derived server-side from the body placeholders), partial update (body edits re-derive variables; unknown → 404, malformed → 400), delete (SmsLog rows keep their `templateName` snapshot). Write verbs rate-limited `SMS_TEMPLATE_WRITE_LIMIT` 30/admin/15min (independent `sms-template-write:` namespace — OTP limiter keys untouched) |
+| `/api/admin/sms/send` | POST | admin | Manual business-SMS send (Session 90 Phase 1b) through `src/lib/sms-business.ts` — **never `sendOtp()`**: exactly one of `templateId`/`message`; recipient normalized server-side (`^09\d{9}$`); template state loaded from the DB (a request body can never inject a provider pattern id); **inactive template → 400 refusal (no SMS, no log row)**; fail-closed missing/extra variable validation; sender identity always the authenticated session token; every attempt (sent OR failed) persisted to `SmsLog`; controlled error codes only (no provider internals/secrets). `SMS_SEND_LIMIT` 10/admin/15min |
+| `/api/admin/sms/logs` | GET | admin | Paginated business-SMS audit trail (Session 90 Phase 1b): `status` (sent/failed), `messageType`, `templateId` filters + escaped recipient search; per-attempt rows carry the rendered message, `templateName` snapshot, provider, error codes and the admin actor |
 
 ### Public Supplier Application Routes (Session 67)
 | Route | Methods | Auth | Description |
@@ -210,7 +213,7 @@ Telegram (fire-and-forget):
 
 ## 7. Database Schema
 
-### Collections (21 total — core subset below; full catalog + key fields in PROJECT_STATE.md)
+### Collections (22 total — core subset below; full catalog + key fields in PROJECT_STATE.md)
 | Collection | Key Fields | Notes |
 |------------|-----------|-------|
 | **User** | name, phone, passwordHash (optional — OTP), role, supplier, address, isActive, **tokenVersion** | role: customer/supplier/admin |
@@ -225,6 +228,11 @@ Telegram (fire-and-forget):
 | **Supplier** | user ref, businessName, contactPhone, bankAccount, balance, **telegramChatId**, isActive | telegramChatId for notifications |
 | **Notification** | recipient, type[], message, relatedOrder, isRead, **sentToTelegram** | In-app + Telegram tracking |
 | **Transaction** | supplier ref, type[], amount, relatedOrder, note, balanceAfter | Wallet ledger |
+| **SmsTemplate** | name (unique), type (order_confirmation/shipping_update/tracking_code/delivery_followup/custom), providerTemplateId (optional, digits-only — stored in MongoDB, not env vars), variables (server-derived from body placeholders), body (≤500, `{{variable}}`), isActive, createdBy/updatedBy | Admin business-SMS templates (Session 90 Phase 1a); unique name index + `{type, isActive}` |
+| **SmsLog** | recipient (canonical 09…), user/order/template (optional refs), templateName snapshot (survives template deletion), messageType, provider (mock/smsir/none), providerMessageId, status (sent/failed — written AFTER the provider returns), error info, message (rendered audit copy), sentAt, createdBy | Business-SMS audit trail (Session 90 Phase 1a); query indexes; **intentionally NO TTL and NO dedupe key** |
+
+### SMS Architecture Note (Session 90)
+`src/lib/sms-business.ts` is **intentionally a separate module from `src/lib/sms.ts`** to isolate business SMS from the OTP flow: it never imports `sendOtp`, has its own provider resolver, **never reads the OTP-specific `SMS_IR_TEMPLATE_ID`**, and stores per-template SMS.ir pattern ids in the `SmsTemplate.providerTemplateId` field instead. The business provider is **production-disabled by default** — real sending requires the explicit `SMS_BUSINESS_ENABLED=1` kill-switch (plus the existing `SMS_IR_API_KEY`); without it every send returns a controlled `SMS_BUSINESS_DISABLED` error, so deploying the feature cannot accidentally message real users. |
 
 ### Order Status Flow (Main Order)
 ```
@@ -248,7 +256,7 @@ pending → failed (on cancel)
 
 ---
 
-## 8. Project Routes (44 total)
+## 8. Project Routes (45 total)
 
 ### Storefront
 - `/` — Homepage with hero, features, CTA, footer
@@ -271,6 +279,7 @@ pending → failed (on cancel)
 - `/admin/orders/[id]` — Order detail
 - `/admin/users` — User management
 - `/admin/suppliers` — Supplier management (create / promote / deactivate / status / payouts link) — Session 66
+- `/admin/sms` — Business-SMS management: templates / delivery logs / manual send («پیامک‌ها») — Session 90
 - `/admin/settings` — Settings (placeholder)
 
 ### Supplier Panel

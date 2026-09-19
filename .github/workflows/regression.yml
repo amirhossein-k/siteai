@@ -1,4 +1,4 @@
-name: Regression (50 suites)
+name: Regression (51 suites)
 
 # Session 60 — the full real-API regression (`scripts/run-regression.js`, 33
 # sequential suites) as a NON-gating nightly / on-demand workflow. Session 62
@@ -12,7 +12,8 @@ name: Regression (50 suites)
 # `verify-accounting` → 43; Phase B added `verify-purchases` → 44; Phases C–F
 # added `verify-fifo`, `verify-inventory`, `verify-expenses` and
 # `verify-accounting-excel` → 49. Session 89 added `verify-health` (the
-# /api/health readiness probe) → 50. `scripts/run-regression.js` is the
+# /api/health readiness probe) → 50. Session 90 added `verify-sms` (admin
+# business-SMS management) → 51. `scripts/run-regression.js` is the
 # definitive list — production-build/deployment readiness is a separate gate
 # (`npm run build` in ci.yml, `scripts/verify-deployment.js`) and is NOT part
 # of this dev-server-driven sequence.

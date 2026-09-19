@@ -46,6 +46,7 @@ The access control system has three layers:
 | Manage all products | ❌ | ❌ | ✅ |
 | Manage all orders | ❌ | ❌ | ✅ |
 | Manage users | ❌ | ❌ | ✅ |
+| Manage business-SMS templates / manual send / delivery logs (Session 90) | ❌ | ❌ | ✅ |
 | Upload files | ❌ | ✅ | ✅ |
 
 ---
@@ -131,6 +132,21 @@ The admin users page (`/admin/users`) provides:
 | Reset password | `PATCH /api/admin/users?id=X` | Reset user's password |
 
 All endpoints require `admin` role and use the centralized `requireRole` helper.
+
+### Admin Business-SMS Management (Session 90 Phase 1)
+
+A dedicated **`/admin/sms`** page (sidebar «پیامک‌ها») is the home for admin business-SMS management. **All surfaces are admin-only** and every API enforces `requireRoleOrError(req, ["admin"])` server-side (the admin page itself additionally sits behind the `/admin` proxy guard):
+
+| Surface | API Endpoint | Admin-only capabilities |
+|--------|-------------|--------------------------|
+| Template management | `/api/admin/sms/templates` (GET/POST/PUT/DELETE) | CRUD for business-SMS templates (server-derived variables; duplicate name → 409) |
+| Manual send | `/api/admin/sms/send` (POST) | Send a template-based or free-form business SMS (rate-limited 10/admin/15min) |
+| Delivery logs | `/api/admin/sms/logs` (GET) | The audited per-attempt trail with status/type/recipient filters + pagination |
+
+**Session 90 enforcement:**
+- **No new role or permission semantics were introduced** — the three surfaces reuse the existing `requireRoleOrError` admin gate exactly like every other admin API. Customer and supplier tokens receive **403** on all of them (proven by `verify-sms.js` + the admin-sms E2E); anonymous requests receive **401**.
+- The page `/admin/sms` is reached only through the existing `/admin/:path*` proxy guard (unauthenticated → `/login`; non-admin → `/`), so UI hiding is never the security boundary — the API checks are.
+- Rate limiting uses **independent SMS-specific key namespaces** (`sms-send:`, `sms-template-write:`) — the existing OTP rate-limit keys and limits are untouched.
 
 ### Admin Supplier Management (Session 66)
 

@@ -140,6 +140,13 @@ const navItems = [
     icon: MessageSquareText,
   },
   {
+    // Session 90 — admin business-SMS management (templates / send log /
+    // manual send). Independent from the OTP SMS flow by design.
+    title: "پیامک‌ها",
+    href: "/admin/sms",
+    icon: MessageSquareText,
+  },
+  {
     title: "کدهای تخفیف",
     href: "/admin/coupons",
     icon: Ticket,

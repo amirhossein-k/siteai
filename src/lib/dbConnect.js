@@ -36,6 +36,8 @@ import "@/models/InventoryMovement";
 import "@/models/AccountingConfig";
 import "@/models/PurchaseOrder";
 import "@/models/Expense";
+import "@/models/SmsTemplate";
+import "@/models/SmsLog";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 

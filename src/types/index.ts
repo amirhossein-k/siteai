@@ -1596,3 +1596,62 @@ export interface PurchasesReport {
   totalPages: number;
   total: number;
 }
+
+// ============================================================
+// Admin Business-SMS Management (Session 90 Phase 1)
+// ============================================================
+
+export type SmsMessageType =
+  | "order_confirmation"
+  | "shipping_update"
+  | "tracking_code"
+  | "delivery_followup"
+  | "custom";
+
+/** Admin template row (GET /api/admin/sms/templates). */
+export interface AdminSmsTemplate {
+  _id: string;
+  name: string;
+  type: SmsMessageType;
+  /** SMS.ir pattern id (may be empty while the system runs mock-first). */
+  providerTemplateId: string;
+  /** Server-derived from body placeholders — never client-declared. */
+  variables: string[];
+  body: string;
+  isActive: boolean;
+  createdBy: { _id: string; name: string } | null;
+  updatedBy: { _id: string; name: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** One send-attempt row (GET /api/admin/sms/logs). */
+export interface AdminSmsLog {
+  _id: string;
+  recipient: string;
+  user: { _id: string; name: string } | null;
+  order: string | null;
+  template: string | null;
+  /** Snapshot of the template name at send time (survives deletion). */
+  templateName: string;
+  messageType: SmsMessageType;
+  provider: "mock" | "smsir" | "none";
+  providerMessageId: string;
+  status: "sent" | "failed";
+  error: string;
+  errorMessage: string;
+  message: string;
+  sentAt: string | null;
+  createdBy: { _id: string; name: string } | null;
+  createdAt: string;
+}
+
+/** GET /api/admin/sms/logs — paginated envelope. */
+export interface AdminSmsLogsResponse extends PaginatedResponse<AdminSmsLog> {}
+
+/** POST /api/admin/sms/send — success payload. */
+export interface SmsSendResponse {
+  message: string;
+  provider: "mock" | "smsir";
+  messageId: string;
+}

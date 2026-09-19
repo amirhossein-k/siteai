@@ -76,6 +76,7 @@ const suites = [
   "verify-inventory", // Session 82 Phase D — inventory adjustments + movement ledger (positive/negative adjustment FIFO layer semantics, exactly-once idempotency, concurrent no-oversell, variant isolation, consignment stock-only, movement/layer APIs, post-cutover direct-stock-edit enforcement, reconciliation)
   "verify-expenses", // Session 82 Phase E — expense ledger (audited void with required reason, non-void totals, expense report + P&L net profit = grossProfit − operatingExpenses, rate limits)
   "verify-accounting-excel", // Session 82 Phase F — accounting Excel V2 (17-sheet Persian workbook, XLSX parse + reconciliation: Σ COGS rows = P&L COGS, net = gross + discounts, FIFO layer value = inventory value, voided-expense exclusion, authz, export rate limit)
+  "verify-sms", // Session 90 — admin business-SMS management (template CRUD + server-derived variables, manual send → SmsLog lifecycle with the mock provider, RBAC 401/403, inactive-template refusal, variable fail-closed validation, send rate limit, logs filters/pagination, OTP isolation: otpcodes untouched; requires SMS_MOCK=1)
 ];
 
 // Same env-loading convention as the verify suites (no dotenv dependency):

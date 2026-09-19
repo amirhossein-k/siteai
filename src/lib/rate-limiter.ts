@@ -191,6 +191,22 @@ export const EXPENSE_WRITE_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/**
+ * Admin manual business-SMS send: 10 per admin per 15 minutes (Session 90).
+ * Independent SMS-specific key namespace — NEVER reuses or modifies the OTP
+ * limiter keys (otp_request / otp_request_ip / otp_verify stay untouched).
+ */
+export const SMS_SEND_LIMIT: RateLimitConfig = {
+  max: 10,
+  windowMs: 15 * 60 * 1000,
+};
+
+/** Admin template CRUD (create/update/delete): 30 per admin per 15 minutes (Session 90). */
+export const SMS_TEMPLATE_WRITE_LIMIT: RateLimitConfig = {
+  max: 30,
+  windowMs: 15 * 60 * 1000,
+};
+
 // ============================================================
 // Core
 // ============================================================

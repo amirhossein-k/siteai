@@ -260,6 +260,19 @@ export async function cleanupByPrefix(prefix: string): Promise<void> {
   // (the UI description field embeds it), so they are resolved directly.
   deletes.push(db.collection("expenses").deleteMany({ description: { $regex: re } }));
 
+  // Session 90 — business-SMS fixtures: templates carry the run prefix in
+  // their name; log rows reference the templates AND embed the prefix in
+  // free-form message text (both swept so no log outlives its template).
+  deletes.push(
+    db.collection("smstemplates").deleteMany({ name: { $regex: re } }),
+    db.collection("smslogs").deleteMany({
+      $or: [
+        { templateName: { $regex: re } },
+        { message: { $regex: re } },
+      ],
+    })
+  );
+
   // Session 82 — the accounting-init wizard upserts the GLOBAL `accounting`
   // config singleton when the journey converts a product to `sourcing:
   // purchased`. The E2E run overwrote/stamped it, so teardown restores the

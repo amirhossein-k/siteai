@@ -1,6 +1,41 @@
 # Tasks - فروشگاه من (Online Store)
 
-> **Docs gap:** this file last tracked Session 68. Sessions 69–87 lived in CHANGELOG.md / PROJECT_STATE.md only, and Sessions 85–87 were recorded nowhere until Session 88 reconstructed them from their commit messages. Sessions 88 and 89 are tracked below.
+> **Docs gap:** this file last tracked Session 68. Sessions 69–87 lived in CHANGELOG.md / PROJECT_STATE.md only, and Sessions 85–87 were recorded nowhere until Session 88 reconstructed them from their commit messages. Sessions 88, 89 and 90 are tracked below.
+
+---
+
+## ✅ Session 90 Phase 1 — Admin Business SMS Management: models, service, admin APIs/UI (مدیریت پیامک‌ها)
+
+### Scope + invariants
+- [x] Approved scope: Phase 1a (models + business-SMS service + unit tests) + 1b (admin APIs + verification script) + 1c (admin UI + E2E); **order-event automation, shipment/delivery hooks, tracking-code automation, bulk campaigns, scheduling, marketing SMS, order-PUT changes, OTP changes and `src/lib/sms.ts` changes are all explicitly OUT of scope**
+- [x] **OTP isolation contract honored** — `src/lib/sms.ts`, `src/lib/otp.ts`, `src/app/api/auth/otp/**`, `src/lib/auth.js`, `src/app/api/auth/password-reset/**`, `src/models/OtpCode.js`, OTP rate-limit keys/limits and every OTP test/verify suite remain byte-for-byte untouched (verified by `git diff` over each path + green OTP suites)
+- [x] **Production safety:** business SMS is mock-first; the real provider requires the explicit `SMS_BUSINESS_ENABLED=1` kill-switch + the existing `SMS_IR_API_KEY`; production business SMS disabled by default; **no environment variable changed or added**
+- [x] No schema migration/backfill — collections + indexes are lazily created by Mongoose
+
+### Phase 1a — models + service
+- [x] `SmsTemplate` model — unique name, business-type enum (order_confirmation/shipping_update/tracking_code/delivery_followup/custom), optional digits-only `providerTemplateId` (stored in MongoDB, not env vars), **server-derived** `variables`, body ≤500 with `{{variable}}` placeholders, isActive, createdBy/updatedBy, timestamps
+- [x] `SmsLog` model — canonical recipient, optional user/order/template refs, **templateName snapshot** (survives deletion), messageType, provider, providerMessageId, sent/failed status written AFTER the provider returns, controlled error info, rendered message, sentAt, actor, timestamps, query indexes; **intentionally NO TTL and NO dedupe key**
+- [x] `src/lib/sms-business.ts` — independent module (no `sendOtp` import, no OTP semantics, never reads `SMS_IR_TEMPLATE_ID`); mock provider (dev + `SMS_MOCK=1`, no network) · smsir `/v1/send/bulk` behind the kill-switch · controlled never-throw failures · injectable `env`/`fetchImpl` (sms.ts convention) · pure `renderTemplate()` (fail-closed missing vars, 500-char cap) + `extractTemplateVariables()`
+- [x] Additive rate-limit configs — `SMS_SEND_LIMIT` 10/admin/15min (`sms-send:`) + `SMS_TEMPLATE_WRITE_LIMIT` 30/admin/15min (`sms-template-write:`); existing OTP keys untouched
+- [x] Unit tests `tests/unit/sms-business.test.ts` (25) — provider resolution isolation, kill-switch semantics, pure rendering, mock lifecycle, controlled failures, **explicit OTP-contract isolation block**
+
+### Phase 1b — admin APIs + verification
+- [x] `/api/admin/sms/templates` GET/POST/PUT/DELETE — admin-only (`requireRoleOrError`), write verbs rate-limited; duplicate name 409; variables always server-derived; malformed id 400 / unknown 404
+- [x] `/api/admin/sms/send` POST — exactly one of template/message; server-side phone normalization + `^09\d{9}$`; template state from the DB (no body-injected pattern id); **inactive template → 400, no log row**; missing/extra variable 400; sender identity from the session token only; every attempt persisted to SmsLog; stable error codes only (no secrets)
+- [x] `/api/admin/sms/logs` GET — paginated (Session 76 helpers) with status/messageType/recipient/templateId filters
+- [x] `scripts/verify-sms.js` — **17/17 real-API PASS (×2)**, hermetic, self-cleaning, no real SMS; wired into `run-regression.js` → **51 suites**
+
+### Phase 1c — admin UI
+- [x] `/admin/sms` page — three tabs (قالب‌ها CRUD · گزارش ارسال filters+pagination · ارسال دستی template/free-form); sidebar «پیامک‌ها»; `use-admin-sms.ts` hooks; shared types in `src/types/index.ts`
+- [x] `tests/e2e/admin-sms.spec.ts` — **3/3 PASS** (UI create→send→log row; customer 403 server-side RBAC; inactive-template server refusal) + teardown sweep for both collections (0 leftovers)
+
+### Verification gates
+- [x] `git diff --check` clean · `npx tsc --noEmit` 0 errors · `npm run check` exit 0 (same 4 pre-existing warnings) · Vitest **669/669** · `verify-otp.js` **13/13** · `verify-password-reset.js` **22/22** · OTP E2E **9/9**
+
+### Deferred (NOT completed — future phases)
+- [ ] Phase 1d — automatic order-event SMS (order confirmation / shipping / tracking code / delivery follow-up) with order-event dedupe
+- [ ] Real SMS.ir business-pattern activation (register patterns in the sms.ir dashboard, set real `providerTemplateId` values)
+- [ ] Bulk campaigns + scheduling (explicitly out of Phase 1)
 
 ---
 
