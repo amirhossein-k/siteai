@@ -7,6 +7,7 @@ import { notifyOrderEvent } from "@/lib/notifications";
 import { restoreOrderStock } from "@/lib/inventory";
 import { reverseOrderSales } from "@/lib/product-sales";
 import { sanitizePlainText } from "@/lib/sanitize";
+import { buildSmsEventMarker, fireOrderSmsEvent } from "@/lib/sms-order-events";
 
 /**
  * POST /api/admin/orders/refund
@@ -72,6 +73,10 @@ export async function POST(req: NextRequest) {
           },
         },
         $push: {
+          // Session 91 — durable REFUND_COMPLETED marker committed in the SAME
+          // atomic claim that flips paid→refunded, so the SMS event survives a
+          // crash between the refund commit and its processing.
+          smsEvents: buildSmsEventMarker(orderId, "REFUND_COMPLETED"),
           statusHistory: {
             status: "refunded",
             at: new Date(),
@@ -125,6 +130,21 @@ export async function POST(req: NextRequest) {
       customer && typeof customer === "object" && customer._id
         ? String(customer._id)
         : null;
+
+    // Session 91 — REFUND_COMPLETED business SMS (best-effort, non-blocking).
+    // The durable marker was pushed in the SAME atomic refund claim above;
+    // this fires the send. Never throws; a failure cannot fail the refund.
+    // Phone/name come from the server-side populated customer record.
+    void fireOrderSmsEvent({
+      orderId,
+      event: "REFUND_COMPLETED",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      order: updatedOrder as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      phone: (customer as any)?.phone || "",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      customerName: (customer as any)?.name || "",
+    });
 
     if (customerId) {
       await notifyOrderEvent({

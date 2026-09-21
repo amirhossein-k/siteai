@@ -170,6 +170,37 @@ const OrderSchema = new mongoose.Schema(
         actor: String,
       },
     ],
+    // Session 91 — durable business-SMS event markers (additive outbox).
+    // Each marker is pushed in the SAME atomic write that commits the
+    // lifecycle transition (Order.create / the status-transition / refund
+    // findOneAndUpdate), so the fact that an SMS event must be processed is
+    // durable the instant the transition commits — there is no separate write
+    // to lose in a crash between transition and notification. This is NOT a
+    // general event bus: it tracks exactly the five order-event SMSes.
+    //
+    //   event    — "created"|"payment-success"|"shipped"|"delivered"|"refund-completed"
+    //   dedupeKey— "order:<id>:<event>" (mirrors SmsLog.dedupeKey)
+    //   status   — "pending": durable & waiting;   "sent"|"failed"|"unknown":
+    //              terminal mirror of the SmsLog row so a re-run never resends
+    //              a marker whose SmsLog already finalized.
+    //
+    // DURABILITY GUARANTEE: a pending marker survives a process crash (it
+    // committed with the transition). Automatic eventual processing after a
+    // crash is NOT guaranteed by this session — there is no worker/cron here.
+    // A future worker, scheduled job, or admin recovery can process pending
+    // markers idempotently (they check SmsLog.dedupeKey first).
+    smsEvents: [
+      {
+        event: { type: String, required: true },
+        dedupeKey: { type: String, default: "" },
+        status: {
+          type: String,
+          enum: ["pending", "sent", "failed", "unknown"],
+          default: "pending",
+        },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );

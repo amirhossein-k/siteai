@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
+import mongoose from "mongoose";
 import { dbConnect } from "@/lib/dbConnect";
 import { requireAuth, unauthorized, serverError } from "@/lib/auth-utils";
 import Order from "@/models/Order";
@@ -14,6 +15,7 @@ import InventoryMovement from "@/models/InventoryMovement";
 import { claimCouponForOrder, releaseCouponClaim } from "@/lib/coupons";
 import { getEffectivePrice } from "@/lib/product-pricing";
 import { rollbackUnavailablePaymentCheckout } from "@/lib/checkout-rollback";
+import { buildSmsEventMarker, fireOrderSmsEvent } from "@/lib/sms-order-events";
 
 interface CheckoutItem {
   id: string;
@@ -395,8 +397,14 @@ export async function POST(req: NextRequest) {
     // ============================================================
 
     let order;
+    // Session 91 — pre-generate the order _id so the durable ORDER_CREATED
+    // marker can be committed in the SAME create() (the marker needs the id,
+    // which is otherwise only known after create returns). Single-document
+    // create => marker is durable atomically with the order.
+    const preOrderId = new mongoose.Types.ObjectId();
     try {
       order = await Order.create({
+        _id: preOrderId,
         customer: token.id,
         items: orderItems,
         totalAmount,
@@ -421,6 +429,10 @@ export async function POST(req: NextRequest) {
             note: "سفارش ثبت شد",
           },
         ],
+        // Session 91 — durable ORDER_CREATED marker committed IN the same
+        // create() as the order itself, so the event survives any crash
+        // between order commit and SMS processing. Fire-and-forget below.
+        smsEvents: [buildSmsEventMarker(String(preOrderId), "ORDER_CREATED")],
       });
     } catch (err) {
       // Order creation failed — release the coupon claim (if any) and roll
@@ -539,6 +551,21 @@ export async function POST(req: NextRequest) {
       totalAmount,
       `${shippingAddress.fullName} - ${shippingAddress.address}`
     );
+
+    // Session 91 — ORDER_CREATED business SMS (best-effort, non-blocking).
+    // The durable marker was committed in Order.create above; this only fires
+    // the send. Any failure is isolated (never throws) and the order stays
+    // committed. Phone/name come from the server-side auth record, never the
+    // client. fire-and-forget so a slow provider never delays the redirect.
+    void fireOrderSmsEvent({
+      orderId: orderShortId,
+      event: "ORDER_CREATED",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      order: order as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      phone: (token as any)?.phone || "",
+      customerName,
+    });
 
     // Session 80 — in-app notification to every active admin (the Telegram
     // alert above stays; in-app is the source of truth for the admin bell).

@@ -11,6 +11,7 @@ import {
 import { restoreOrderStock } from "@/lib/inventory";
 import { releaseCouponUsage } from "@/lib/coupons";
 import { recordOrderSales } from "@/lib/product-sales";
+import { buildSmsEventMarker, fireOrderSmsEvent } from "@/lib/sms-order-events";
 
 /**
  * Best-effort notification dispatch that can NEVER affect the payment flow.
@@ -268,7 +269,11 @@ export async function GET(req: NextRequest) {
           "payment.cardPan": result.cardPan || "",
           "payment.paidAt": new Date(),
         },
+        // Session 91 — durable PAYMENT_SUCCESS marker committed in the SAME
+        // atomic claim that flips pending→paid, so the event survives a crash
+        // between the payment commit and SMS processing.
         $push: {
+          smsEvents: buildSmsEventMarker(orderId, "PAYMENT_SUCCESS"),
           statusHistory: {
             status: "processing",
             at: new Date(),
@@ -317,6 +322,31 @@ export async function GET(req: NextRequest) {
     // and never reach here), so soldCount accrues exactly once per paid order.
     // Fail-silent — a counter failure can never fail a committed payment.
     await recordOrderSales(orderId);
+
+    // Session 91 — PAYMENT_SUCCESS business SMS (best-effort, non-blocking).
+    // The durable marker was pushed in the SAME atomic claim above; this only
+    // fires the send. Never throws; a failure cannot fail the payment. Phone
+    // comes from the server-side customer record (auth source of truth).
+    void (async () => {
+      try {
+        const custPhone = custId
+          ? await User.findById(custId).select("phone").lean()
+          : null;
+        await fireOrderSmsEvent({
+          orderId,
+          event: "PAYMENT_SUCCESS",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          order: successClaimed as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          phone: (custPhone as any)?.phone || "",
+          customerName: "",
+        });
+      } catch (err) {
+        // Isolated — never fail the payment redirect.
+        // eslint-disable-next-line no-console
+        console.error("[Payment] PAYMENT_SUCCESS SMS failed (non-blocking):", err);
+      }
+    })();
 
     if (custId) {
       await safeNotifyOrderEvent({

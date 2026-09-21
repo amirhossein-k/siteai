@@ -12,6 +12,7 @@ import { restoreOrderStock } from "@/lib/inventory";
 import { releaseCouponUsage } from "@/lib/coupons";
 import { reverseOrderSales } from "@/lib/product-sales";
 import { sanitizePlainText } from "@/lib/sanitize";
+import { buildSmsEventMarker, fireOrderSmsEvent } from "@/lib/sms-order-events";
 import {
   parsePaginationParams,
   buildPaginatedResponse,
@@ -224,6 +225,14 @@ export async function PUT(req: NextRequest) {
         shippingSet["shipping.deliveredAt"] = new Date();
       }
       Object.assign(update.$set as Record<string, unknown>, shippingSet);
+
+      // Session 91 — durable ORDER_SHIPPED / ORDER_DELIVERED marker committed
+      // IN the same atomic transition write that flips the status, so the SMS
+      // event survives a crash between the transition and its processing.
+      (update.$push as { smsEvents: unknown }).smsEvents = buildSmsEventMarker(
+        id,
+        status === "shipped" ? "ORDER_SHIPPED" : "ORDER_DELIVERED"
+      );
     }
 
     // Session 57 — atomic claim on the CURRENT status (+ payment state for
@@ -244,6 +253,33 @@ export async function PUT(req: NextRequest) {
         { error: "وضعیت سفارش همزمان تغییر کرده است؛ لطفاً دوباره تلاش کنید" },
         { status: 400 }
       );
+    }
+
+    // Session 91 — ORDER_SHIPPED / ORDER_DELIVERED business SMS (best-effort,
+    // non-blocking). The durable marker was pushed in the SAME atomic claim
+    // above; this fires the send. Never throws; a failure cannot fail the
+    // status transition. Phone from the server-side customer record.
+    if (status === "shipped" || status === "delivered") {
+      void (async () => {
+        try {
+          const custPhone = order.customer
+            ? await User.findById(order.customer).select("phone").lean()
+            : null;
+          await fireOrderSmsEvent({
+            orderId: id,
+            event: status === "shipped" ? "ORDER_SHIPPED" : "ORDER_DELIVERED",
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            order: claimed as any,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            phone: (custPhone as any)?.phone || "",
+            customerName: "",
+          });
+        } catch (err) {
+          // Isolated — never fail the transition.
+          // eslint-disable-next-line no-console
+          console.error("[AdminOrders] order SMS failed (non-blocking):", err);
+        }
+      })();
     }
 
     // When cancelling, restore stock for all items (if not already restored)

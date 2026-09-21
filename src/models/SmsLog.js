@@ -16,9 +16,21 @@ import mongoose from "mongoose";
  *     semantics — plaintext OTP codes are never persisted here (OTP codes
  *     live only in src/lib/otp.ts's hashed OtpCode flow).
  *   - No TTL index: the log is an audit record and is never auto-deleted.
- *   - No unique dedupe key in Phase 1: sends are explicit manual admin
- *     actions, so duplicates are intentional retries, not bugs. Order-event
- *     dedupe (if ever needed) belongs to the later automation phase.
+ *   - Phase 1 (manual sends) had no unique dedupe key: explicit manual admin
+ *     actions treat duplicates as intentional retries, not bugs.
+ *
+ * SESSION 91 — order-event automation additions (additive, backward compatible):
+ *   - `dedupeKey`: deterministic `order:<orderId>:<event>` identity set ONLY
+ *     on order-event rows. Manual sends leave it null. A unique partial index
+ *     on {dedupeKey} (where it is a string) is the atomic insertion gate for
+ *     order-event sends — at most one row per logical event.
+ *   - `status` enum extended with `pending` / `sending` / `unknown` (the
+ *     manual-send path continues to write only `sent` / `failed`).
+ *   - `claimedAt` / `attemptCount` are diagnostics for the claim→send→finalize
+ *     state machine (see src/lib/sms-order-events.ts). `claimedAt` is for
+ *     operator visibility of stuck `sending` rows — it is NEVER used for
+ *     automatic stale-claim recovery (automatic recovery could create a
+ *     duplicate SMS because the provider has no idempotency key).
  */
 const SmsLogSchema = new mongoose.Schema(
   {
@@ -67,6 +79,32 @@ const SmsLogSchema = new mongoose.Schema(
       required: true,
       default: "custom",
     },
+    // Session 91 — deterministic order-event identity ("order:<id>:<event>").
+    // NULL on manual/admin sends (they keep intentional-retry semantics). Set
+    // ONLY on order-event automation rows so the unique partial index below
+    // can guarantee at most one row per logical event.
+    dedupeKey: {
+      type: String,
+      default: null,
+      trim: true,
+      maxlength: 160,
+    },
+    // Session 91 — extended order-event state machine (manual sends keep the
+    // Phase-1 "sent"/"failed" final outcomes). pending = claimed+templated but
+    // not yet sending; sending = in-flight provider call (or crashed mid-call);
+    // unknown = network timeout/uncertain outcome (NOT auto-retryable).
+    // Allow override only when the base enum is present so manual rows are
+    // untouched; the order-event service drives the transitions.
+    // (enum values below kept in sync with the service)
+    attemptCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    claimedAt: {
+      type: Date,
+      default: null,
+    },
     // Provider that attempted delivery ("mock" in dev/CI, "smsir" later,
     // "none" when unconfigured → row still recorded with status failed).
     provider: {
@@ -80,10 +118,11 @@ const SmsLogSchema = new mongoose.Schema(
       default: "",
       maxlength: 64,
     },
-    // Final outcome of the attempt.
+    // Final outcome of the attempt, or (Session 91 order-event rows) an
+    // intermediate state of the claim→send→finalize machine.
     status: {
       type: String,
-      enum: ["sent", "failed"],
+      enum: ["sent", "failed", "pending", "sending", "unknown"],
       required: true,
     },
     // Controlled error code from the business-SMS service
@@ -127,6 +166,14 @@ SmsLogSchema.index({ status: 1, createdAt: -1 });
 SmsLogSchema.index({ messageType: 1, createdAt: -1 });
 SmsLogSchema.index({ recipient: 1, createdAt: -1 });
 SmsLogSchema.index({ template: 1 });
+// Session 91 — atomic insertion gate for order-event rows. Partial: only rows
+// that HAVE a dedupeKey (order-event rows) are constrained to be unique;
+// manual-send rows (dedupeKey null) are excluded, so no existing-data
+// migration is ever needed and the index builds cleanly.
+SmsLogSchema.index(
+  { dedupeKey: 1 },
+  { unique: true, partialFilterExpression: { dedupeKey: { $type: "string" } } }
+);
 
 export default mongoose.models.SmsLog ||
   mongoose.model("SmsLog", SmsLogSchema);
