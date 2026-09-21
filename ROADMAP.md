@@ -4,6 +4,13 @@
 
 ## ✅ Completed Milestones
 
+### Business SMS Order-Event Automation (Session 91)
+- [x] **Five lifecycle events automated** — ORDER_CREATED (`POST /api/checkout`) · PAYMENT_SUCCESS (`GET /api/payment/verify`, atomic pending→paid) · ORDER_SHIPPED + ORDER_DELIVERED (admin order PUT atomic status claims) · REFUND_COMPLETED (`POST /api/admin/orders/refund`, atomic paid→refunded) — templates resolved by application-level NAME (`order-created`/`payment-success`/`order-shipped`/`order-delivered`/`refund-completed`)
+- [x] **Durable event markers + idempotent processing** — additive `Order.smsEvents` markers pushed in the SAME atomic write as each transition (pre-generated `_id` in `Order.create`; `$push` inside the payment/status/refund claims); deterministic dedupe keys `order:<orderId>:<suffix>`; unique PARTIAL index on `SmsLog.dedupeKey` as the insert gate; new `src/lib/sms-order-events.ts` claim→send→finalize processor with single-document CAS (no multi-document transactions, no worker/cron/queue)
+- [x] **Crash-safety semantics** — pending marker + `sent` SmsLog ⇒ zero provider calls + marker repaired to `sent`; no automatic stale-`sending` reclaim; `unknown` terminal for automation (never auto-retried); disabled/unconfigured provider and missing/inactive template leave the marker pending with no provider call; `fireOrderSmsEvent` never throws so SMS failures cannot break order/payment/shipping/refund; phones/names always server-derived; provider calls strictly behind `sendBusinessSms`
+- [x] **OTP/auth/payment/stock/refund/accounting/FIFO untouched** — all 8 OTP-protected files + rate-limiter byte-identical; lifecycle routes gained only the marker push and the post-commit fire
+- [x] **Verified & shipped** — `verify-sms-order-events.js` **9/9** · unit **18/18** · Vitest **687/687** · tsc 0 · check exit 0 · **CI `35613757314` 4/4 jobs PASS** · **Deploy `35614725034` PASS** · production smoke PASS (production = `4041927`)
+
 ### Admin Business SMS (Session 90 Phase 1)
 - [x] **Template management** — `SmsTemplate` model (unique name, business-type enum, optional digits-only `providerTemplateId` stored in MongoDB — not env vars, **server-derived** `variables`, body ≤500 with `{{var}}` placeholders, isActive, audit refs) + admin CRUD at `/api/admin/sms/templates` (duplicate 409, malformed 400/unknown 404) + the قالب‌ها tab on the new `/admin/sms` page
 - [x] **Manual sending** — `/api/admin/sms/send`: template-based (rendered server-side, fail-closed missing/extra variable validation, **inactive template refused**) or free-form (sanitized, ≤500); strict server-side phone normalization; sender identity always the authenticated admin; every attempt audited
@@ -12,7 +19,7 @@
 - [x] **Mock-first business provider abstraction** — independent `src/lib/sms-business.ts` (no `sendOtp` import, never reads the OTP-specific `SMS_IR_TEMPLATE_ID`): mock (dev + `SMS_MOCK=1`, no network) → smsir `/v1/send/bulk` → none; pure `renderTemplate()`; injectable fetch; controlled never-throw failures
 - [x] **Production kill-switch** — business SMS disabled by default: the real provider activates only when `SMS_BUSINESS_ENABLED=1` AND `SMS_IR_API_KEY` are set; with the current production env every send returns controlled `SMS_BUSINESS_DISABLED` (unit-pinned); no env var changed anywhere
 - [x] **OTP isolation** — `sms.ts`, `otp.ts`, all OTP routes, `auth.js`, password-reset, `OtpCode` and every OTP test/verify suite byte-for-byte untouched; independent `sms-send:` / `sms-template-write:` rate-limit namespaces (10 and 30 per admin per 15min) leave the OTP limiter keys alone; `verify-sms.js` **17/17 ×2** (51-suite regression) · Vitest **669/669** · admin-sms E2E **3/3** · OTP suites green after the change (13/13 · 22/22 · E2E 9/9)
-- [ ] **Order-event automation (Phase 1d)** — automatic order confirmation / shipping / tracking-code / delivery-follow-up SMS with order-event dedupe (NOT implemented)
+- [x] **Order-event automation (Phase 1d — delivered by Session 91)** — automatic order confirmation / payment-success / shipping / delivery / refund-completed SMS with order-event dedupe (see the Session 91 milestone above; the tracking-code variable rides the shipped template's `trackingCode` server-derived variable)
 - [ ] **Real SMS.ir business-pattern activation** — register business patterns in the sms.ir dashboard and set real `providerTemplateId` values (NOT implemented)
 - [ ] **Bulk campaigns + scheduling** — explicitly out of Phase 1 (NOT implemented)
 

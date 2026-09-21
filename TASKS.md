@@ -1,6 +1,35 @@
 # Tasks - فروشگاه من (Online Store)
 
-> **Docs gap:** this file last tracked Session 68. Sessions 69–87 lived in CHANGELOG.md / PROJECT_STATE.md only, and Sessions 85–87 were recorded nowhere until Session 88 reconstructed them from their commit messages. Sessions 88, 89 and 90 are tracked below.
+> **Docs gap:** this file last tracked Session 68. Sessions 69–87 lived in CHANGELOG.md / PROJECT_STATE.md only, and Sessions 85–87 were recorded nowhere until Session 88 reconstructed them from their commit messages. Sessions 88, 89, 90 and 91 are tracked below.
+
+---
+
+## ✅ Session 91 — Business SMS Order-Event Automation: durable markers + idempotent processor (پیامک رویدادهای سفارش)
+
+### Scope + invariants
+- [x] The five real lifecycle events wired to business SMS: **ORDER_CREATED** (`POST /api/checkout`), **PAYMENT_SUCCESS** (`GET /api/payment/verify`, atomic pending→paid), **ORDER_SHIPPED** + **ORDER_DELIVERED** (admin order PUT, atomic status claims + shipping metadata), **REFUND_COMPLETED** (`POST /api/admin/orders/refund`, atomic paid→refunded)
+- [x] **Lifecycle isolation honored** — payment, stock, refund, shipping, order-status, coupon, auth and OTP semantics byte-identical; the four routes only gained the marker `$push` (inside the existing atomic claim) and a post-commit fire-and-forget; all 8 OTP-protected files + OTP tests/verify suites + rate-limiter unchanged
+- [x] **No multi-document MongoDB transactions, no background worker/queue/cron** — standalone-MongoDB-safe; `scripts/verify-sms-order-events.js` is a test utility, not a production reconciler
+- [x] No schema migration/backfill — the embedded marker array + partial index build lazily
+
+### Durability + idempotency
+- [x] Durable **`Order.smsEvents`** markers (additive: event/dedupeKey/status/createdAt) pushed in the SAME atomic write as each transition (pre-generated `_id` in `Order.create`; `$push` inside the pending→paid / status-claim / paid→refunded claims)
+- [x] Deterministic dedupe keys `order:<orderId>:created|payment-success|shipped|delivered|refund-completed`; **unique PARTIAL index on `SmsLog.dedupeKey`** (string only) as the atomic insert gate; manual sends keep `dedupeKey: null`
+- [x] New **`src/lib/sms-order-events.ts`** claim→send→finalize processor — SmsLog status extended `pending → sending → sent|failed|unknown` (+ attemptCount/claimedAt); single-document CAS send gate (losers' filters no longer match → no second provider call) + CAS finalize by the claim owner
+- [x] **Sent-row repair** — pending Order marker + `sent` SmsLog ⇒ ZERO provider calls, marker repaired to `sent`, idempotent on repeated processing
+- [x] **No automatic stale-`sending` reclaim** (no idempotency key at the provider — a reclaim could double-send); **`unknown` (network/ambiguous) terminal for automation**, never auto-retried (explicit manual CAS retry only)
+- [x] Provider/template safety — confirmed rejection → `failed`; network/timeout → `unknown`; disabled/unconfigured provider and missing/inactive/empty-body template → no provider call, durable marker stays pending; all provider calls behind `sendBusinessSms`; `providerTemplateId` only from the stored template document; templates resolved by application-level NAME
+- [x] `fireOrderSmsEvent()` never throws; phones/names always server-derived (auth token / customer record), never client input
+
+### Verification + shipping
+- [x] `scripts/verify-sms-order-events.js` — **9/9 real-API PASS** (template CRUD for the five names; real checkout writes the ORDER_CREATED marker atomically; deterministic distinct keys; unique-index E11000; sent-row singularity; failed/unknown persisted; otpcodes unchanged; self-cleanup)
+- [x] `tests/unit/sms-order-events.test.ts` — **18/18** (concurrent first-time triggers → exactly one send; concurrent retries → one CAS winner; repeated processing → zero resends; sent-repair; no stale-`sending` reclaim; API_ERROR→failed · NETWORK_ERROR→unknown; disabled provider; missing/inactive template; no-phone; failure containment)
+- [x] Gates: `git diff --check` clean · tsc 0 · `npm run check` exit 0 (same 4 pre-existing warnings) · Vitest **687/687**
+- [x] Shipped: commit `4041927` · **CI run `35613757314` — Unit/Build/Static/E2E all PASS** · **Deploy run `35614725034` PASS** · production smoke (200 / `/api/health` 200 `db:up` / PM2 online / no Session 91 runtime errors) — production runs exactly `4041927`
+
+### Outstanding (NOT part of Session 91)
+- [ ] 22 Dependabot vulnerability findings on the default branch (2 critical · 14 high · 6 moderate) — separate security session
+- [ ] Stale `e2e_1789952655421` Playwright fixture rows in the shared local dev DB (deterministic local accounting-excel FIFO-layer failure; CI unaffected) — cleanup deferred
 
 ---
 
