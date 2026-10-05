@@ -11,9 +11,12 @@
  *   5. Expense ledger → operating expenses + net profit (gross profit − expenses)
  *   6. The 17-sheet accounting workbook export:
  *      - all sheets present with Persian names
- *      - بهای تمام‌شده sheet: Σ COGS rows = P&L COGS
- *      - سود و زیان sheet: net sales − COGS = gross profit,
+ *      - بهای تمام‌شده sheet: Σ COGS rows = P&L COGS (+ refund reversals)
+ *      - سود و زیان sheet: net = gross + discounts + refunds,
+ *        grossProfit = net + COGS + refunded COGS,
  *        gross profit − operating expenses = net profit
+ *      - refunding the FIFO sale adds a NEGATIVE reversal row (fifoUnitCost
+ *        basis), P&L refund rows, and restores the FIFO layers unchanged
  *      - لایه‌های FIFO sheet: Σ remaining × unitCost = inventory value
  *      - خریدها/اقلام خرید totals reconcile with the purchase docs
  *      - هزینه‌ها sheet: voided rows visible but EXCLUDED from totals
@@ -197,6 +200,10 @@ async function checkout(jar, items) {
 
   let adminJar, supplierJar, customerJar;
   const orderIds = [];
+  // Operating-expenses total captured BEFORE TEST 10 voids the suite's own
+  // expense (the shared dev DB holds foreign non-void expenses, so TEST 10
+  // asserts the DELTA, not an absolute zero).
+  let opExBeforeVoid = null;
 
   await testAsync("login admin/supplier/customer", async () => {
     adminJar = await login(ADMIN_PHONE, ADMIN_PASS);
@@ -369,26 +376,36 @@ async function checkout(jar, items) {
       pnlByLabel[label] = typeof amt === "number" ? amt : null;
     });
     const pnlCogs = pnlByLabel["بهای تمام‌شده (COGS)"] ?? 0;
-    assert(Math.abs(cogsSum - Math.abs(pnlCogs)) <= 1, `Σ COGS rows (${cogsSum}) = P&L COGS (${Math.abs(pnlCogs)})`);    // NOTE: the P&L sheet stores discounts and COGS as NEGATIVE amounts
-    // (matching the P&L presentation), so with signed values:
-    //   net = gross + productDiscount + couponDiscount
-    //   grossProfit = net + cogs
+    const pnlRefunds = pnlByLabel["بازپرداخت‌ها"] ?? 0;
+    const pnlRefundsCogs = pnlByLabel["بازگشت بهای تمام‌شده"] ?? 0;
+    // The بهای تمام‌شده sheet is event-based (sale rows + negative refund
+    // reversal rows), so Σ sheet rows = |P&L COGS + refunded COGS| (signed).
+    assert(Math.abs(cogsSum - Math.abs(pnlCogs + pnlRefundsCogs)) <= 1, `Σ COGS rows (${cogsSum}) = |P&L COGS (${pnlCogs}) + refundsCogs (${pnlRefundsCogs})|`);
+    // NOTE: the P&L sheet stores discounts, COGS and the revenue reversal as
+    // NEGATIVE amounts (matching the P&L presentation); refunded COGS is an
+    // explicit positive add-back. With signed values:
+    //   net = gross + productDiscount + couponDiscount + refunds
+    //   grossProfit = net + cogs + refundsCogs
     //   netProfit = grossProfit + operatingExpenses
     const gross = pnlByLabel["فروش ناخالص"] ?? 0;
     const net = pnlByLabel["فروش خالص"] ?? 0;
     const grossProfit = pnlByLabel["سود ناخالص"] ?? 0;
-    assert(Math.abs(net - (gross + (pnlByLabel["تخفیف محصول"] ?? 0) + (pnlByLabel["تخفیف کوپن"] ?? 0))) <= 1, `net (${net}) = gross (${gross}) + discounts (${(pnlByLabel["تخفیف محصول"] ?? 0) + (pnlByLabel["تخفیف کوپن"] ?? 0)})`);
-    assert(Math.abs(grossProfit - (net + pnlCogs)) <= 1, `gross profit (${grossProfit}) = net (${net}) + COGS (${pnlCogs})`);
+    assert(Math.abs(net - (gross + (pnlByLabel["تخفیف محصول"] ?? 0) + (pnlByLabel["تخفیف کوپن"] ?? 0) + pnlRefunds)) <= 1, `net (${net}) = gross (${gross}) + discounts + refunds (${pnlRefunds})`);
+    assert(Math.abs(grossProfit - (net + pnlCogs + pnlRefundsCogs)) <= 1, `gross profit (${grossProfit}) = net (${net}) + COGS (${pnlCogs}) + refunded COGS (${pnlRefundsCogs})`);
     const expenses = pnlByLabel["هزینه‌های عملیاتی"] ?? 0;
     const netProfit = pnlByLabel["سود خالص"] ?? 0;
     assert(Math.abs(netProfit - (grossProfit + expenses)) <= 1, `net profit (${netProfit}) = gross profit (${grossProfit}) + operating expenses (${expenses})`);
 
-    // لایه‌های FIFO — Σ remaining × unitCost = inventory value (skip totals row)
+    // لایه‌های FIFO — Σ remaining × unitCost = inventory value (skip totals row).
+    // Scoped to THIS suite's product: the shared dev DB carries stale
+    // fixtures (e.g. an old e2e_* product with live cost layers) that must
+    // not be deleted — assert our own layer, not the global sum.
     const layersSheet = wb.getWorksheet("لایه‌های FIFO");
     let layerValue = 0, layerRemaining = 0;
     layersSheet.eachRow((row, n) => {
       if (n === 1) return;
       if (row.getCell(1).value === null || row.getCell(1).value === undefined || row.getCell(1).value === "") return; // totals row
+      if (!String(row.getCell(1).value).includes(PREFIX)) return; // foreign fixture
       const rem = row.getCell(8).value;
       const uc = row.getCell(9).value;
       if (typeof rem === "number" && typeof uc === "number") layerValue += rem * uc;
@@ -435,6 +452,108 @@ async function checkout(jar, items) {
     assert(sawExpense, "expense row present");
   });
 
+  // ---- TEST 7b: refund the FIFO sale → explicit refund reversal rows ----
+  await testAsync("refund FIFO sale → COGS reversal row −400000, P&L refund rows, layers restored", async () => {
+    // The refund API only accepts payment.status=paid (manual checkout leaves
+    // the fixture unpaid — same convention as verify-fifo TEST 15).
+    await d.collection("orders").updateOne(
+      { _id: new mongoose.Types.ObjectId(soldOrderId) },
+      { $set: { "payment.status": "paid" } }
+    );
+    const r = await http(adminJar, "POST", "/api/admin/orders/refund", { orderId: soldOrderId, reason: PREFIX + "refund" });
+    assert(r.status === 200, `refund → ${r.status}: ${JSON.stringify(r.json)}`);
+
+    const re = await http(adminJar, "GET", "/api/admin/reports/accounting/export?preset=year", undefined, { raw: true });
+    assert(re.status === 200, `re-export → ${re.status}`);
+    const buf = Buffer.from(await re.raw.arrayBuffer());
+    const wb3 = new ExcelJS.Workbook();
+    await wb3.xlsx.load(buf);
+
+    // بهای تمام‌شده sheet: original SALE row kept (audit) + a NEGATIVE
+    // reversal row priced at the OrderItem FIFO snapshot (100000 × 4).
+    const cogsSheet = wb3.getWorksheet("بهای تمام‌شده");
+    let saleRow = null, reversal = null;
+    cogsSheet.eachRow((row, n) => {
+      if (n === 1) return;
+      const ref = String(row.getCell(10).value || ""); // sourceRef column
+      if (ref.startsWith(`sale-${soldOrderId}`)) saleRow = row;
+      if (ref.startsWith(`refund-${soldOrderId}`)) reversal = row;
+    });
+    assert(saleRow, "original sale row kept (event ledger)");
+    assert(reversal, "refund reversal row present");
+    assert(reversal.getCell(6).value === -4, `reversal qty −4, got ${reversal.getCell(6).value}`);
+    assert(reversal.getCell(8).value === -400000, `reversal cogs −400000 (fifoUnitCost 100000×4), got ${reversal.getCell(8).value}`);
+    assert(String(reversal.getCell(9).value || "").includes("FIFO"), "reversal keeps the FIFO cost-source label (rule 7)");
+
+    // سود و زیان sheet: explicit refund rows + additive reconciliation (rule 6)
+    const pnlSheet = wb3.getWorksheet("سود و زیان");
+    const pl = {};
+    pnlSheet.eachRow((row, n) => {
+      if (n === 1) return;
+      const label = String(row.getCell(1).value);
+      const amt = row.getCell(2).value;
+      pl[label] = typeof amt === "number" ? amt : null;
+    });
+    const refunds = pl["بازپرداخت‌ها"] ?? 0;
+    const refundsCogs = pl["بازگشت بهای تمام‌شده"] ?? 0;
+    const gross = pl["فروش ناخالص"] ?? 0;
+    const net = pl["فروش خالص"] ?? 0;
+    const cogs = pl["بهای تمام‌شده (COGS)"] ?? 0;
+    const gp = pl["سود ناخالص"] ?? 0;
+    const opex = pl["هزینه‌های عملیاتی"] ?? 0;
+    const np = pl["سود خالص"] ?? 0;
+    assert(refunds === -800000, `P&L refunds −800000 (4×200000), got ${refunds}`);
+    assert(refundsCogs === 400000, `P&L refundsCogs +400000, got ${refundsCogs}`);
+    assert(Math.abs(net - (gross + (pl["تخفیف محصول"] ?? 0) + (pl["تخفیف کوپن"] ?? 0) + refunds)) <= 1, "net = gross + discounts + refunds");
+    assert(Math.abs(gp - (net + cogs + refundsCogs)) <= 1, "grossProfit = net + cogs + refundsCogs");
+    assert(Math.abs(np - (gp + opex)) <= 1, "netProfit = grossProfit + operatingExpenses");
+
+    // Σ COGS sheet rows (sales + negative reversals) reconciles with the P&L
+    let cogsSum2 = 0;
+    cogsSheet.eachRow((row, n) => {
+      if (n === 1) return;
+      if (row.getCell(1).value === null || row.getCell(1).value === undefined || row.getCell(1).value === "") return;
+      const v = row.getCell(8).value;
+      if (typeof v === "number") cogsSum2 += v;
+    });
+    assert(Math.abs(cogsSum2 - Math.abs(cogs + refundsCogs)) <= 1, `Σ COGS rows (${cogsSum2}) = |P&L cogs + refundsCogs| (${cogs + refundsCogs})`);
+
+    // Inventory behavior UNCHANGED (rule 8): refund restores the FIFO layer
+    // at the original historical cost (100000 × 10 = 1,000,000).
+    // Scoped to this suite's product (the shared dev DB holds stale foreign
+    // fixtures with live layers — see the TEST 8 note).
+    const layersSheet = wb3.getWorksheet("لایه‌های FIFO");
+    let layerQty = 0, layerValue = 0;
+    layersSheet.eachRow((row, n) => {
+      if (n === 1) return;
+      const name = String(row.getCell(1).value || "");
+      if (!name.includes(PREFIX)) return; // foreign fixture
+      const rem = row.getCell(8).value;
+      const uc = row.getCell(9).value;
+      if (typeof rem === "number" && typeof uc === "number") {
+        layerQty += rem;
+        layerValue += rem * uc;
+      }
+    });
+    assert(layerQty === 10, `layers restored to 10, got ${layerQty}`);
+    assert(layerValue === 1000000, `layer value restored to 1,000,000, got ${layerValue}`);
+
+    // خلاصه حسابداری: both explicit refund rows rendered (rule 5)
+    const acct3 = wb3.getWorksheet("خلاصه حسابداری");
+    let sawRefunds = false, sawRefundsCogs = false;
+    acct3.eachRow((row) => {
+      const label = String(row.getCell(1).value || "");
+      if (label.includes("بازپرداخت")) sawRefunds = true;
+      if (label.includes("بازگشت بهای تمام‌شده")) sawRefundsCogs = true;
+      if (label.includes("هزینه‌های عملیاتی")) {
+        const v = row.getCell(2).value;
+        opExBeforeVoid = typeof v === "number" ? v : null;
+      }
+    });
+    assert(sawRefunds && sawRefundsCogs, "خلاصه حسابداری carries both refund rows");
+    assert(opExBeforeVoid !== null, "captured operating expenses before the void");
+  });
+
   // ---- TEST 8: voided expense excluded from totals but retained for audit ----
   await testAsync("void an expense → خلاصه حسابداری operating expenses excludes it, row stays visible", async () => {
     const v = await http(adminJar, "POST", `/api/admin/expenses/${expenseId}/void`, { voidReason: PREFIX + "باطل تست" });
@@ -456,7 +575,16 @@ async function checkout(jar, items) {
         operatingExpenses = row.getCell(2).value;
       }
     });
-    assert(operatingExpenses === 0 || operatingExpenses === null, `operating expenses exclude voided (${operatingExpenses})`);
+    // The suite's OWN expense must drop out of the total. The absolute value
+    // is NOT 0 — the shared dev DB holds foreign non-void expenses (incl. the
+    // stale e2e_* fixture + a real business expense that must not be touched)
+    // — so assert the exact DELTA instead of an absolute zero.
+    const after = typeof operatingExpenses === "number" ? operatingExpenses : 0;
+    assert(opExBeforeVoid !== null, "opEx baseline captured in TEST 9");
+    assert(
+      opExBeforeVoid - after === expenseAmount,
+      `own expense (${expenseAmount}) dropped out: ${opExBeforeVoid} → ${after}`
+    );
   });
 
   // ---- TEST 9: export rate limit → 429 ----

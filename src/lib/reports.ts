@@ -34,6 +34,13 @@
  *    (voidReason required, rows never deleted) and excluded from totals.
  *    Nothing is estimated — a gateway fee, for example, is only counted when
  *    the admin records it as an expense (category gateway_fees).
+ *  - Refund treatment (P&L fix): refunds are recognized in the window where
+ *    they were ISSUED (refund.refundedAt), not retroactively in the order's
+ *    sale window. Both the refunded revenue AND the refunded COGS
+ *    (fifoUnitCost ?? supplierPrice snapshot basis) are reversed, so a
+ *    sale + refund inside one window nets to zero while a cross-window refund
+ *    lands entirely in the refund period. The reversal is shown explicitly:
+ *    بازپرداخت‌ها (revenue) and بازگشت بهای تمام‌شده (COGS) rows.
  */
 
 import mongoose from "mongoose";
@@ -62,6 +69,7 @@ import {
 import {
   buildLineMatch,
   buildOrderMatch,
+  buildRefundMatch,
   escapeRegExp,
   windowDates,
 } from "@/lib/report-matches";
@@ -129,8 +137,33 @@ async function computeInventoryValue() {
   return { inventoryValue: roundToman(cost), inventoryRetail: roundToman(retail) };
 }
 
-async function computeSummary(match: Record<string, unknown>): Promise<ReportSummary> {
-  const [orderAgg, lineAgg] = await Promise.all([
+/**
+ * Order-level summary shared by the dashboard, P&L and every report envelope.
+ *
+ * Refund treatment (refund-treatment fix): `match` scopes the SALES side to
+ * orders CREATED in the window; `refundMatch` (buildRefundMatch) scopes the
+ * REFUND side to refunds ISSUED in the window (refund.refundedAt) regardless
+ * of order creation date. Refund reversals are applied as EXPLICIT terms:
+ *
+ *   netSales    = Σ totalAmount(sales window) − refundsRevenue(refund window)
+ *   cogs        = Σ line COGS(sales window)                     (stays gross)
+ *   grossProfit = netSales − cogs + refundsCogs
+ *
+ * so a sale + refund inside the same window nets to zero profit, a
+ * cross-window refund lands entirely in the refund period, and previously
+ * published sale periods never change (no double-count). `refunds`/
+ * `refundsCogs` carry the reversal amounts for the explicit P&L rows.
+ * `applyRefunds: false` keeps the raw figures — used by the operational
+ * reports (orders/payments/coupons/customers/inventory) whose lens is the
+ * ORDERS in the window, and by the refunds report whose lens is the refunded
+ * orders themselves.
+ */
+async function computeSummary(
+  match: Record<string, unknown>,
+  refundMatch: Record<string, unknown>,
+  { applyRefunds = true }: { applyRefunds?: boolean } = {}
+): Promise<ReportSummary> {
+  const [orderAgg, lineAgg, refundOrderAgg, refundLineAgg] = await Promise.all([
     Order.aggregate([
       { $match: match },
       {
@@ -139,11 +172,6 @@ async function computeSummary(match: Record<string, unknown>): Promise<ReportSum
           orders: { $sum: 1 },
           netSales: { $sum: "$totalAmount" },
           couponDiscount: { $sum: { $ifNull: ["$discount.amount", 0] } },
-          refunds: {
-            $sum: {
-              $cond: [{ $eq: ["$payment.status", "refunded"] }, "$totalAmount", 0],
-            },
-          },
           refundedOrders: {
             $sum: {
               $cond: [{ $eq: ["$payment.status", "refunded"] }, 1, 0],
@@ -213,13 +241,60 @@ async function computeSummary(match: Record<string, unknown>): Promise<ReportSum
         },
       },
     ]),
+    // REFUND side — refunds ISSUED inside the window (refund.refundedAt).
+    // These may belong to orders created in an EARLIER window: the accrual
+    // reversal lands in the refund period, never retroactively.
+    Order.aggregate([
+      { $match: refundMatch },
+      {
+        $group: {
+          _id: null,
+          refunds: { $sum: "$totalAmount" },
+        },
+      },
+    ]),
+    Order.aggregate([
+      { $match: refundMatch },
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: null,
+          // Refunded COGS always uses the item's historical cost snapshot
+          // (fifoUnitCost for post-cutover purchased, else supplierPrice) —
+          // never the current Product.supplierPrice.
+          refundsCogs: {
+            $sum: {
+              $multiply: [
+                {
+                  $ifNull: [
+                    { $ifNull: ["$items.fifoUnitCost", "$items.supplierPrice"] },
+                    0,
+                  ],
+                },
+                "$items.quantity",
+              ],
+            },
+          },
+        },
+      },
+    ]),
   ]);
 
   const o = orderAgg[0] ?? {};
   const l = lineAgg[0] ?? {};
-  const netSales = roundToman(o.netSales ?? 0);
+  const r = refundOrderAgg[0] ?? {};
+  const rl = refundLineAgg[0] ?? {};
+  const refundsRevenue = roundToman(r.refunds ?? 0);
+  const refundsCogs = roundToman(rl.refundsCogs ?? 0);
+  const netSales = roundToman(
+    applyRefunds ? (o.netSales ?? 0) - (r.refunds ?? 0) : (o.netSales ?? 0)
+  );
+  // COGS stays GROSS (sales window) — the refund COGS is reversed explicitly
+  // via +refundsCogs below, keeping the P&L/waterfall fully additive:
+  //   netSales − grossCOGS + refundedCOGS = grossProfit
   const cogs = roundToman(l.cogs ?? 0);
-  const grossProfit = netSales - cogs;
+  const grossProfit =
+    netSales - cogs + (applyRefunds ? refundsCogs : 0);
   const { inventoryValue } = await computeInventoryValue();
   const orders = o.orders ?? 0;
 
@@ -237,7 +312,8 @@ async function computeSummary(match: Record<string, unknown>): Promise<ReportSum
     grossProfit,
     grossMargin: safePct(grossProfit, netSales),
     refundedOrders: o.refundedOrders ?? 0,
-    refunds: roundToman(o.refunds ?? 0),
+    refunds: refundsRevenue,
+    refundsCogs,
     paidAmount: roundToman(o.paidAmount ?? 0),
     pendingAmount: roundToman(o.pendingAmount ?? 0),
     outstandingAmount: roundToman(
@@ -275,6 +351,7 @@ interface SalesAggRow {
   cogs: number;
   returnedQuantity: number;
   returnedAmount: number;
+  returnedCogs: number;
   firstSaleAt: Date | null;
   lastSaleAt: Date | null;
 }
@@ -294,7 +371,7 @@ export async function getSalesReport(filters: ReportFilters) {
     });
   }
 
-  const [summaryAgg, agg] = await Promise.all([
+  const [summaryAgg, agg, refundAgg] = await Promise.all([
     // Line-derived summary: reconciles exactly with the table totals (and
     // equals the order-level summary when no line filter is active).
     Order.aggregate<Record<string, unknown>>([
@@ -394,7 +471,6 @@ export async function getSalesReport(filters: ReportFilters) {
           couponDiscount: { $sum: "$couponLine" },
           netSales: { $sum: { $subtract: ["$lineNet", "$couponLine"] } },
           cogs: { $sum: "$cogsLine" },
-          refunds: { $sum: "$returnedAmount" },
           paidAmount: {
             $sum: {
               $cond: ["$isPaid", { $subtract: ["$lineNet", "$couponLine"] }, 0],
@@ -495,6 +571,23 @@ export async function getSalesReport(filters: ReportFilters) {
               0,
             ],
           },
+          returnedCogs: {
+            $cond: [
+              { $eq: ["$payment.status", "refunded"] },
+              {
+                $multiply: [
+                  {
+                    $ifNull: [
+                      { $ifNull: ["$items.fifoUnitCost", "$items.supplierPrice"] },
+                      0,
+                    ],
+                  },
+                  "$items.quantity",
+                ],
+              },
+              0,
+            ],
+          },
           createdAt: 1,
         },
       },
@@ -511,6 +604,7 @@ export async function getSalesReport(filters: ReportFilters) {
           cogs: { $sum: "$cogsLine" },
           returnedQuantity: { $sum: "$returnedQty" },
           returnedAmount: { $sum: "$returnedAmount" },
+          returnedCogs: { $sum: "$returnedCogs" },
           firstSaleAt: { $min: "$createdAt" },
           lastSaleAt: { $max: "$createdAt" },
         },
@@ -546,6 +640,7 @@ export async function getSalesReport(filters: ReportFilters) {
           cogs: 1,
           returnedQuantity: 1,
           returnedAmount: 1,
+          returnedCogs: 1,
           firstSaleAt: 1,
           lastSaleAt: 1,
           category: { $ifNull: ["$categoryDoc.name", "نامشخص"] },
@@ -553,17 +648,73 @@ export async function getSalesReport(filters: ReportFilters) {
       },
       { $sort: { netSales: -1 } },
     ]),
+    // REFUND side (refund window): refunds ISSUED in [from, to) — the orders
+    // behind them may have been created in an earlier window. lineMatch is
+    // applied so a product/category-filtered view nets only its own refunds.
+    // Revenue uses the same per-line proration as the rows' returnedAmount
+    // (line net × totalAmount/subtotalAmount) so summary and rows share a
+    // basis; COGS always uses the historical cost snapshot.
+    Order.aggregate<Record<string, unknown>>([
+      {
+        $match: buildRefundMatch(filters) as unknown as mongoose.PipelineStage.Match,
+      },
+      { $unwind: "$items" },
+      ...(lineMatch
+        ? [{ $match: lineMatch as unknown as mongoose.PipelineStage.Match }]
+        : []),
+      {
+        $project: {
+          returnedAmount: {
+            $cond: [
+              { $gt: [{ $ifNull: ["$subtotalAmount", 0] }, 0] },
+              {
+                $multiply: [
+                  { $multiply: ["$items.price", "$items.quantity"] },
+                  { $divide: ["$totalAmount", "$subtotalAmount"] },
+                ],
+              },
+              { $multiply: ["$items.price", "$items.quantity"] },
+            ],
+          },
+          returnedCogs: {
+            $multiply: [
+              {
+                $ifNull: [
+                  { $ifNull: ["$items.fifoUnitCost", "$items.supplierPrice"] },
+                  0,
+                ],
+              },
+              "$items.quantity",
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          refunds: { $sum: "$returnedAmount" },
+          refundsCogs: { $sum: "$returnedCogs" },
+        },
+      },
+    ]),
   ]);
 
   const { inventoryValue } = await computeInventoryValue();
   const s = summaryAgg[0] ?? {};
+  const rf = refundAgg[0] ?? {};
   const orderIds = (s.orders as unknown[]) ?? [];
   const refundedIds = ((s.refundedOrders as unknown[]) ?? []).filter(
     (id) => id !== null
   );
-  const netSales = roundToman(s.netSales as number);
+  // P&L-consistent summary: net of refunds ISSUED in the window (accrual
+  // reversal), while the table rows below keep their sales-window view.
+  const refundsRevenue = roundToman((rf.refunds as number) ?? 0);
+  const refundsCogs = roundToman((rf.refundsCogs as number) ?? 0);
+  const netSales = roundToman(
+    roundToman(s.netSales as number) - refundsRevenue
+  );
   const cogs = roundToman(s.cogs as number);
-  const grossProfit = netSales - cogs;
+  const grossProfit = netSales - cogs + refundsCogs;
   const summary: ReportSummary = withRange(
     {
       from: "",
@@ -579,7 +730,8 @@ export async function getSalesReport(filters: ReportFilters) {
       grossProfit,
       grossMargin: safePct(grossProfit, netSales),
       refundedOrders: refundedIds.length,
-      refunds: roundToman(s.refunds as number),
+      refunds: refundsRevenue,
+      refundsCogs,
       paidAmount: roundToman(s.paidAmount as number),
       pendingAmount: roundToman(s.pendingAmount as number),
       outstandingAmount: roundToman(
@@ -610,6 +762,7 @@ export async function getSalesReport(filters: ReportFilters) {
       cogs: roundToman(r.cogs),
       returnedQuantity: r.returnedQuantity ?? 0,
       returnedAmount: roundToman(r.returnedAmount),
+      returnedCogs: roundToman(r.returnedCogs ?? 0),
       netQuantity: quantity - (r.returnedQuantity ?? 0),
       netSalesAfterReturns: roundToman(netSales - (r.returnedAmount ?? 0)),
       firstSaleAt: r.firstSaleAt ? r.firstSaleAt.toISOString() : null,
@@ -626,6 +779,7 @@ export async function getSalesReport(filters: ReportFilters) {
     cogs: rows.reduce((a, r) => a + r.cogs, 0),
     returnedQuantity: rows.reduce((a, r) => a + r.returnedQuantity, 0),
     returnedAmount: rows.reduce((a, r) => a + r.returnedAmount, 0),
+    returnedCogs: rows.reduce((a, r) => a + r.returnedCogs, 0),
     netSalesAfterReturns: rows.reduce((a, r) => a + r.netSalesAfterReturns, 0),
   };
 
@@ -670,7 +824,11 @@ interface OrderLean {
 export async function getOrdersReport(filters: ReportFilters) {
   const match = await buildOrderMatch(filters);
   const [summary, orders] = await Promise.all([
-    computeSummary(match).then((s) => withRange(s, filters)),
+    // Operational order-list lens: the summary describes the ORDERS in the
+    // window (raw, not refund-netted) — P&L netting lives on the P&L family.
+    computeSummary(match, match, { applyRefunds: false }).then((s) =>
+      withRange(s, filters)
+    ),
     Order.aggregate<OrderLean>([
       { $match: match },
       {
@@ -785,7 +943,10 @@ interface PaymentOrderLean {
 export async function getPaymentsReport(filters: ReportFilters) {
   const match = await buildOrderMatch(filters);
   const [summary, orders] = await Promise.all([
-    computeSummary(match).then((s) => withRange(s, filters)),
+    // Operational payments lens (raw summary — see getOrdersReport).
+    computeSummary(match, match, { applyRefunds: false }).then((s) =>
+      withRange(s, filters)
+    ),
     Order.aggregate<PaymentOrderLean>([
       { $match: match },
       {
@@ -874,9 +1035,17 @@ interface RefundOrderLean {
 }
 
 export async function getRefundsReport(filters: ReportFilters) {
-  const match = await buildOrderMatch({ ...filters, paymentStatus: "refunded" });
+  // Refunds are listed by the window in which they were ISSUED
+  // (refund.refundedAt) — the same recognition the P&L uses, so a March sale
+  // refunded in June appears in June's refunds report AND June's P&L
+  // reversal, while March stays untouched. The summary keeps the raw
+  // refunded-order figures (this report's lens IS the refunded orders), so
+  // no refund netting is applied on top (applyRefunds: false).
+  const match = buildRefundMatch(filters);
   const [summary, orders] = await Promise.all([
-    computeSummary(match).then((s) => withRange(s, filters)),
+    computeSummary(match, match, { applyRefunds: false }).then((s) =>
+      withRange(s, filters)
+    ),
     Order.aggregate<RefundOrderLean>([
       { $match: match },
       {
@@ -910,7 +1079,7 @@ export async function getRefundsReport(filters: ReportFilters) {
           "refunder.name": 1,
         },
       },
-      { $sort: { createdAt: -1 } },
+      { $sort: { "refund.refundedAt": -1, createdAt: -1 } },
     ]),
   ]);
 
@@ -989,7 +1158,10 @@ export async function getCouponReport(filters: ReportFilters) {
   match["discount.amount"] = { $gt: 0 };
 
   const [summary, agg] = await Promise.all([
-    computeSummary(match).then((s) => withRange(s, filters)),
+    // Operational coupon-effectiveness lens (raw summary).
+    computeSummary(match, match, { applyRefunds: false }).then((s) =>
+      withRange(s, filters)
+    ),
     Order.aggregate<CouponAggRow>([
       { $match: match },
       {
@@ -1096,7 +1268,11 @@ interface CustomerLineAgg {
 export async function getCustomerSalesReport(filters: ReportFilters) {
   const match = await buildOrderMatch(filters);
   const [summary, orderAgg, lineAgg] = await Promise.all([
-    computeSummary(match).then((s) => withRange(s, filters)),
+    // Operational per-customer lens (raw summary; the row's netRevenue field
+    // already nets refunds attributed to that customer).
+    computeSummary(match, match, { applyRefunds: false }).then((s) =>
+      withRange(s, filters)
+    ),
     Order.aggregate<CustomerOrderAgg>([
       { $match: match },
       {
@@ -1250,7 +1426,9 @@ export async function getInventoryReport(filters: ReportFilters) {
   ]);
 
   const salesById = new Map(salesAgg.map((s) => [String(s._id), s]));
-  const { summary } = await computeSummary(summaryMatch).then((s) => ({
+  const { summary } = await computeSummary(summaryMatch, summaryMatch, {
+    applyRefunds: false,
+  }).then((s) => ({
     summary: withRange(s, filters),
   }));
 
@@ -1360,9 +1538,11 @@ export async function getProfitLossReport(
     to: dateParam(new Date(prevTo.getTime() - 1)),
   };
   const [current, previous, inventory, currentExpenses, prevExpenses] = await Promise.all([
-    computeSummary(await buildOrderMatch(filters)).then((s) => withRange(s, filters)),
-    computeSummary(await buildOrderMatch(prevFilters)).then((s) =>
-      withRange(s, prevFilters)
+    computeSummary(await buildOrderMatch(filters), buildRefundMatch(filters)).then(
+      (s) => withRange(s, filters)
+    ),
+    computeSummary(await buildOrderMatch(prevFilters), buildRefundMatch(prevFilters)).then(
+      (s) => withRange(s, prevFilters)
     ),
     computeInventoryValue(),
     sumNonVoidExpenses(from, to),
@@ -1423,7 +1603,14 @@ async function sumNonVoidExpenses(from: Date, to: Date): Promise<number> {
   return roundToman(agg?.total ?? 0);
 }
 
-/** Build the P&L statement lines (amounts + % of gross, then % of net). */
+/**
+ * Build the P&L statement lines (amounts + % of gross, then % of net).
+ *
+ * Fully additive with explicit refund rows (refund-treatment fix):
+ *   net         = gross − productDiscount − couponDiscount − refunds
+ *   grossProfit = net − cogs + refundsCogs
+ *   netProfit   = grossProfit − operatingExpenses
+ */
 export function buildStatementRows(
   summary: ReportSummary,
   inventoryValue: number,
@@ -1431,17 +1618,22 @@ export function buildStatementRows(
 ): Array<{ key: string; label: string; amount: number | null; percent: number | null; unavailable?: boolean }> {
   const gross = summary.grossSales;
   const net = summary.netSales;
+  const refunds = summary.refunds ?? 0;
+  const refundsCogs = summary.refundsCogs ?? 0;
   const netProfit = summary.grossProfit - operatingExpenses;
+  // Negate without producing −0 (−0 is falsy but unequal to +0).
+  const neg = (n: number) => (n === 0 ? 0 : -n);
   return [
     { key: "gross", label: "فروش ناخالص", amount: gross, percent: gross > 0 ? 100 : null },
-    { key: "productDiscount", label: "تخفیف محصول", amount: -summary.productDiscount, percent: safePct(summary.productDiscount, gross) },
-    { key: "couponDiscount", label: "تخفیف کوپن", amount: -summary.couponDiscount, percent: safePct(summary.couponDiscount, gross) },
+    { key: "productDiscount", label: "تخفیف محصول", amount: neg(summary.productDiscount), percent: safePct(summary.productDiscount, gross) },
+    { key: "couponDiscount", label: "تخفیف کوپن", amount: neg(summary.couponDiscount), percent: safePct(summary.couponDiscount, gross) },
+    { key: "refunds", label: "بازپرداخت‌ها", amount: neg(refunds), percent: safePct(refunds, gross) },
     { key: "net", label: "فروش خالص", amount: net, percent: gross > 0 ? safePct(net, gross) : null },
-    { key: "cogs", label: "بهای تمام‌شده (COGS)", amount: -summary.cogs, percent: safePct(summary.cogs, net) },
+    { key: "cogs", label: "بهای تمام‌شده (COGS)", amount: neg(summary.cogs), percent: safePct(summary.cogs, net) },
+    { key: "refundsCogs", label: "بازگشت بهای تمام‌شده", amount: refundsCogs, percent: safePct(refundsCogs, net) },
     { key: "grossProfit", label: "سود ناخالص", amount: summary.grossProfit, percent: safePct(summary.grossProfit, net) },
     { key: "margin", label: "حاشیه سود ناخالص", amount: null, percent: summary.grossMargin, unavailable: summary.grossMargin === null },
-    { key: "refunds", label: "بازپرداخت‌ها", amount: -summary.refunds, percent: safePct(summary.refunds, net) },
-    { key: "operatingExpenses", label: "هزینه‌های عملیاتی", amount: -operatingExpenses, percent: safePct(operatingExpenses, net) },
+    { key: "operatingExpenses", label: "هزینه‌های عملیاتی", amount: neg(operatingExpenses), percent: safePct(operatingExpenses, net) },
     { key: "netProfit", label: "سود خالص", amount: netProfit, percent: safePct(netProfit, net) },
     { key: "inventory", label: "ارزش موجودی (به بهای تمام‌شده)", amount: inventoryValue, percent: null },
   ];
@@ -1454,9 +1646,10 @@ export function buildStatementRows(
 export async function getDashboardReport(filters: ReportFilters): Promise<DashboardReport> {
   const match = await buildOrderMatch(filters);
   const { from, to } = windowDates(filters);
+  const refundMatch = buildRefundMatch(filters);
 
-  const [summary, byDayAgg, statusAgg, paymentsAgg, sales] = await Promise.all([
-    computeSummary(match).then((s) => withRange(s, filters)),
+  const [summary, byDayAgg, refundDayAgg, statusAgg, paymentsAgg, sales] = await Promise.all([
+    computeSummary(match, refundMatch).then((s) => withRange(s, filters)),
     Order.aggregate<{ _id: string; orders: number; netSales: number }>([
       { $match: match },
       {
@@ -1467,6 +1660,19 @@ export async function getDashboardReport(filters: ReportFilters): Promise<Dashbo
         },
       },
       { $sort: { _id: 1 } },
+    ]),
+    // Refunds ISSUED per day (by refund.refundedAt) — netted out of the daily
+    // sales series so the chart reconciles with the summary's net figures.
+    Order.aggregate<{ _id: string; refunds: number }>([
+      { $match: refundMatch },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$refund.refundedAt" },
+          },
+          refunds: { $sum: "$totalAmount" },
+        },
+      },
     ]),
     Order.aggregate<{ _id: string; count: number; amount: number }>([
       { $match: { createdAt: { $gte: from, $lt: to } } },
@@ -1493,6 +1699,7 @@ export async function getDashboardReport(filters: ReportFilters): Promise<Dashbo
 
   // Zero-filled day series over the window (bounded: ≤ 366 points).
   const byDayMap = new Map(byDayAgg.map((b) => [b._id, b]));
+  const refundDayMap = new Map(refundDayAgg.map((b) => [b._id, b.refunds]));
   const byDay: DashboardReport["byDay"] = [];
   for (let cursor = new Date(from); cursor.getTime() < to.getTime(); cursor = addDays(cursor, 1)) {
     const key = dateParam(cursor);
@@ -1500,7 +1707,9 @@ export async function getDashboardReport(filters: ReportFilters): Promise<Dashbo
     byDay.push({
       date: key,
       orders: hit?.orders ?? 0,
-      netSales: roundToman(hit?.netSales ?? 0),
+      netSales: roundToman(
+        (hit?.netSales ?? 0) - (refundDayMap.get(key) ?? 0)
+      ),
     });
   }
 
@@ -1660,6 +1869,7 @@ export async function getPurchasesReport(filters: ReportFilters) {
       avgOrderValue: 0,
       inventoryValue: 0,
       inventoryCost: 0,
+      refundsCogs: 0,
     },
     filters
   );
@@ -1784,6 +1994,7 @@ export async function getExpensesReport(filters: ReportFilters) {
       avgOrderValue: 0,
       inventoryValue: 0,
       inventoryCost: 0,
+      refundsCogs: 0,
     },
     filters
   );

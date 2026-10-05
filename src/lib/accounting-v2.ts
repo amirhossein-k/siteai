@@ -33,6 +33,7 @@ import AccountingConfig from "@/models/AccountingConfig";
 import {
   buildLineMatch,
   buildOrderMatch,
+  buildRefundMatch,
   windowDates,
 } from "@/lib/report-matches";
 import {
@@ -588,10 +589,17 @@ export interface AccountingCogsRow {
   sourceRef: string;
 }
 
-/** COGS sheet — one row per sold line with its authoritative cost source. */
+/**
+ * COGS sheet — one row per sold line with its authoritative cost source,
+ * plus negative REFUND REVERSAL rows for refunds issued in the window
+ * (event-based ledger: a sale line belongs to its sale window, its reversal
+ * to the refund window). Reversal rows keep Σ sheet rows = P&L net COGS in
+ * every window, and their cost is the same immutable OrderItem snapshot
+ * (fifoUnitCost ?? supplierPrice) as the original sale line.
+ */
 export async function getCogsReport(filters: ReportFilters) {
   const items = await getOrderItemsReport(filters);
-  const rows: AccountingCogsRow[] = items.rows.map((r) => ({
+  const saleRows: AccountingCogsRow[] = items.rows.map((r) => ({
     orderId: r.orderId,
     orderNo: r.orderNo,
     createdAt: r.createdAt,
@@ -607,6 +615,73 @@ export async function getCogsReport(filters: ReportFilters) {
     cogsSourceLabel: r.cogsSourceLabel,
     sourceRef: `sale-${r.orderId}-${r.productId}${r.variantId ? "-" + r.variantId : ""}`,
   }));
+
+  // NOTE: after $unwind the line fields are projected flat (post-unwind
+  // `items` is a single object, not an array).
+  const refundLines = await Order.aggregate<{
+    _id: mongoose.Types.ObjectId;
+    refundedAt: Date | null;
+    productId: mongoose.Types.ObjectId;
+    name?: string;
+    sku?: string;
+    variantId?: mongoose.Types.ObjectId | null;
+    variantLabel?: string;
+    quantity?: number;
+    fifoUnitCost?: number | null;
+    supplierPrice?: number | null;
+  }>([
+    { $match: buildRefundMatch(filters) as unknown as mongoose.PipelineStage.Match },
+    { $unwind: "$items" },
+    {
+      $project: {
+        refundedAt: "$refund.refundedAt",
+        productId: "$items.product",
+        name: "$items.name",
+        sku: "$items.sku",
+        variantId: "$items.variantId",
+        variantLabel: "$items.variantLabel",
+        quantity: "$items.quantity",
+        fifoUnitCost: "$items.fifoUnitCost",
+        supplierPrice: "$items.supplierPrice",
+      },
+    },
+    { $sort: { refundedAt: -1 } },
+  ]);
+
+  const reversalRows: AccountingCogsRow[] = refundLines.map((line) => {
+    const qty = Number(line.quantity ?? 0);
+    const unitCost =
+      typeof line.fifoUnitCost === "number" && Number.isFinite(line.fifoUnitCost)
+        ? Number(line.fifoUnitCost)
+        : Number(line.supplierPrice ?? 0);
+    const source = cogsSource(line.fifoUnitCost);
+    const orderId = String(line._id);
+    const productId = String(line.productId);
+    const variantId = line.variantId ? String(line.variantId) : "";
+    return {
+      orderId,
+      orderNo: orderId.slice(-8),
+      createdAt: line.refundedAt
+        ? new Date(line.refundedAt).toISOString()
+        : "",
+      productId,
+      name: line.name || "نامشخص",
+      sku: line.sku || "",
+      variantId,
+      variantLabel: line.variantLabel || "",
+      quantity: -qty,
+      fifoUnitCost:
+        typeof line.fifoUnitCost === "number" && Number.isFinite(line.fifoUnitCost)
+          ? Number(line.fifoUnitCost)
+          : null,
+      cogs: -roundToman(unitCost * qty),
+      cogsSource: source,
+      cogsSourceLabel: COGS_SOURCE_LABELS[source],
+      sourceRef: `refund-${orderId}-${productId}${variantId ? "-" + variantId : ""}`,
+    };
+  });
+
+  const rows: AccountingCogsRow[] = [...saleRows, ...reversalRows];
   return {
     report: "cogs",
     filters,
@@ -699,6 +774,7 @@ export async function getAccountingSummary(
     { key: "expensePaid", label: "هزینه‌های پرداخت‌شده", value: expensePaid, numFmt: "money" },
     { key: "expenseOutstanding", label: "هزینه‌های در انتظار پرداخت", value: expenseOutstanding, numFmt: "money" },
     { key: "refunds", label: "بازپرداخت‌ها", value: summary.refunds ?? 0, numFmt: "money" },
+    { key: "refundsCogs", label: "بازگشت بهای تمام‌شده", value: summary.refundsCogs ?? 0, numFmt: "money" },
   ];
 
   return {

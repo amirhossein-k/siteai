@@ -12,6 +12,12 @@
  *      orders → report still uses snapshots) + per-product math + totals
  *   5. Reconciliation: Σ sales.netSales == Σ orders.totalAmount in window
  *   6. Orders / Payments / Refunds / Coupons / Customers / Inventory / P&L
+ *   6b. Refund treatment (refund-treatment fix): refunds recognized by
+ *      refund.refundedAt — cross-window refund reverses only in the refund
+ *      period (sale period unchanged), refunds OUTSIDE the window never
+ *      touch it, same-window nets to zero, refunded COGS uses the OrderItem
+ *      FIFO snapshot (never current supplierPrice), explicit P&L rows
+ *      (بازپرداخت‌ها / بازگشت بهای تمام‌شده) reconcile additively.
  *   7. Excel export: correct content-type, sheet set, header row, key values
  *      (parsed with exceljs)
  *   8. Export rate limit → 429 after the budget is consumed
@@ -214,8 +220,8 @@ async function run() {
     status: fields.status,
     stockRestored: false,
     refund: fields.refund || null,
-    statusHistory: [{ status: fields.status, at: SEED_DATE, note: "rpt81 seed" }],
-    createdAt: SEED_DATE, updatedAt: SEED_DATE,
+    statusHistory: [{ status: fields.status, at: fields.createdAt || SEED_DATE, note: "rpt81 seed" }],
+    createdAt: fields.createdAt || SEED_DATE, updatedAt: fields.createdAt || SEED_DATE,
   });
 
   // Order 1 — paid/delivered, coupon 250 (subtotal 2500 → total 2250)
@@ -263,6 +269,37 @@ async function run() {
     discount: null,
     payment: { status: "canceled", method: "zarinpal", authority: "RPT81A5", refId: "", cardPan: "", paidAt: null },
     status: "cancelled",
+  });
+
+  // Order 6 — CROSS-WINDOW refund (rules 1/3/7): sold 6 days BEFORE the
+  // report window (also outside the previous P&L window so `previous` stays
+  // null), refunded INSIDE it. Carries a FIFO cost snapshot (550) distinct
+  // from the supplierPrice snapshot (400): refunded COGS must use the
+  // historical OrderItem cost (550), never current Product.supplierPrice.
+  const o6Date = new Date(SEED_DATE.getTime() - 6 * 24 * 60 * 60 * 1000);
+  const o6 = await mkOrder({
+    customer: customer2._id,
+    items: [{ ...item(prodA, PREFIX + "ProdA", 1000, 1000, 0, 400, 1), fifoUnitCost: 550 }],
+    subtotalAmount: 1000, totalAmount: 1000,
+    discount: null,
+    payment: { status: "refunded", method: "zarinpal", authority: "RPT81A6", refId: "RPT81REF6", cardPan: "4321", paidAt: o6Date },
+    status: "delivered",
+    refund: { reason: "بازپرداخت بین بازه", refundedAt: SEED_DATE, refundedBy: admin._id },
+    createdAt: o6Date,
+  });
+  // Order 7 — refund OUTSIDE the report window (rule 3): sold inside the
+  // window (counts as a normal sale), refunded 10 days LATER — its reversal
+  // must not appear in this window's P&L at all.
+  const o7RefundDate = new Date(SEED_DATE.getTime() + 10 * 24 * 60 * 60 * 1000);
+  const o7 = await mkOrder({
+    customer: customer2._id,
+    items: [item(prodB, PREFIX + "ProdB", 500, 500, 0, 200, 1)],
+    subtotalAmount: 500, totalAmount: 500,
+    discount: null,
+    payment: { status: "refunded", method: "zarinpal", authority: "RPT81A7", refId: "RPT81REF7", cardPan: "4321", paidAt: SEED_DATE },
+    status: "delivered",
+    refund: { reason: "بازپرداخت خارج از بازه", refundedAt: o7RefundDate, refundedBy: admin._id },
+    createdAt: SEED_DATE,
   });
 
   // --- Historical-price proof: mutate the CURRENT product price AFTER seeding ---
@@ -317,37 +354,63 @@ async function run() {
     assert(res.status === 200, "dashboard 200: " + JSON.stringify(res.data).slice(0, 120));
     dash = res.data;
     const s = dash.summary;
-    assert(s.orders === 4, "orders 4, got " + s.orders);
-    assert(s.unitsSold === 8, "units 8, got " + s.unitsSold);
-    assert(s.grossSales === 6000, "gross 6000, got " + s.grossSales);
+    assert(s.orders === 5, "orders 5, got " + s.orders);
+    assert(s.unitsSold === 9, "units 9, got " + s.unitsSold);
+    assert(s.grossSales === 6500, "gross 6500, got " + s.grossSales);
     assert(s.productDiscount === 200, "product discount 200, got " + s.productDiscount);
     assert(s.couponDiscount === 350, "coupon discount 350, got " + s.couponDiscount);
-    assert(s.netSales === 5450, "net 5450, got " + s.netSales);
-    assert(s.cogs === 2300, "cogs 2300, got " + s.cogs);
-    assert(s.grossProfit === 3150, "gross profit 3150, got " + s.grossProfit);
-    assert(s.refunds === 900, "refunds 900, got " + s.refunds);
-    assert(s.refundedOrders === 1, "refunded orders 1, got " + s.refundedOrders);
-    assert(s.paidAmount === 3150, "paid 3150, got " + s.paidAmount);
+    // Refunds ISSUED in the window: O3 900 (same-window) + O6 1000
+    // (cross-window — sold before the window). O7's refund is day+10 → out.
+    assert(s.refunds === 1900, "refunds 1900, got " + s.refunds);
+    // Refunded COGS (rule 7): O3 supplierPrice snapshot 400 + O6 FIFO 550
+    // (the FIFO snapshot wins over supplierPrice 400).
+    assert(s.refundsCogs === 950, "refundsCogs 950, got " + s.refundsCogs);
+    // netSales = Σ totalAmount(5950) − refunds(1900); COGS stays gross
+    assert(s.netSales === 4050, "net 4050, got " + s.netSales);
+    assert(s.cogs === 2500, "cogs 2500, got " + s.cogs);
+    assert(s.grossProfit === 2500, "gross profit 2500 (4050 − 2500 + 950), got " + s.grossProfit);
+    // refundedOrders = orders SOLD in this window that are refunded (O3, O7)
+    assert(s.refundedOrders === 2, "refunded orders 2, got " + s.refundedOrders);
+    assert(s.paidAmount === 3650, "paid 3650, got " + s.paidAmount);
     assert(s.pendingAmount === 800, "pending 800, got " + s.pendingAmount);
     assert(s.outstandingAmount === 2300, "outstanding 2300, got " + s.outstandingAmount);
-    assert(s.avgOrderValue === 1363, "aov 1363, got " + s.avgOrderValue);
-    console.log("\n      net=5450 profit=3150 margin=" + s.grossMargin + " inventory=" + s.inventoryValue);
+    assert(s.avgOrderValue === 810, "aov 810, got " + s.avgOrderValue);
+    console.log("\n      net=4050 profit=2500 margin=" + s.grossMargin + " inventory=" + s.inventoryValue);
   });
 
   await testAsync("Dashboard P&L statement is present with correct rows", async () => {
     const rows = dash.pnl.current.rows;
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
-    assert(byKey.gross.amount === 6000, "pnl gross");
-    assert(byKey.net.amount === 5450, "pnl net");
-    assert(byKey.cogs.amount === -2300, "pnl cogs");
-    assert(byKey.grossProfit.amount === 3150, "pnl profit");
+    assert(byKey.gross.amount === 6500, "pnl gross");
+    assert(byKey.productDiscount.amount === -200, "pnl product discount");
+    assert(byKey.couponDiscount.amount === -350, "pnl coupon discount");
+    // Explicit refund rows (rules 5 + 6)
+    assert(byKey.refunds.amount === -1900, "pnl refunds row −1900, got " + byKey.refunds.amount);
+    assert(byKey.refundsCogs.amount === 950, "pnl refundsCogs row +950, got " + byKey.refundsCogs.amount);
+    assert(byKey.net.amount === 4050, "pnl net, got " + byKey.net.amount);
+    assert(byKey.cogs.amount === -2500, "pnl cogs (gross)");
+    assert(byKey.grossProfit.amount === 2500, "pnl profit");
+    // Rule 6: the statement reconciles additively end-to-end
+    assert(
+      byKey.net.amount ===
+        byKey.gross.amount + byKey.productDiscount.amount + byKey.couponDiscount.amount + byKey.refunds.amount,
+      "net = gross + productDiscount + couponDiscount + refunds"
+    );
+    assert(
+      byKey.grossProfit.amount === byKey.net.amount + byKey.cogs.amount + byKey.refundsCogs.amount,
+      "grossProfit = net + cogs + refundsCogs"
+    );
     // Session 82 Phase E: net profit = gross profit − operating expenses. This
     // suite records no expenses, so operatingExpenses = 0 and netProfit equals
     // grossProfit — it is NO LONGER flagged unavailable (the expense ledger is
     // authoritative; a real zero is not a fake zero).
     assert(byKey.operatingExpenses.amount === 0, "pnl operating expenses 0");
     assert(byKey.netProfit.unavailable === undefined, "net profit is available");
-    assert(byKey.netProfit.amount === 3150, "pnl net profit = gross profit (no expenses)");
+    assert(byKey.netProfit.amount === 2500, "pnl net profit = gross profit (no expenses), got " + byKey.netProfit.amount);
+    assert(
+      byKey.netProfit.amount === byKey.grossProfit.amount + byKey.operatingExpenses.amount,
+      "netProfit = grossProfit + operatingExpenses (signed)"
+    );
     assert(byKey.inventory.amount > 0, "inventory value present");
     console.log("\n      margin=" + byKey.margin.percent);
   });
@@ -365,31 +428,47 @@ async function run() {
     // Current prices were mutated to 99999/88888 — snapshots must win.
     assert(a.grossSales === 3000, "A gross from snapshots 3000, got " + a.grossSales);
     assert(a.cogs === 1200, "A cogs from snapshots 1200, got " + a.cogs);
-    assert(b.grossSales === 2000, "B gross 2000, got " + b.grossSales);
+    assert(b.grossSales === 2500, "B gross 2500 (5 units incl. O7), got " + b.grossSales);
     // D: 1000 gross − 200 product discount = 800 net (no coupon)
     assert(d.grossSales === 1000 && d.productDiscount === 200 && d.netSales === 800, "D discount math");
     // Coupon allocation: A gets 200 (O1) + 100 (O3); B gets 50 (O1)
     assert(a.couponDiscount === 300, "A coupon 300, got " + a.couponDiscount);
     assert(b.couponDiscount === 50, "B coupon 50, got " + b.couponDiscount);
     assert(a.netSales === 2700, "A net 2700, got " + a.netSales);
-    assert(b.netSales === 1950, "B net 1950, got " + b.netSales);
-    // Refund attribution: O3 refunded (A ×1) → returned qty 1, amount 900
+    assert(b.netSales === 2450, "B net 2450 (5 units), got " + b.netSales);
+    // Sales-window return columns (operational view): O3 (A) + O7 (B) are
+    // refunded orders created inside the window — O6's refund is cross-window
+    // so it does NOT appear here (it belongs to the refund period's P&L).
     assert(a.returnedQuantity === 1, "A returned qty 1");
     assert(a.returnedAmount === 900, "A returned amount 900, got " + a.returnedAmount);
+    assert(a.returnedCogs === 400, "A returned cogs 400 (supplierPrice snapshot), got " + a.returnedCogs);
     assert(a.netSalesAfterReturns === 1800, "A net after returns 1800, got " + a.netSalesAfterReturns);
-    console.log("\n      A gross=3000 net=2700 | B net=1950 | D net=800");
+    assert(b.returnedQuantity === 1 && b.returnedAmount === 500, "B returned qty/amount (O7)");
+    assert(b.returnedCogs === 200, "B returned cogs 200, got " + b.returnedCogs);
+    // Summary is the P&L view: netted by refunds ISSUED in the window
+    const ss = sales.summary;
+    assert(ss.netSales === 4050, "summary net 4050, got " + ss.netSales);
+    assert(ss.cogs === 2500, "summary cogs gross 2500, got " + ss.cogs);
+    assert(ss.refunds === 1900, "summary refunds 1900, got " + ss.refunds);
+    assert(ss.refundsCogs === 950, "summary refundsCogs 950, got " + ss.refundsCogs);
+    assert(ss.grossProfit === 2500, "summary grossProfit 2500, got " + ss.grossProfit);
+    console.log("\n      A gross=3000 net=2700 | B net=2450 | D net=800");
   });
 
-  await testAsync("Sales totals reconcile: Σ net == Σ order totals (5450)", async () => {
+  await testAsync("Sales totals reconcile: Σ net == Σ order totals (5950)", async () => {
     const t = sales.totals;
-    assert(t.quantity === 8, "total qty 8, got " + t.quantity);
-    assert(t.grossSales === 6000, "total gross 6000, got " + t.grossSales);
+    assert(t.quantity === 9, "total qty 9, got " + t.quantity);
+    assert(t.grossSales === 6500, "total gross 6500, got " + t.grossSales);
     assert(t.productDiscount === 200, "total prod disc 200");
     assert(t.couponDiscount === 350, "total coupon 350");
-    assert(t.netSales === 5450, "total net 5450, got " + t.netSales);
-    assert(t.cogs === 2300, "total cogs 2300");
-    assert(t.returnedAmount === 900, "total returned 900");
+    assert(t.netSales === 5950, "total net 5950, got " + t.netSales);
+    assert(t.cogs === 2500, "total cogs 2500 (gross)");
+    // Sales-window returns: O3 900 + O7 500 (O6's refund is cross-window)
+    assert(t.returnedAmount === 1400, "total returned 1400, got " + t.returnedAmount);
+    assert(t.returnedCogs === 600, "total returned cogs 600, got " + t.returnedCogs);
     assert(t.netSalesAfterReturns === 4550, "total net after returns 4550");
+    // Σ rows still reconcile with the in-window order totals
+    assert(t.netSales === 5950, "Σ rows net == Σ order totals");
   });
 
   await testAsync("Sales report respects product / category / q filters", async () => {
@@ -416,36 +495,41 @@ async function run() {
     const res = await http("GET", "/api/admin/reports/orders?" + RANGE, adminJar);
     assert(res.status === 200, "orders 200");
     const rows = res.data.rows;
-    assert(rows.length === 4, "4 orders, got " + rows.length);
+    assert(rows.length === 5, "5 orders, got " + rows.length);
     const byId = Object.fromEntries(rows.map((r) => [r._id, r]));
     const o1r = byId[String(o1.insertedId)];
     const o2r = byId[String(o2.insertedId)];
     const o3r = byId[String(o3.insertedId)];
     const o4r = byId[String(o4.insertedId)];
+    const o7r = byId[String(o7.insertedId)];
     assert(o1r.netAmount === 2250 && o1r.paidAmount === 2250 && o1r.couponDiscount === 250, "O1 numbers");
     assert(o2r.netAmount === 800 && o2r.paidAmount === 0 && o2r.outstandingAmount === 800 && o2r.productDiscount === 200, "O2 numbers");
     assert(o3r.paidAmount === 900 && o3r.refundedAmount === 900, "O3 refunded");
     assert(o4r.outstandingAmount === 1500, "O4 failed outstanding");
+    // O7: sold in-window, refunded OUTSIDE — the orders list still shows its
+    // current refunded state (operational view), but its refund money must NOT
+    // hit this window's P&L (covered by the P&L + refund-window tests).
+    assert(o7r.refundedAmount === 500, "O7 refunded 500, got " + o7r.refundedAmount);
     const t = res.data.totals;
-    assert(t.netAmount === 5450 && t.paidAmount === 3150 && t.refundedAmount === 900 && t.outstandingAmount === 2300, "orders totals");
+    assert(t.netAmount === 5950 && t.paidAmount === 3650 && t.refundedAmount === 1400 && t.outstandingAmount === 2300, "orders totals");
   });
 
   await testAsync("Orders report status filter", async () => {
     const res = await http("GET", "/api/admin/reports/orders?" + RANGE + "&status=processing", adminJar);
     assert(res.status === 200 && res.data.total === 2, "2 processing orders (O2,O4)");
     const delivered = await http("GET", "/api/admin/reports/orders?" + RANGE + "&status=delivered", adminJar);
-    assert(delivered.data.total === 2, "2 delivered (O1,O3)");
+    assert(delivered.data.total === 3, "3 delivered (O1,O3,O7), got " + delivered.data.total);
   });
 
   // --- 5. Payments report ---
   await testAsync("Payments report splits paid/outstanding by order", async () => {
     const res = await http("GET", "/api/admin/reports/payments?" + RANGE, adminJar);
     assert(res.status === 200, "payments 200");
-    assert(res.data.total === 4, "4 payments rows");
+    assert(res.data.total === 5, "5 payments rows, got " + res.data.total);
     const paid = res.data.rows.filter((r) => r.paidAmount > 0);
-    assert(paid.length === 2, "2 paid rows (O1,O3)");
+    assert(paid.length === 3, "3 paid rows (O1,O3,O7), got " + paid.length);
     const t = res.data.totals;
-    assert(t.amount === 5450 && t.paidAmount === 3150 && t.refundedAmount === 900 && t.outstandingAmount === 2300, "payments totals");
+    assert(t.amount === 5950 && t.paidAmount === 3650 && t.refundedAmount === 1400 && t.outstandingAmount === 2300, "payments totals");
     const onlyPaid = await http("GET", "/api/admin/reports/payments?" + RANGE + "&paymentStatus=paid", adminJar);
     assert(onlyPaid.data.total === 1, "paymentStatus=paid -> 1 (O1 only; O3 is refunded)");
     const manual = await http("GET", "/api/admin/reports/payments?" + RANGE + "&method=manual", adminJar);
@@ -453,15 +537,23 @@ async function run() {
   });
 
   // --- 6. Refunds report ---
-  await testAsync("Refunds report lists the refunded order", async () => {
+  await testAsync("Refunds report lists refunds ISSUED in the window (refundedAt)", async () => {
     const res = await http("GET", "/api/admin/reports/refunds?" + RANGE, adminJar);
     assert(res.status === 200, "refunds 200");
-    assert(res.data.total === 1, "1 refunded order");
-    const row = res.data.rows[0];
-    assert(row._id === String(o3.insertedId), "refunded order is O3");
-    assert(row.refundAmount === 900, "refund amount 900");
-    assert(row.reason === "بازپرداخت تست", "reason preserved");
-    assert(row.refundedBy === admin.name || row.refundedBy === "مدیر سیستم", "refunder named");
+    // Listed by refund.refundedAt window: O3 (same-window) + O6
+    // (cross-window — sold earlier, refunded inside). O7 refunded at day+10
+    // is NOT listed (its reversal belongs to that period's P&L).
+    assert(res.data.total === 2, "2 refunds issued in window, got " + res.data.total);
+    const byId = Object.fromEntries(res.data.rows.map((r) => [r._id, r]));
+    const o3row = byId[String(o3.insertedId)];
+    assert(!!o3row, "O3 listed");
+    assert(o3row.refundAmount === 900, "refund amount 900");
+    assert(o3row.reason === "بازپرداخت تست", "reason preserved");
+    assert(o3row.refundedBy === admin.name || o3row.refundedBy === "مدیر سیستم", "refunder named");
+    const o6row = byId[String(o6.insertedId)];
+    assert(!!o6row && o6row.refundAmount === 1000, "cross-window O6 listed with 1000, got " + JSON.stringify(o6row && o6row.refundAmount));
+    assert(!byId[String(o7.insertedId)], "O7 (refund outside window) NOT listed");
+    assert(res.data.totals.refundAmount === 1900, "total refunds 1900, got " + res.data.totals.refundAmount);
   });
 
   // --- 7. Coupons report ---
@@ -492,7 +584,7 @@ async function run() {
     assert(c1.discounts === 550, "C1 discounts 550 (200 product + 350 coupon), got " + c1.discounts);
     assert(c1.netSales === 3950, "C1 net 3950");
     assert(c1.refunds === 900 && c1.netRevenue === 3050, "C1 refunds/netRevenue");
-    assert(c2.netSales === 1500 && c2.orders === 1, "C2 net/orders");
+    assert(c2.netSales === 2000 && c2.orders === 2, "C2 net/orders (O4 + O7), got " + c2.netSales + "/" + c2.orders);
     const q = await http("GET", "/api/admin/reports/customers?" + RANGE + "&q=" + CUSTOMER2_PHONE, adminJar);
     assert(q.data.total === 1 && q.data.rows[0].customerId === String(customer2._id), "phone search filters to C2");
   });
@@ -520,12 +612,82 @@ async function run() {
     assert(res.status === 200, "pnl 200");
     const pnl = res.data;
     const byKey = Object.fromEntries(pnl.current.rows.map((r) => [r.key, r]));
-    assert(byKey.gross.amount === 6000 && byKey.net.amount === 5450 && byKey.grossProfit.amount === 3150, "pnl current");
+    assert(byKey.gross.amount === 6500 && byKey.net.amount === 4050 && byKey.grossProfit.amount === 2500, "pnl current");
+    // Explicit refund rows + rule-6 additive reconciliation
+    assert(byKey.refunds.amount === -1900, "pnl refunds −1900, got " + byKey.refunds.amount);
+    assert(byKey.refundsCogs.amount === 950, "pnl refundsCogs +950, got " + byKey.refundsCogs.amount);
+    assert(
+      byKey.grossProfit.amount ===
+        byKey.gross.amount + byKey.productDiscount.amount + byKey.couponDiscount.amount + byKey.refunds.amount + byKey.cogs.amount + byKey.refundsCogs.amount,
+      "grossProfit = gross + discounts + refunds + cogs + refundsCogs"
+    );
     assert(byKey.gross.percent === 100, "gross 100%");
     // Previous equal-length window had no orders → null previous
     assert(pnl.previous === null, "previous null (no data), got " + JSON.stringify(pnl.previous));
     assert(pnl.change.netSales === null, "change null when no previous");
     console.log("\n      margin=" + byKey.margin.percent + " cogs=" + byKey.cogs.amount);
+  });
+
+  // --- 10b. Refund recognition windows (rules 1 & 3 — accrual, no double-count)
+  await testAsync("Refund windows: sale period unchanged / reversal lands in refund period / out-of-window refund invisible", async () => {
+    const q = encodeURIComponent(PREFIX + "ProdA");
+    const qB = encodeURIComponent(PREFIX + "ProdB");
+    const dayOf = (d) => d.toISOString().slice(0, 10);
+
+    // (a) O6's SALE period (6 days before the window): the sale is intact —
+    // no refund adjustment, no reversal (rule 1: March stays unchanged).
+    const saleDay = dayOf(o6Date);
+    const salePnl = await http(
+      "GET",
+      "/api/admin/reports/pnl?preset=custom&from=" + saleDay + "&to=" + saleDay + "&q=" + q,
+      adminJar
+    );
+    assert(salePnl.status === 200, "sale-period pnl 200");
+    const sr = Object.fromEntries(salePnl.data.current.rows.map((r) => [r.key, r]));
+    assert(sr.net.amount === 1000, "sale period keeps the full 1000 sale, got " + sr.net.amount);
+    assert(sr.refunds.amount === 0, "sale period has NO refunds, got " + sr.refunds.amount);
+    assert(sr.refundsCogs.amount === 0, "sale period has NO refundsCogs, got " + sr.refundsCogs.amount);
+    // O6's COGS at sale time = fifoUnitCost 550 (rule 7 — historical snapshot)
+    assert(sr.cogs.amount === -550, "sale period cogs −550 (FIFO), got " + sr.cogs.amount);
+    assert(sr.grossProfit.amount === 450, "sale period profit 450, got " + sr.grossProfit.amount);
+
+    // (b) O7's REFUND period (10 days after the window): no sales that day —
+    // only the reversal. Rule 1: June carries the reversal, June's own sale
+    // side contributes nothing here.
+    const refundDay = dayOf(o7RefundDate);
+    const refundPnl = await http(
+      "GET",
+      "/api/admin/reports/pnl?preset=custom&from=" + refundDay + "&to=" + refundDay + "&q=" + qB,
+      adminJar
+    );
+    assert(refundPnl.status === 200, "refund-period pnl 200");
+    const rr = Object.fromEntries(refundPnl.data.current.rows.map((r) => [r.key, r]));
+    assert(rr.refunds.amount === -500, "refund period reverses 500 revenue, got " + rr.refunds.amount);
+    assert(rr.refundsCogs.amount === 200, "refund period reverses 200 COGS (supplierPrice snapshot), got " + rr.refundsCogs.amount);
+    assert(rr.net.amount === -500, "refund period net −500, got " + rr.net.amount);
+    assert(rr.grossProfit.amount === -300, "refund period profit −300 (−500 + 200), got " + rr.grossProfit.amount);
+
+    // (c) Same-window + cross-window + out-of-window, summed in the main
+    // window: O6's reversal landed above AND in the main window (refundedAt
+    // inside) — the sale period above never saw it (no double-count), and
+    // O7's out-of-window refund contributed nothing to the main window.
+    const main = await http("GET", "/api/admin/reports/pnl?" + RANGE, adminJar);
+    const mr = Object.fromEntries(main.data.current.rows.map((r) => [r.key, r]));
+    assert(mr.refunds.amount === -1900, "main window refunds −1900 (O3 900 + O6 1000 only), got " + mr.refunds.amount);
+    // Zero-contribution proof (rule 4): O3 sold 900 (COGS 400) and refunded
+    // 900 (COGS reversed 400) inside this window → net zero. The main
+    // window's numbers minus O3's margin (900 − 400 = 500) must equal the
+    // gross-only view… asserted directly via the summary identity:
+    const s = main.data.current.summary;
+    assert(
+      s.netSales === s.grossSales - s.productDiscount - s.couponDiscount - s.refunds,
+      "summary: netSales = gross − discounts − refunds"
+    );
+    assert(
+      s.grossProfit === s.netSales - s.cogs + s.refundsCogs,
+      "summary: grossProfit = netSales − cogs + refundsCogs"
+    );
+    console.log("\n      sale-period: net 1000/profit 450 | refund-period: net −500/profit −300 | main refunds −1900");
   });
 
   // --- 11. Excel exports ---
@@ -552,7 +714,7 @@ async function run() {
     summarySheet.eachRow((row) => {
       if (String(row.getCell(1).value).includes("فروش خالص")) {
         foundNet = true;
-        assert(Number(row.getCell(2).value) === 5450, "summary net cell 5450, got " + row.getCell(2).value);
+        assert(Number(row.getCell(2).value) === 4050, "summary net cell 4050, got " + row.getCell(2).value);
       }
     });
     assert(foundNet, "net sales row present in summary");
@@ -584,15 +746,22 @@ async function run() {
     const kpi = Object.fromEntries(p.kpis.map((k) => [k.key, k.value]));
     profitKpi = kpi;
     // Hand-computed from the SAME seeded snapshots the sales/dashboard suites assert
-    assert(kpi.grossSales === 6000, "grossSales 6000, got " + kpi.grossSales);
+    assert(kpi.grossSales === 6500, "grossSales 6500, got " + kpi.grossSales);
     assert(kpi.productDiscount === 200, "productDiscount 200, got " + kpi.productDiscount);
     assert(kpi.couponDiscount === 350, "couponDiscount 350, got " + kpi.couponDiscount);
-    assert(kpi.netSales === 5450, "netSales 5450, got " + kpi.netSales);
-    assert(kpi.cogs === 2300, "cogs 2300, got " + kpi.cogs);
-    assert(kpi.grossProfit === 3150, "grossProfit 3150, got " + kpi.grossProfit);
+    // Refund KPIs (explicit reversal terms)
+    assert(kpi.refunds === 1900, "refunds 1900, got " + kpi.refunds);
+    assert(kpi.refundsCogs === 950, "refundsCogs 950, got " + kpi.refundsCogs);
+    assert(kpi.netSales === 4050, "netSales 4050, got " + kpi.netSales);
+    assert(kpi.cogs === 2500, "cogs 2500 (gross), got " + kpi.cogs);
+    assert(kpi.grossProfit === 2500, "grossProfit 2500, got " + kpi.grossProfit);
 
-    // Reconciliation: netSales − cogs = grossProfit; grossProfit − opex = netProfit
-    assert(kpi.netSales - kpi.cogs === kpi.grossProfit, "netSales − cogs = grossProfit");
+    // Reconciliation (rule 6): netSales − cogs + refundsCogs = grossProfit;
+    // grossProfit − opex = netProfit
+    assert(
+      kpi.netSales - kpi.cogs + kpi.refundsCogs === kpi.grossProfit,
+      "netSales − cogs + refundsCogs = grossProfit"
+    );
     assert(
       kpi.grossProfit - (kpi.operatingExpenses ?? 0) === kpi.netProfit,
       "grossProfit − operatingExpenses = netProfit, got " +
@@ -611,20 +780,34 @@ async function run() {
     const b = p.products.find((r) => r.productId === String(prodB._id));
     const d = p.products.find((r) => r.productId === String(prodD._id));
     assert(a && a.cogs === 1200, "prodA cogs 1200 from snapshot, got " + (a && a.cogs));
-    assert(b && b.cogs === 800, "prodB cogs 800 from snapshot, got " + (b && b.cogs));
+    assert(b && b.cogs === 1000, "prodB cogs 1000 (5 units × 200), got " + (b && b.cogs));
     assert(d && d.cogs === 300, "prodD cogs 300 from snapshot, got " + (d && d.cogs));
-    assert(a.netSales === 2700 && b.netSales === 1950 && d.netSales === 800, "per-product net sales");
+    // Product rows are NET of the refunds issued in the window (rule 4): A
+    // sold 3000−300 net, refunded 1900 (O3 900 same-window + O6 1000
+    // cross-window) with 950 COGS reversed (O3 400 snapshot + O6 550 FIFO).
+    assert(a.netSales === 800, "A netSales 800 (2700 − 1900), got " + a.netSales);
+    assert(b.netSales === 2450, "B netSales 2450 (O7's refund is out-of-window), got " + b.netSales);
+    assert(d.netSales === 800, "D netSales 800, got " + d.netSales);
+    assert(a.returnedAmount === 1900 && a.returnedCogs === 950, "A returned 1900/950, got " + a.returnedAmount + "/" + a.returnedCogs);
+    assert(b.returnedAmount === 0 && b.returnedCogs === 0, "B has NO in-window refund reversal (O7 refunded later)");
+    assert(a.grossProfit === 800 - 1200 + 950, "A gp = net − cogs + returnedCogs, got " + a.grossProfit);
 
     // Category profitability stays INTENTIONALLY unavailable (no immutable
     // category snapshot exists on OrderItem).
     assert(p.categories.length === 0, "categories intentionally empty");
 
-    // Waterfall reconciles to the KPIs
+    // Waterfall reconciles to the KPIs (explicit refund steps in between)
     const wf = Object.fromEntries(p.waterfall.map((s) => [s.key, s]));
+    assert(wf.refunds.amount === -kpi.refunds, "waterfall refunds = −KPI refunds");
+    assert(wf.refundsCogs.amount === kpi.refundsCogs, "waterfall refundsCogs = +KPI refundsCogs");
     assert(wf.grossProfit.amount === kpi.grossProfit, "waterfall grossProfit = KPI grossProfit");
-    assert(wf.cogs.amount === -kpi.cogs, "waterfall cogs is subtractive");
+    assert(wf.cogs.amount === -kpi.cogs, "waterfall cogs is subtractive (gross)");
     assert(wf.netProfit.amount === kpi.netProfit, "waterfall netProfit = KPI netProfit");
     assert(wf.netProfit.cumulative === kpi.netProfit, "waterfall netProfit cumulative");
+    // Rule 6: every component step summed equals netProfit (fully additive)
+    const componentKeys = new Set(["grossSales", "productDiscount", "couponDiscount", "refunds", "cogs", "refundsCogs", "operatingExpenses"]);
+    const componentSum = p.waterfall.filter((s) => componentKeys.has(s.key)).reduce((acc, s) => acc + s.amount, 0);
+    assert(componentSum === kpi.netProfit, "Σ waterfall component steps = netProfit, got " + componentSum);
     console.log("\n      netSales=" + kpi.netSales + " cogs=" + kpi.cogs + " gp=" + kpi.grossProfit + " np=" + kpi.netProfit);
   });
 
@@ -655,11 +838,14 @@ async function run() {
       assert(new Date(trend[i].from).getTime() === new Date(trend[i - 1].to).getTime() + 1, "buckets are contiguous");
     }
 
-    // All seeded orders sit on day 3 (SEED_DATE 12:00 UTC)
+    // All seeded orders sit on day 3 (SEED_DATE 12:00 UTC); O6's refund was
+    // issued there too (cross-window), O7's refund is day+10 (outside).
     const last = trend[trend.length - 1];
-    assert(last.netSales === 5450, "day-3 bucket netSales 5450, got " + last.netSales);
-    assert(last.cogs === 2300, "day-3 bucket cogs 2300, got " + last.cogs);
-    assert(last.grossProfit === 3150, "day-3 bucket grossProfit 3150");
+    assert(last.netSales === 4050, "day-3 bucket netSales 4050, got " + last.netSales);
+    assert(last.cogs === 2500, "day-3 bucket cogs 2500 (gross), got " + last.cogs);
+    assert(last.refunds === 1900, "day-3 bucket refunds 1900, got " + last.refunds);
+    assert(last.refundedCogs === 950, "day-3 bucket refundedCogs 950, got " + last.refundedCogs);
+    assert(last.grossProfit === 2500, "day-3 bucket grossProfit 2500, got " + last.grossProfit);
     assert(last.grossProfit - last.expenses === last.netProfit, "bucket netProfit = grossProfit − expenses");
 
     // Zero-filled empty periods (days 1 and 2 held no orders/expenses)
@@ -740,14 +926,19 @@ async function run() {
     });
     assert(netFound, "net-sales KPI row present");
 
-    // Waterfall sheet lists the net-profit step
+    // Waterfall sheet lists the net-profit step + both refund steps
     const wfSheet = wb.getWorksheet("آبشار سودآوری");
-    let npFound = false;
+    let npFound = false, refundsFound = false, refundsCogsFound = false;
     wfSheet.eachRow((row) => {
-      if (String(row.getCell(1).value) === "سود خالص") npFound = true;
+      const label = String(row.getCell(1).value);
+      if (label === "سود خالص") npFound = true;
+      if (label === "بازپرداخت‌ها") refundsFound = true;
+      if (label === "بازگشت بهای تمام‌شده") refundsCogsFound = true;
     });
     assert(npFound, "waterfall net-profit row present");
-    assert(wfSheet.rowCount === 9, "waterfall sheet = header + 8 steps, got " + wfSheet.rowCount);
+    assert(refundsFound, "waterfall refunds row present");
+    assert(refundsCogsFound, "waterfall refundsCogs row present");
+    assert(wfSheet.rowCount === 11, "waterfall sheet = header + 10 steps, got " + wfSheet.rowCount);
 
     // Product sheet: Σ netSales reconciles with the report
     const prodSheet = wb.getWorksheet("سودآوری محصولات");

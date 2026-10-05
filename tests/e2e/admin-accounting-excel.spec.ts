@@ -253,7 +253,9 @@ test.describe("Admin accounting Excel export", () => {
     }
     expect(names.length).toBe(17);
 
-    // P&L reconciliation: net = gross + discounts (discounts are negative).
+    // P&L reconciliation (refund-treatment fix — explicit refund rows):
+    //   net = gross + discounts + refunds          (all signed, refunds negative)
+    //   grossProfit = net + cogs + refundedCOGS    (refundedCOGS positive add-back)
     const pnl = workbook.getWorksheet("سود و زیان");
     const pnlByLabel: Record<string, number> = {};
     pnl?.eachRow((row, n) => {
@@ -266,7 +268,14 @@ test.describe("Admin accounting Excel export", () => {
     const net = pnlByLabel["فروش خالص"] ?? 0;
     const discounts =
       (pnlByLabel["تخفیف محصول"] ?? 0) + (pnlByLabel["تخفیف کوپن"] ?? 0);
-    expect(Math.abs(net - (gross + discounts))).toBeLessThanOrEqual(1);
+    const refunds = pnlByLabel["بازپرداخت‌ها"] ?? 0;
+    const refundsCogs = pnlByLabel["بازگشت بهای تمام‌شده"] ?? 0;
+    expect(Math.abs(net - (gross + discounts + refunds))).toBeLessThanOrEqual(1);
+    const pnlGrossProfit = pnlByLabel["سود ناخالص"] ?? 0;
+    const pnlCogs = pnlByLabel["بهای تمام‌شده (COGS)"] ?? 0;
+    expect(
+      Math.abs(pnlGrossProfit - (net + pnlCogs + refundsCogs))
+    ).toBeLessThanOrEqual(1);
 
     // COGS sheet has the seeded FIFO row (100,000 × 4 = 400,000).
     const cogs = workbook.getWorksheet("بهای تمام‌شده");

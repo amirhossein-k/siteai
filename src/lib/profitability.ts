@@ -17,6 +17,7 @@ import Expense, { EXPENSE_CATEGORY_LABELS } from "@/models/Expense";
 import {
   buildOrderMatch,
   buildLineMatch,
+  buildRefundMatch,
   windowDates,
 } from "@/lib/report-matches";
 import {
@@ -59,6 +60,10 @@ export interface ProductProfitRow {
   grossSales: number;
   productDiscount: number;
   couponAllocation: number;
+  /** Refunded revenue attributed to this product (refund-window basis). */
+  returnedAmount: number;
+  /** Refunded COGS attributed to this product (historical snapshot basis). */
+  returnedCogs: number;
   netSales: number;
   cogs: number;
   grossProfit: number;
@@ -90,8 +95,14 @@ export interface TrendBucket {
   from: Date;
   /** Inclusive bucket end (UTC). */
   to: Date;
+  /** Net of refunds issued inside this bucket. */
   netSales: number;
+  /** Net of refunded COGS issued inside this bucket. */
   cogs: number;
+  /** Refund reversal issued inside this bucket (memo). */
+  refunds: number;
+  /** Refunded-COGS reversal issued inside this bucket (memo). */
+  refundedCogs: number;
   grossProfit: number;
   /** Non-void operating expenses recorded inside this bucket. */
   expenses: number;
@@ -193,6 +204,8 @@ async function aggregateItemProfitability(
     cogs: number;
     supplierPrice: number;
     couponAllocation: number;
+    returnedAmount: number;
+    returnedCogs: number;
   }>;
   totalNetSales: number;
   totalCogs: number;
@@ -200,6 +213,8 @@ async function aggregateItemProfitability(
   totalProductDiscount: number;
   totalCouponDiscount: number;
   totalGrossProfit: number;
+  totalRefundsRevenue: number;
+  totalRefundsCogs: number;
   orders: number;
   units: number;
   refunds: number;
@@ -294,6 +309,74 @@ async function aggregateItemProfitability(
     { $sort: { lineNet: -1 } },
   ]);
 
+  // REFUND side — refunds ISSUED in the window (refund.refundedAt), grouped
+  // per product so a product's own refund reversal lands on its own row.
+  // Revenue uses the same per-line proration as the sales report
+  // (line net × totalAmount/subtotalAmount); COGS uses the historical cost
+  // snapshot (fifoUnitCost ?? supplierPrice), never the current price.
+  const refundStages: mongoose.PipelineStage[] = [
+    {
+      $match: buildRefundMatch(filters) as unknown as mongoose.PipelineStage.Match,
+    },
+    { $unwind: "$items" },
+  ];
+  if (lineMatch) {
+    refundStages.push({
+      $match: lineMatch as unknown as mongoose.PipelineStage.Match,
+    });
+  }
+  const [refundOrderTotals, refundProductAgg] = await Promise.all([
+    Order.aggregate([
+      {
+        $match: buildRefundMatch(filters) as unknown as mongoose.PipelineStage.Match,
+      },
+      {
+        $group: {
+          _id: null,
+          refundsRevenue: { $sum: "$totalAmount" },
+        },
+      },
+    ]),
+    Order.aggregate([
+      ...refundStages,
+      {
+        $project: {
+          product: "$items.product",
+          returnedAmount: {
+            $cond: [
+              { $gt: [{ $ifNull: ["$subtotalAmount", 0] }, 0] },
+              {
+                $multiply: [
+                  { $multiply: ["$items.price", "$items.quantity"] },
+                  { $divide: ["$totalAmount", "$subtotalAmount"] },
+                ],
+              },
+              { $multiply: ["$items.price", "$items.quantity"] },
+            ],
+          },
+          returnedCogs: {
+            $multiply: [
+              {
+                $ifNull: [
+                  { $ifNull: ["$items.fifoUnitCost", "$items.supplierPrice"] },
+                  0,
+                ],
+              },
+              "$items.quantity",
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$product",
+          returnedAmount: { $sum: "$returnedAmount" },
+          returnedCogs: { $sum: "$returnedCogs" },
+        },
+      },
+    ]),
+  ]);
+
   // Order-level totals
   const [orderTotals] = await Order.aggregate([
     { $match: orderMatch as unknown as mongoose.PipelineStage.Match },
@@ -303,15 +386,6 @@ async function aggregateItemProfitability(
         orders: { $sum: 1 },
         netSales: { $sum: "$totalAmount" },
         couponDiscount: { $sum: { $ifNull: ["$discount.amount", 0] } },
-        refunds: {
-          $sum: {
-            $cond: [
-              { $eq: ["$payment.status", "refunded"] },
-              "$totalAmount",
-              0,
-            ],
-          },
-        },
         paidAmount: {
           $sum: {
             $cond: [
@@ -331,7 +405,25 @@ async function aggregateItemProfitability(
   ]);
 
   const ot = orderTotals ?? {};
-  const totalNetSales = roundToman(ot.netSales ?? 0);
+  const rt = refundOrderTotals[0] ?? {};
+  const refundByProduct = new Map(
+    refundProductAgg.map((r) => [
+      String(r._id),
+      {
+        returnedAmount: roundToman(r.returnedAmount ?? 0),
+        returnedCogs: roundToman(r.returnedCogs ?? 0),
+      },
+    ])
+  );
+  const totalRefundsRevenue = roundToman(rt.refundsRevenue ?? 0);
+  const totalRefundsCogs = roundToman(
+    refundProductAgg.reduce((s, r) => s + (r.returnedCogs ?? 0), 0)
+  );
+  // Revenue is net of the refund reversal issued in this window (accrual —
+  // see buildRefundMatch); COGS stays GROSS and the refunded COGS is
+  // reversed explicitly via +totalRefundsCogs, keeping every reconciliation
+  // additive:  netSales − grossCOGS + refundedCOGS = grossProfit.
+  const totalNetSales = roundToman((ot.netSales ?? 0) - totalRefundsRevenue);
   const totalCouponDiscount = roundToman(ot.couponDiscount ?? 0);
   const totalCogs = roundToman(
     productAgg.reduce((s, r) => s + (r.cogs ?? 0), 0)
@@ -342,20 +434,28 @@ async function aggregateItemProfitability(
   const totalProductDiscount = roundToman(
     productAgg.reduce((s, r) => s + (r.discountLine ?? 0), 0)
   );
-  const totalGrossProfit = totalNetSales - totalCogs;
+  const totalGrossProfit = totalNetSales - totalCogs + totalRefundsCogs;
 
-  const items = productAgg.map((r) => ({
-    productId: String(r._id),
-    name: String(r.name ?? "نامشخص"),
-    sku: String(r.sku ?? ""),
-    quantity: Number(r.quantity ?? 0),
-    lineNet: roundToman(r.lineNet ?? 0),
-    grossLine: roundToman(r.grossLine ?? 0),
-    discountLine: roundToman(r.discountLine ?? 0),
-    cogs: roundToman(r.cogs ?? 0),
-    supplierPrice: Number(r.supplierPrice ?? 0),
-    couponAllocation: roundToman(r.couponAllocation ?? 0),
-  }));
+  const items = productAgg.map((r) => {
+    const refunds = refundByProduct.get(String(r._id)) ?? {
+      returnedAmount: 0,
+      returnedCogs: 0,
+    };
+    return {
+      productId: String(r._id),
+      name: String(r.name ?? "نامشخص"),
+      sku: String(r.sku ?? ""),
+      quantity: Number(r.quantity ?? 0),
+      lineNet: roundToman(r.lineNet ?? 0),
+      grossLine: roundToman(r.grossLine ?? 0),
+      discountLine: roundToman(r.discountLine ?? 0),
+      cogs: roundToman(r.cogs ?? 0),
+      supplierPrice: Number(r.supplierPrice ?? 0),
+      couponAllocation: roundToman(r.couponAllocation ?? 0),
+      returnedAmount: refunds.returnedAmount,
+      returnedCogs: refunds.returnedCogs,
+    };
+  });
 
   return {
     items,
@@ -365,9 +465,11 @@ async function aggregateItemProfitability(
     totalProductDiscount,
     totalCouponDiscount,
     totalGrossProfit,
+    totalRefundsRevenue,
+    totalRefundsCogs,
     orders: ot.orders ?? 0,
     units: items.reduce((s, r) => s + r.quantity, 0),
-    refunds: roundToman(ot.refunds ?? 0),
+    refunds: totalRefundsRevenue,
     paidAmount: roundToman(ot.paidAmount ?? 0),
     pendingAmount: roundToman(ot.pendingAmount ?? 0),
   };
@@ -510,6 +612,10 @@ export function computeTrendBuckets(
 export interface TrendSalesAgg {
   netSales: number;
   cogs: number;
+  /** Refund revenue reversal ISSUED inside this bucket (optional). */
+  refunds?: number;
+  /** Refunded-COGS reversal ISSUED inside this bucket (optional). */
+  refundedCogs?: number;
 }
 
 /**
@@ -528,13 +634,22 @@ export function assembleTrendBuckets(
   return buckets.map((bucket) => {
     const sales = salesByGroup.get(bucket.label) ?? { netSales: 0, cogs: 0 };
     const expenses = expenseByGroup.get(bucket.label) ?? 0;
-    const grossProfit = sales.netSales - sales.cogs;
+    // Refund reversal ISSUED inside this bucket (accrual) — nets the bucket
+    // so Σ buckets reconciles with the report's netted KPIs. The reversal
+    // amounts are kept as memo fields for transparency.
+    const refunds = sales.refunds ?? 0;
+    const refundedCogs = sales.refundedCogs ?? 0;
+    const netSales = sales.netSales - refunds;
+    const cogs = sales.cogs; // gross — the refunded COGS is an explicit add-back
+    const grossProfit = netSales - cogs + refundedCogs;
     return {
       label: bucket.label,
       from: bucket.from,
       to: bucket.to,
-      netSales: sales.netSales,
-      cogs: sales.cogs,
+      netSales,
+      cogs,
+      refunds,
+      refundedCogs,
       grossProfit,
       expenses,
       netProfit: grossProfit - expenses,
@@ -610,6 +725,58 @@ async function computeTrend(
     { $sort: { _id: 1 } },
   ]);
 
+  // Refund reversals ISSUED per bucket (grouped by refund.refundedAt, not
+  // createdAt) — nets into the bucket so a cross-window refund lands in the
+  // period it happened, never retroactively in the sale period.
+  const refundBuckets = await Order.aggregate([
+    {
+      $match: buildRefundMatch(filters) as unknown as mongoose.PipelineStage.Match,
+    },
+    {
+      $set: {
+        _dateGroup: {
+          $dateToString: { format: dateFormat, date: "$refund.refundedAt" },
+        },
+        _orderCogs: {
+          $reduce: {
+            input: "$items",
+            initialValue: 0,
+            in: {
+              $add: [
+                "$$value",
+                {
+                  $multiply: [
+                    {
+                      $ifNull: [
+                        { $ifNull: ["$$this.fifoUnitCost", "$$this.supplierPrice"] },
+                        0,
+                      ],
+                    },
+                    "$$this.quantity",
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    },
+    {
+      $group: {
+        _id: { order: "$_id", group: "$_dateGroup" },
+        refunds: { $first: "$totalAmount" },
+        refundedCogs: { $first: "$_orderCogs" },
+      },
+    },
+    {
+      $group: {
+        _id: "$_id.group",
+        refunds: { $sum: "$refunds" },
+        refundedCogs: { $sum: "$refundedCogs" },
+      },
+    },
+  ]);
+
   // Compute operating expenses per bucket
   const expenseAgg = await Expense.aggregate([
     {
@@ -633,14 +800,29 @@ async function computeTrend(
     },
   ]);
 
-  const salesByGroup = new Map<string, TrendSalesAgg>(
-    buckets.map((b) => [
+  const refundByGroup = new Map(
+    refundBuckets.map((b) => [
       String(b._id ?? ""),
       {
-        netSales: roundToman(b.netSales ?? 0),
-        cogs: roundToman(b.cogs ?? 0),
+        refunds: roundToman(b.refunds ?? 0),
+        refundedCogs: roundToman(b.refundedCogs ?? 0),
       },
     ])
+  );
+  const salesByGroup = new Map<string, TrendSalesAgg>(
+    buckets.map((b) => {
+      const key = String(b._id ?? "");
+      const refund = refundByGroup.get(key) ?? { refunds: 0, refundedCogs: 0 };
+      return [
+        key,
+        {
+          netSales: roundToman(b.netSales ?? 0),
+          cogs: roundToman(b.cogs ?? 0),
+          refunds: refund.refunds,
+          refundedCogs: refund.refundedCogs,
+        },
+      ];
+    })
   );
   const expenseByGroup = new Map<string, number>(
     expenseAgg.map((e) => [e._id, roundToman(e.expenses)])
@@ -691,8 +873,11 @@ export async function getProfitabilityReport(
   // moved, so category profitability is intentionally unavailable.
 
   // --- KPIs ---
-  const grossProfit = current.totalNetSales - current.totalCogs;
-  const prevGrossProfit = previous.totalNetSales - previous.totalCogs;
+  // grossProfit = netSales − grossCOGS + refundedCOGS (explicit reversal)
+  const grossProfit =
+    current.totalNetSales - current.totalCogs + current.totalRefundsCogs;
+  const prevGrossProfit =
+    previous.totalNetSales - previous.totalCogs + previous.totalRefundsCogs;
   const netProfit = grossProfit - currentExpenses;
   const prevNetProfit = prevGrossProfit - prevExpenses;
 
@@ -728,6 +913,28 @@ export async function getProfitabilityReport(
       changePercent: safePct(
         current.totalCouponDiscount - previous.totalCouponDiscount,
         previous.totalCouponDiscount
+      ),
+    },
+    {
+      key: "refunds",
+      label: "بازپرداخت‌ها",
+      value: current.totalRefundsRevenue,
+      format: "money",
+      prevValue: previous.totalRefundsRevenue,
+      changePercent: safePct(
+        current.totalRefundsRevenue - previous.totalRefundsRevenue,
+        previous.totalRefundsRevenue
+      ),
+    },
+    {
+      key: "refundsCogs",
+      label: "بازگشت بهای تمام‌شده",
+      value: current.totalRefundsCogs,
+      format: "money",
+      prevValue: previous.totalRefundsCogs,
+      changePercent: safePct(
+        current.totalRefundsCogs - previous.totalRefundsCogs,
+        previous.totalRefundsCogs
       ),
     },
     {
@@ -797,92 +1004,32 @@ export async function getProfitabilityReport(
     },
   ];
 
-  // --- Waterfall ---
-  const waterfall: WaterfallStep[] = [
+  // --- Waterfall (pure formula — explicit refund steps, see computeWaterfallSteps) ---
+  const waterfall: WaterfallStep[] = computeWaterfallSteps(
     {
-      key: "grossSales",
-      label: "فروش ناخالص",
-      amount: current.totalGrossSales,
-      cumulative: current.totalGrossSales,
-      subtractive: false,
+      totalNetSales: current.totalNetSales,
+      totalCogs: current.totalCogs,
+      totalGrossSales: current.totalGrossSales,
+      totalProductDiscount: current.totalProductDiscount,
+      totalCouponDiscount: current.totalCouponDiscount,
+      totalRefundsRevenue: current.totalRefundsRevenue,
+      totalRefundsCogs: current.totalRefundsCogs,
     },
-    {
-      key: "productDiscount",
-      label: "تخفیف محصولات",
-      amount: -current.totalProductDiscount,
-      cumulative: current.totalGrossSales - current.totalProductDiscount,
-      subtractive: true,
-    },
-    {
-      key: "couponDiscount",
-      label: "تخفیف کوپن",
-      amount: -current.totalCouponDiscount,
-      cumulative:
-        current.totalGrossSales -
-        current.totalProductDiscount -
-        current.totalCouponDiscount,
-      subtractive: true,
-    },
-    {
-      key: "netSales",
-      label: "فروش خالص",
-      amount: current.totalNetSales,
-      cumulative: current.totalNetSales,
-      subtractive: false,
-    },
-    {
-      key: "cogs",
-      label: "COGS",
-      amount: -current.totalCogs,
-      cumulative: grossProfit,
-      subtractive: true,
-    },
-    {
-      key: "grossProfit",
-      label: "سود ناخالص",
-      amount: grossProfit,
-      cumulative: grossProfit,
-      subtractive: false,
-    },
-    {
-      key: "operatingExpenses",
-      label: "هزینه‌های عملیاتی",
-      amount: -currentExpenses,
-      cumulative: netProfit,
-      subtractive: true,
-    },
-    {
-      key: "netProfit",
-      label: "سود خالص",
-      amount: netProfit,
-      cumulative: netProfit,
-      subtractive: false,
-    },
-  ];
+    currentExpenses
+  );
 
-  // --- Product Profitability ---
-  const productRows: ProductProfitRow[] = current.items.map((item) => {
-    // Distribute coupon proportionally
-    const couponAlloc = item.couponAllocation;
-    const netSales = item.lineNet - couponAlloc;
-    const gp = netSales - item.cogs;
-    const margin = safePct(gp, netSales);
-    const share = safePct(gp, grossProfit);
-    return {
-      productId: item.productId,
-      name: item.name,
-      sku: item.sku,
-      quantity: item.quantity,
-      grossSales: item.grossLine,
-      productDiscount: item.discountLine,
-      couponAllocation: couponAlloc,
-      netSales,
-      cogs: item.cogs,
-      grossProfit: gp,
-      grossMargin: margin,
-      profitShare: share,
-    };
-  });
+  // --- Product Profitability (net of refund reversals via computeProductRow) ---
+  const productRows: ProductProfitRow[] = current.items.map((item) =>
+    computeProductRow(item, {
+      totalNetSales: current.totalNetSales,
+      totalCogs: current.totalCogs,
+      totalGrossSales: current.totalGrossSales,
+      totalProductDiscount: current.totalProductDiscount,
+      totalCouponDiscount: current.totalCouponDiscount,
+      totalRefundsRevenue: current.totalRefundsRevenue,
+      totalRefundsCogs: current.totalRefundsCogs,
+    })
+  );
 
   // Category profitability is unavailable until category is stored as an
   // immutable OrderItem snapshot.
@@ -1084,15 +1231,23 @@ export interface AggProductLine {
   discountLine: number; // discountAmount × qty
   cogs: number;        // fifoUnitCost or supplierPrice × qty
   couponAllocation?: number;
+  /** Refunded revenue attributed to this line's product (optional for tests). */
+  returnedAmount?: number;
+  /** Refunded COGS attributed to this line's product (optional for tests). */
+  returnedCogs?: number;
 }
 
-/** Summary totals from the order-level aggregation. */
+/** Summary totals from the order-level aggregation (net of refund reversals). */
 export interface AggSummary {
   totalNetSales: number;
   totalCogs: number;
   totalGrossSales: number;
   totalProductDiscount: number;
   totalCouponDiscount: number;
+  /** Refund revenue reversal ISSUED in the window (optional for tests). */
+  totalRefundsRevenue?: number;
+  /** Refunded-COGS reversal ISSUED in the window (optional for tests). */
+  totalRefundsCogs?: number;
 }
 
 /**
@@ -1110,9 +1265,17 @@ export function computeProductRow(
           (item.lineNet / summary.totalNetSales) * summary.totalCouponDiscount,
         )
       : 0);
-  const netSales = item.lineNet - couponAlloc;
-  const grossProfit = netSales - item.cogs;
-  const totalGrossProfit = summary.totalNetSales - summary.totalCogs;
+  // Refund reversal attributed to this product (refund-window basis): the
+  // row's revenue is net of the refunded revenue, COGS stays gross, and the
+  // refunded COGS is added back explicitly —
+  //   netSales − cogs + returnedCogs = grossProfit
+  // so Σ rows reconciles with the netted KPIs on every column.
+  const returnedAmount = item.returnedAmount ?? 0;
+  const returnedCogs = item.returnedCogs ?? 0;
+  const netSales = item.lineNet - couponAlloc - returnedAmount;
+  const grossProfit = netSales - item.cogs + returnedCogs;
+  const totalGrossProfit =
+    summary.totalNetSales - summary.totalCogs + (summary.totalRefundsCogs ?? 0);
   const grossMargin = safePct(grossProfit, netSales);
   const profitShare = safePct(grossProfit, totalGrossProfit);
   return {
@@ -1123,7 +1286,9 @@ export function computeProductRow(
     grossSales: item.grossLine,
     productDiscount: item.discountLine,
     couponAllocation: couponAlloc,
-    netSales,
+    returnedAmount: roundToman(returnedAmount),
+    returnedCogs: roundToman(returnedCogs),
+    netSales: roundToman(netSales),
     cogs: roundToman(item.cogs),
     grossProfit: roundToman(grossProfit),
     grossMargin,
@@ -1133,13 +1298,24 @@ export function computeProductRow(
 
 /**
  * Pure formula: compute the waterfall from summary totals.
+ *
+ * Explicit, fully additive refund steps (refund-treatment fix):
+ *   grossSales − productDiscount − couponDiscount − refunds = netSales
+ *   netSales − cogs + refundsCogs = grossProfit
+ *   grossProfit − operatingExpenses = netProfit
+ * `refundsCogs` is ADDITIVE (a reversal of the gross COGS step), mirroring
+ * the P&L statement rows.
  */
 export function computeWaterfallSteps(
   summary: AggSummary,
   operatingExpenses: number,
 ): WaterfallStep[] {
+  const refundsRevenue = summary.totalRefundsRevenue ?? 0;
+  const refundsCogs = summary.totalRefundsCogs ?? 0;
   const netSales = summary.totalNetSales;
-  const grossProfit = netSales - summary.totalCogs;
+  // COGS stays gross; the refunded COGS is an explicit ADD-BACK step:
+  //   netSales − grossCOGS + refundedCOGS = grossProfit
+  const grossProfit = netSales - summary.totalCogs + refundsCogs;
   const netProfit = grossProfit - operatingExpenses;
   /** Negate without producing −0 (−0 is falsy but unequal to +0). */
   const neg = (n: number) => (n === 0 ? 0 : -n);
@@ -1169,6 +1345,17 @@ export function computeWaterfallSteps(
       subtractive: true,
     },
     {
+      key: "refunds",
+      label: "بازپرداخت‌ها",
+      amount: neg(refundsRevenue),
+      cumulative:
+        summary.totalGrossSales -
+        summary.totalProductDiscount -
+        summary.totalCouponDiscount -
+        refundsRevenue,
+      subtractive: true,
+    },
+    {
       key: "netSales",
       label: "فروش خالص",
       amount: netSales,
@@ -1179,8 +1366,15 @@ export function computeWaterfallSteps(
       key: "cogs",
       label: "COGS",
       amount: neg(summary.totalCogs),
-      cumulative: grossProfit,
+      cumulative: netSales - summary.totalCogs,
       subtractive: true,
+    },
+    {
+      key: "refundsCogs",
+      label: "بازگشت بهای تمام‌شده",
+      amount: refundsCogs,
+      cumulative: grossProfit,
+      subtractive: false,
     },
     {
       key: "grossProfit",

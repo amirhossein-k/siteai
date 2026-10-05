@@ -21,6 +21,7 @@ function makeSummary(overrides: Partial<ReportSummary> = {}): ReportSummary {
     grossMargin: 56.5,
     refundedOrders: 0,
     refunds: 0,
+    refundsCogs: 0,
     paidAmount: 920_000,
     pendingAmount: 0,
     outstandingAmount: 0,
@@ -153,22 +154,61 @@ describe("buildStatementRows — P&L V2 net profit (Session 82 Phase E)", () => 
     expect(netProfit?.amount).toBe(520_000);
   });
 
-  it("keeps the order of the statement lines", () => {
+  it("keeps the order of the statement lines (explicit refund rows)", () => {
     const rows = buildStatementRows(makeSummary(), 250_000, 100);
     const keys = rows.map((r) => r.key);
     expect(keys).toEqual([
       "gross",
       "productDiscount",
       "couponDiscount",
+      "refunds",
       "net",
       "cogs",
+      "refundsCogs",
       "grossProfit",
       "margin",
-      "refunds",
       "operatingExpenses",
       "netProfit",
       "inventory",
     ]);
+  });
+
+  it("refunds rows: revenue reversal subtracts, COGS reversal adds (rule 5/6)", () => {
+    const rows = buildStatementRows(
+      makeSummary({
+        grossSales: 6_500,
+        productDiscount: 200,
+        couponDiscount: 350,
+        refunds: 1_900,
+        netSales: 4_050,
+        cogs: 2_500,
+        refundsCogs: 800,
+        grossProfit: 2_350,
+        grossMargin: 58,
+      }),
+      250_000,
+      0
+    );
+    const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
+    expect(byKey.refunds.amount).toBe(-1_900);
+    expect(byKey.refundsCogs.amount).toBe(800);
+    // Fully additive reconciliation:
+    //   net         = gross − productDiscount − couponDiscount − refunds
+    const net = byKey.net.amount ?? Number.NaN;
+    expect(net).toBe(6_500 - 200 - 350 - 1_900);
+    //   grossProfit = net − cogs + refundsCogs
+    expect(byKey.grossProfit.amount).toBe(net - 2_500 + 800);
+    //   netProfit   = grossProfit − operatingExpenses
+    expect(byKey.netProfit.amount).toBe(byKey.grossProfit.amount);
+  });
+
+  it("zero refunds → explicit rows emit 0 (never −0)", () => {
+    const rows = buildStatementRows(makeSummary(), 250_000, 0);
+    const byKey = Object.fromEntries(rows.map((r) => [r.key, r]));
+    expect(byKey.refunds.amount).toBe(0);
+    expect(byKey.refunds.amount).not.toBe(-0);
+    expect(byKey.refundsCogs.amount).toBe(0);
+    expect(byKey.refundsCogs.amount).not.toBe(-0);
   });
 
   it("percent is null-safe for a zero-net window", () => {

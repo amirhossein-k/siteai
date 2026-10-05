@@ -437,6 +437,147 @@ describe("profitability — pure calculation formulas", () => {
 });
 
 // ---------------------------------------------------------------------------
+// REFUND TREATMENT (refund-treatment fix — explicit P&L reversal rows)
+//
+// Rules pinned here (pure formulas; window selection lives in the Mongo
+// aggregations and is covered by verify-reports.js):
+//   rule 3 — no double-count: revenue/COGS reversal is an explicit term
+//   rule 4 — same-window sale + refund → zero revenue/COGS/GP contribution
+//   rule 6 — gross − discounts − refunds = net;
+//            net − grossCOGS + refundedCOGS = GP; GP − opEx = NP
+// ---------------------------------------------------------------------------
+
+describe("profitability — refund treatment", () => {
+  describe("same-window sale + refund nets to zero (rule 4)", () => {
+    const refundedWindow: AggSummary = {
+      totalNetSales: 0, // 900 sale − 900 refund
+      totalCogs: 400, // gross COGS of the refunded sale
+      totalGrossSales: 1_000,
+      totalProductDiscount: 100,
+      totalCouponDiscount: 0,
+      totalRefundsRevenue: 900,
+      totalRefundsCogs: 400,
+    };
+
+    it("waterfall: refund rows show the reversal and profit nets to zero", () => {
+      const steps = computeWaterfallSteps(refundedWindow, 0);
+      const wf = Object.fromEntries(steps.map((s) => [s.key, s]));
+
+      expect(wf.refunds.amount).toBe(-900);
+      expect(wf.refundsCogs.amount).toBe(400);
+      expect(wf.netSales.amount).toBe(0);
+      expect(wf.cogs.amount).toBe(-400);
+      expect(wf.grossProfit.amount).toBe(0); // 0 − 400 + 400
+      expect(wf.netProfit.amount).toBe(0);
+      expect(wf.refundsCogs.cumulative).toBe(0);
+    });
+
+    it("product row: revenue/COGS/GP contributions all net to zero", () => {
+      const row = computeProductRow(
+        {
+          productId: "p1",
+          name: "Refunded",
+          sku: "R1",
+          quantity: 1,
+          lineNet: 900,
+          grossLine: 1_000,
+          discountLine: 100,
+          cogs: 400,
+          couponAllocation: 0,
+          returnedAmount: 900,
+          returnedCogs: 400,
+        },
+        refundedWindow
+      );
+
+      expect(row.netSales).toBe(0); // 900 − 900
+      expect(row.cogs).toBe(400); // stays gross (explicit add-back)
+      expect(row.grossProfit).toBe(0); // 0 − 400 + 400
+      expect(row.returnedAmount).toBe(900);
+      expect(row.returnedCogs).toBe(400);
+    });
+  });
+
+  describe("waterfall reconciliation with explicit refund rows (rules 3 & 6)", () => {
+    const summary: AggSummary = {
+      totalNetSales: 4_050, // 5_950 − 1_900
+      totalCogs: 2_500, // gross COGS
+      totalGrossSales: 6_500,
+      totalProductDiscount: 200,
+      totalCouponDiscount: 350,
+      totalRefundsRevenue: 1_900,
+      totalRefundsCogs: 800,
+    };
+
+    it("emits the 10-step chain with refunds in the right positions", () => {
+      const steps = computeWaterfallSteps(summary, 350);
+      expect(steps.map((s) => s.key)).toEqual([
+        "grossSales",
+        "productDiscount",
+        "couponDiscount",
+        "refunds",
+        "netSales",
+        "cogs",
+        "refundsCogs",
+        "grossProfit",
+        "operatingExpenses",
+        "netProfit",
+      ]);
+    });
+
+    it("chain: gross − pd − cd − refunds = net; net − grossCOGS + refundedCOGS = GP; GP − opEx = NP", () => {
+      const steps = computeWaterfallSteps(summary, 350);
+      const wf = Object.fromEntries(steps.map((s) => [s.key, s]));
+
+      expect(6_500 - 200 - 350 - 1_900).toBe(4_050);
+      expect(wf.refunds.cumulative).toBe(wf.netSales.amount);
+      expect(wf.cogs.amount).toBe(-2_500);
+      expect(wf.refundsCogs.amount).toBe(800);
+      expect(wf.grossProfit.amount).toBe(4_050 - 2_500 + 800);
+      expect(wf.refundsCogs.cumulative).toBe(wf.grossProfit.amount);
+      expect(wf.netProfit.amount).toBe(wf.grossProfit.amount! - 350);
+      expect(wf.netProfit.cumulative).toBe(wf.netProfit.amount);
+
+      // Every component step summed must equal the final netProfit — the
+      // waterfall is fully additive (no hidden/dangling adjustment).
+      const componentKeys = new Set([
+        "grossSales",
+        "productDiscount",
+        "couponDiscount",
+        "refunds",
+        "cogs",
+        "refundsCogs",
+        "operatingExpenses",
+      ]);
+      const componentSum = steps
+        .filter((s) => componentKeys.has(s.key))
+        .reduce((a, s) => a + s.amount, 0);
+      expect(componentSum).toBe(wf.netProfit.amount);
+    });
+
+    it("without refunds the chain behaves exactly as before (regression)", () => {
+      const steps = computeWaterfallSteps(
+        {
+          totalNetSales: 900,
+          totalCogs: 400,
+          totalGrossSales: 1_000,
+          totalProductDiscount: 100,
+          totalCouponDiscount: 0,
+        },
+        50
+      );
+      const wf = Object.fromEntries(steps.map((s) => [s.key, s]));
+      expect(steps).toHaveLength(10);
+      expect(wf.refunds.amount).toBe(0);
+      expect(wf.refundsCogs.amount).toBe(0);
+      expect(wf.netSales.amount).toBe(900);
+      expect(wf.grossProfit.amount).toBe(500);
+      expect(wf.netProfit.amount).toBe(450);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // TREND BUCKETS (Session 88)
 //
 // The Foundation returned the OVERALL report window as every bucket's
@@ -701,5 +842,57 @@ describe("profitability — trend zero-fill", () => {
     expect(rows[0].grossProfit).toBe(400);
     expect(rows[0].expenses).toBe(150);
     expect(rows[0].netProfit).toBe(250);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TREND REFUND NETTING (refund-treatment fix — accrual per bucket)
+// ---------------------------------------------------------------------------
+
+describe("profitability — trend refund netting", () => {
+  const skeleton = computeTrendBuckets(
+    day("2026-09-01"),
+    day("2026-09-04"),
+    "day"
+  );
+
+  it("nets refund reversals issued inside a bucket; keeps memo fields", () => {
+    const sales = new Map<string, TrendSalesAgg>([
+      [
+        "2026-09-03",
+        { netSales: 5_950, cogs: 2_500, refunds: 1_900, refundedCogs: 800 },
+      ],
+    ]);
+    const rows = assembleTrendBuckets(skeleton, sales, new Map());
+
+    const day3 = rows[2];
+    expect(day3.netSales).toBe(4_050); // 5_950 − 1_900
+    expect(day3.cogs).toBe(2_500); // stays gross
+    expect(day3.refunds).toBe(1_900);
+    expect(day3.refundedCogs).toBe(800);
+    expect(day3.grossProfit).toBe(4_050 - 2_500 + 800);
+    // Σ buckets reconcile with the netted totals
+    expect(rows.reduce((s, r) => s + r.netSales, 0)).toBe(4_050);
+    expect(rows.reduce((s, r) => s + r.grossProfit, 0)).toBe(2_350);
+  });
+
+  it("cross-window: sale period keeps its sale, refund period carries the reversal (rules 1 & 3)", () => {
+    const sales = new Map<string, TrendSalesAgg>([
+      ["2026-09-01", { netSales: 1_000, cogs: 400 }], // sale period (no refund yet)
+      [
+        "2026-09-03",
+        { netSales: 0, cogs: 0, refunds: 1_000, refundedCogs: 400 },
+      ], // refund period
+    ]);
+    const rows = assembleTrendBuckets(skeleton, sales, new Map());
+
+    expect(rows[0].netSales).toBe(1_000); // sale period unchanged
+    expect(rows[0].grossProfit).toBe(600);
+    expect(rows[2].netSales).toBe(-1_000); // refund period carries the reversal
+    expect(rows[2].cogs).toBe(0);
+    expect(rows[2].refunds).toBe(1_000);
+    expect(rows[2].grossProfit).toBe(-600);
+    // Across both periods the sale + refund nets to zero profit (no double-count)
+    expect(rows[0].grossProfit + rows[2].grossProfit).toBe(0);
   });
 });

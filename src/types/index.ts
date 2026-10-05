@@ -1250,6 +1250,8 @@ export interface ReportSummary {
   grossMargin: number | null;
   refundedOrders: number;
   refunds: number;
+  /** COGS reversed by refunds ISSUED in the window (fifoUnitCost ?? supplierPrice snapshot basis). */
+  refundsCogs: number;
   paidAmount: number;
   pendingAmount: number;
   outstandingAmount: number;
@@ -1288,6 +1290,8 @@ export interface SalesReportRow {
   cogs: number;
   returnedQuantity: number;
   returnedAmount: number;
+  /** COGS of the returned units (historical snapshot basis) — sales-window operational column. */
+  returnedCogs: number;
   netQuantity: number;
   netSalesAfterReturns: number;
   firstSaleAt: string | null;

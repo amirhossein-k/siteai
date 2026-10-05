@@ -122,3 +122,37 @@ export async function buildLineMatch(filters: ReportFilters) {
   }
   return Object.keys(match).length > 0 ? match : null;
 }
+
+/**
+ * REFUND-window match — the accrual side of the P&L (refund-treatment fix).
+ *
+ * Selects orders whose refund was ISSUED inside the filters' window
+ * (`refund.refundedAt ∈ [from, to)`), regardless of when the order was
+ * created. A March sale refunded in June is therefore reversed in June's
+ * reports while March keeps the original sale — no double-count, no
+ * retroactive rewrite of published periods.
+ *
+ * Scope mirrors buildOrderMatch's ORDER-level filters (status window rule,
+ * payment method, customer, coupon) so customer/coupon-filtered P&L views
+ * stay coherent. Line-scoped filters (product / category / q) are NOT applied
+ * here — line-level consumers apply `buildLineMatch` after `$unwind`, exactly
+ * like the sales pipeline.
+ */
+export function buildRefundMatch(filters: ReportFilters): Record<string, unknown> {
+  const { from, to } = windowDates(filters);
+  const match: Record<string, unknown> = {
+    "payment.status": "refunded",
+    "refund.refundedAt": { $gte: from, $lt: to },
+  };
+  if (filters.orderStatus) {
+    match.status = filters.orderStatus;
+  } else {
+    match.status = { $ne: "cancelled" };
+  }
+  if (filters.paymentMethod) match["payment.method"] = filters.paymentMethod;
+  if (filters.customerId) match.customer = new ObjectId(filters.customerId);
+  if (filters.coupon) {
+    match["discount.code"] = new RegExp(escapeRegExp(filters.coupon), "i");
+  }
+  return match;
+}
