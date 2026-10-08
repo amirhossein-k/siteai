@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ShoppingCart, ImageOff, Heart, Store } from "lucide-react";
+import { ShoppingCart, ImageOff, Heart, Store, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, formatPrice, isAllowedImageSrc } from "@/lib/utils";
 import { useCartStore } from "@/stores/cart-store";
@@ -21,22 +21,28 @@ interface ProductCardProps {
    * Session 78.1 — optional hook fired when THIS card's countdown reaches
    * zero (the discounted rail wires it to its single refetch so card expiry is
    * handled even independently of the section-level chip). Other consumers
-   * omit it — default behavior unchanged. `endsAt` is the expired target.
+   * omit it — default behavior unchanged.
    */
   onCountdownExpire?: (endsAt: string) => void;
 }
 
 /**
- * Product card (Session 50; Session 85 Phase B — dark-glass reference restyle).
+ * Product card (Session 50; Session 85 dark-glass restyle; Session 93
+ * theme-agnostic redesign).
  *
- * The reference glass surface (glass-card utility from the Phase A theme),
- * gradient status badges on the RTL start corner, blue-gradient CTA and a
- * dominant price — while preserving EVERY behavior contract: server-computed
- * effective pricing (Session 77), countdown + onCountdownExpire (Session 78),
- * the stretched product link, customer-gated wishlist heart, supplier link,
- * image allowlist + fallback, and the disabled/out-of-stock add-to-cart.
- * Badge/label TEXT is unchanged («ناموجود», «تنها X عدد باقیست», «٪Y تخفیف»,
- * «افزودن به سبد خرید») — the E2E text contracts hold.
+ * Session 93 swaps every hard-coded dark literal (`text-white`, `bg-white/5`,
+ * `border-white/10`, …) for storefront semantic tokens, so ONE card markup now
+ * renders the dark glass language and the light card language:
+ *  - `sf-surface` = glass card (dark) / elevated white card (light),
+ *  - `bg-sf-image` / `bg-sf-skeleton` = image stage + shimmer,
+ *  - `text-sf-price` = dominant price, `border-sf-line` = dividers/meta.
+ *
+ * Behavior contracts are untouched: server-computed effective pricing
+ * (Session 77), countdown + onCountdownExpire (Session 78), the stretched
+ * product link, customer-gated wishlist heart, supplier link, image allowlist
+ * + fallback, and the disabled/out-of-stock add-to-cart. Badge/label TEXT is
+ * unchanged («ناموجود», «تنها X عدد باقیست», «٪Y تخفیف», «افزودن به سبد
+ * خرید») — the E2E text contracts hold.
  */
 export function ProductCard({
   product,
@@ -45,6 +51,7 @@ export function ProductCard({
 }: ProductCardProps) {
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [justAdded, setJustAdded] = useState(false);
   const router = useRouter();
   const { data: session } = useSession();
   const addItem = useCartStore((s) => s.addItem);
@@ -76,6 +83,7 @@ export function ProductCard({
       : null;
 
   const hasLowStock = product.stock > 0 && product.stock <= 3;
+  const outOfStock = product.stock === 0;
 
   // Session 77 — server-computed effective pricing (active-only discount
   // summary from the API; never client-derived, never stale: the API returns
@@ -96,35 +104,51 @@ export function ProductCard({
   // showed a broken image); fall back to the placeholder instead.
   const showImage = !!firstImage && !imageError && isAllowedImageSrc(firstImage);
 
+  const handleAddToCart = () => {
+    addItem({
+      id: product._id,
+      slug: product.slug || product._id,
+      name: product.name,
+      price: effectivePrice, // Session 77 — effective unit price
+      maxQuantity: product.stock,
+      image: product.images?.[0],
+    });
+    showToast.success(`${product.name} به سبد خرید اضافه شد`);
+    // Micro-interaction: brief confirmation on the CTA itself.
+    setJustAdded(true);
+    window.setTimeout(() => setJustAdded(false), 1200);
+  };
+
   return (
     <div
       className={cn(
-        // Session 85 — glass-card provides the reference surface (translucent
-        // gradient, blur, border, deep shadow + hover lift); the glow overlay
-        // below adds the blue accent glow on hover. `relative` keeps the
-        // stretched-link overlay and z-indexed actions working.
-        "glass-card group relative overflow-hidden rounded-3xl",
+        // Session 93 — `sf-surface` = the reference glass card on dark and an
+        // elevated white card on light (same geometry → no layout shift when
+        // the theme changes). `group` + `relative` keep the stretched link and
+        // the z-indexed actions working.
+        "sf-surface group relative flex h-full flex-col overflow-hidden rounded-3xl",
         className
       )}
     >
-      {/* Hover glow overlay (pointer-events-none; transparent, ring + glow). */}
+      {/* Hover glow overlay (pointer-events-none; brand-tinted ring + glow —
+          both tokens resolve to a soft shadow in the light theme). */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 z-0 rounded-3xl opacity-0 transition-opacity duration-300 group-hover:opacity-100"
         style={{
           boxShadow:
-            "inset 0 0 0 1px rgba(90,160,255,0.22), 0 0 42px rgba(60,120,255,0.14)",
+            "inset 0 0 0 1px var(--sf-ring-glow), 0 0 42px var(--sf-glow)",
         }}
       />
 
       {/* Product Image */}
-      <div className="relative aspect-square overflow-hidden bg-white/[0.02]">
+      <div className="relative aspect-square overflow-hidden bg-sf-image">
         {showImage ? (
           <>
-            {/* Loading skeleton */}
+            {/* Loading skeleton — shimmer until the (eager) image decodes. */}
             {!imageLoaded && (
-              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-white/[0.04] to-transparent animate-pulse">
-                <span className="text-5xl font-bold text-white/10">
+              <div className="absolute inset-0 flex animate-pulse items-center justify-center bg-sf-skeleton">
+                <span className="text-5xl font-bold text-sf-strong/10">
                   {product.name?.[0] || "?"}
                 </span>
               </div>
@@ -138,66 +162,77 @@ export function ProductCard({
               onLoad={() => setImageLoaded(true)}
               onError={() => setImageError(true)}
               className={cn(
-                "object-cover transition-all duration-500 group-hover:scale-110",
-                imageLoaded ? "opacity-100" : "opacity-0"
+                "object-cover transition-all duration-500 group-hover:scale-[1.06]",
+                imageLoaded ? "opacity-100" : "opacity-0",
+                outOfStock && "opacity-70 grayscale-[35%]"
               )}
             />
           </>
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-white/[0.04] to-transparent">
+          <div className="flex h-full w-full items-center justify-center bg-sf-skeleton">
             {imageError ? (
-              <ImageOff className="h-10 w-10 text-white/20" />
+              <ImageOff className="h-10 w-10 text-sf-dim/40" />
             ) : (
-              <span className="text-5xl font-bold text-white/15">
+              <span className="text-5xl font-bold text-sf-strong/15">
                 {product.name?.[0] || "?"}
               </span>
             )}
           </div>
         )}
 
-        {/* Status badges — RTL start corner (top-right), reference gradient
-            pills. All gradient stops keep white text ≥ WCAG AA (Session 61
-            convention; the axe gate scans the catalog/homepage). Text is
-            byte-identical to the pre-Phase-B badges. */}
-        <div className="absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
-          {product.stock === 0 && (
-            <span className="rounded-lg bg-gradient-to-b from-red-600 to-red-800 px-3 py-1 text-xs font-bold text-white shadow-lg shadow-black/40">
+        {/* Status badges — RTL start corner (top-right), gradient pills. All
+            gradient stops keep white text ≥ WCAG AA (Session 61 convention;
+            the axe gate scans the catalog/homepage). Text is byte-identical to
+            the pre-Session-93 badges. */}
+        <div className="absolute right-3 top-3 z-10 flex flex-col items-end gap-1.5">
+          {outOfStock && (
+            <span className="rounded-lg bg-gradient-to-b from-red-600 to-red-800 px-2.5 py-1 text-[11px] font-bold text-white shadow-lg shadow-black/25">
               ناموجود
             </span>
           )}
           {hasLowStock && (
-            <span className="rounded-lg bg-gradient-to-b from-amber-700 to-amber-800 px-3 py-1 text-xs font-bold text-white shadow-lg shadow-black/40">
+            <span className="rounded-lg bg-gradient-to-b from-amber-700 to-amber-800 px-2.5 py-1 text-[11px] font-bold text-white shadow-lg shadow-black/25">
               تنها {product.stock} عدد باقیست
             </span>
           )}
           {hasActiveDiscount && (
-            <span className="rounded-lg bg-gradient-to-b from-rose-600 to-rose-700 px-3 py-1 text-xs font-bold text-white shadow-lg shadow-black/40">
+            <span className="rounded-lg bg-gradient-to-b from-rose-600 to-rose-700 px-2.5 py-1 text-[11px] font-bold text-white shadow-lg shadow-black/25">
               ٪{discountPercent} تخفیف
             </span>
           )}
         </div>
 
         {/* Wishlist heart (Session 35) — RTL end corner (top-left); z-20 lifts
-            it above the stretched-link overlay so it stays independent. */}
+            it above the stretched-link overlay so it stays an independent
+            action. `bg-sf-overlay/15` is white-on-dark and slate-on-white, so
+            the control stays legible in both themes. */}
         <button
           type="button"
           onClick={handleWishlist}
-          aria-label={inWishlist ? "حذف از علاقه‌مندی‌ها" : "افزودن به علاقه‌مندی‌ها"}
-          className="absolute left-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/30 text-white shadow-md backdrop-blur-sm transition-all hover:scale-110 hover:bg-black/50"
+          aria-label={
+            inWishlist ? "حذف از علاقه‌مندی‌ها" : "افزودن به علاقه‌مندی‌ها"
+          }
+          aria-pressed={inWishlist}
+          className={cn(
+            "absolute left-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-sf-line-strong bg-sf-overlay/15 text-sf-strong shadow-md backdrop-blur-sm transition-all duration-200 hover:scale-110 hover:bg-sf-overlay/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
+            inWishlist && "border-rose-500/40"
+          )}
         >
           <Heart
             className={cn(
-              "h-4 w-4 transition-colors",
-              inWishlist && "fill-rose-500 text-rose-500"
+              "h-4 w-4 transition-all duration-200",
+              inWishlist && "scale-110 fill-rose-500 text-rose-500"
             )}
           />
         </button>
       </div>
 
       {/* Content */}
-      <div className="p-4">
+      <div className="flex flex-1 flex-col p-4">
         {/* Category */}
-        <p className="mb-1 text-xs text-muted-foreground">{categoryName}</p>
+        <p className="mb-1 truncate text-[11px] font-medium text-sf-dim">
+          {categoryName}
+        </p>
 
         {/* Name — the STRETCHED product link (Session 68.3 UX): its transparent
             ::after overlay extends over the whole card (image, title, price),
@@ -207,30 +242,23 @@ export function ProductCard({
             keyboard tab stop for the product destination. */}
         <Link
           href={`/products/${product.slug || product._id}`}
-          className="after:absolute after:inset-0 after:content-['']"
+          className="rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background after:absolute after:inset-0 after:content-['']"
         >
-          <h3 className="mb-2 line-clamp-2 text-sm font-semibold leading-tight text-foreground transition-colors hover:text-primary">
+          <h3 className="mb-2 line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-5 text-foreground transition-colors group-hover:text-primary">
             {product.name}
           </h3>
         </Link>
 
-        {/* Price + supplier link (Session 42) — the dominant current price
-            (Session 85: white/extrabold on the dark glass) with the original
-            struck-through and secondary when a discount is active. */}
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div className="flex flex-wrap items-baseline gap-2">
-            {hasActiveDiscount ? (
-              <>
-                <span className="text-lg font-extrabold text-white">
-                  {formatPrice(effectivePrice)}
-                </span>
-                <span className="text-xs text-muted-foreground line-through">
-                  {formatPrice(product.price)}
-                </span>
-              </>
-            ) : (
-              <span className="text-lg font-extrabold text-white">
-                {formatPrice(effectivePrice)}
+        {/* Price hierarchy — dominant effective price (the theme's strongest
+            text token), struck-through original + supplier link secondary. */}
+        <div className="mt-auto flex items-end justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-1.5">
+            <span className="text-lg font-extrabold tracking-tight text-sf-price">
+              {formatPrice(effectivePrice)}
+            </span>
+            {hasActiveDiscount && (
+              <span className="text-xs text-sf-dim line-through">
+                {formatPrice(product.price)}
               </span>
             )}
           </div>
@@ -238,11 +266,11 @@ export function ProductCard({
             <Link
               href={`/suppliers/${supplierInfo._id}`}
               onClick={(e) => e.stopPropagation()}
-              className="relative z-10 flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-primary"
+              className="relative z-10 flex min-w-0 items-center gap-1 text-[11px] text-sf-dim transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
               title={supplierInfo.businessName}
             >
               <Store className="h-3 w-3 flex-shrink-0" />
-              <span className="max-w-[100px] truncate">
+              <span className="max-w-[90px] truncate">
                 {supplierInfo.businessName}
               </span>
             </Link>
@@ -253,7 +281,7 @@ export function ProductCard({
             ACTIVE discount with a finite end. Presentation only; the server
             remains authoritative for pricing. */}
         {discountEndsAt && (
-          <div className="mb-2">
+          <div className="mt-2">
             <DiscountCountdown
               endsAt={discountEndsAt}
               compact
@@ -262,28 +290,26 @@ export function ProductCard({
           </div>
         )}
 
-        {/* Add to cart — Session 85: reference blue-gradient CTA. Both
-            gradient stops (blue-600 → blue-800) keep white text ≥ 4.5:1, and
-            the disabled/out-of-stock state + label text are unchanged. z-10
-            lifts it above the stretched product overlay. */}
+        {/* Add to cart — brand-gradient CTA (tokenised `blue-grad`), with a
+            short-lived confirmation state. z-10 lifts it above the stretched
+            product overlay. */}
         <Button
-          className="relative z-10 w-full gap-2 bg-gradient-to-b from-blue-600 to-blue-800 text-xs text-white shadow-lg shadow-blue-950/50 transition-all hover:-translate-y-0.5 hover:from-blue-600 hover:to-blue-700 hover:shadow-blue-900/60"
+          className={cn(
+            "relative z-10 mt-3 w-full gap-2 text-xs font-semibold text-white shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]",
+            justAdded ? "bg-emerald-600 hover:bg-emerald-600" : "blue-grad"
+          )}
           size="sm"
-          disabled={product.stock === 0}
-          onClick={() => {
-            addItem({
-              id: product._id,
-              slug: product.slug || product._id,
-              name: product.name,
-              price: effectivePrice, // Session 77 — effective unit price
-              maxQuantity: product.stock,
-              image: product.images?.[0],
-            });
-            showToast.success(`${product.name} به سبد خرید اضافه شد`);
-          }}
+          disabled={outOfStock}
+          onClick={handleAddToCart}
         >
-          <ShoppingCart className="h-3.5 w-3.5" />
-          {product.stock === 0 ? "ناموجود" : "افزودن به سبد خرید"}
+          {/* Label text stays byte-identical (E2E contract); only the icon
+              and the CTA colour acknowledge the click. */}
+          {justAdded ? (
+            <Check className="h-3.5 w-3.5" />
+          ) : (
+            <ShoppingCart className="h-3.5 w-3.5" />
+          )}
+          {outOfStock ? "ناموجود" : "افزودن به سبد خرید"}
         </Button>
       </div>
     </div>

@@ -26,6 +26,7 @@ import { usePublicCategories } from "@/hooks/use-public-categories";
 import { usePublicBrands } from "@/hooks/use-public-brands";
 import { usePublicTags } from "@/hooks/use-public-tags";
 import { usePublicAttributeFacets } from "@/hooks/use-public-attribute-facets";
+import { cn } from "@/lib/utils";
 
 const sortOptions = [
   { value: "newest", label: "جدیدترین" },
@@ -127,19 +128,19 @@ export default function ProductsCatalogPage() {
           exit link back to the full catalog (count/subtitle unchanged). */}
       <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-white">
+          <h1 className="text-3xl font-black tracking-tight text-foreground sm:text-4xl">
             {/* \u200C = نیم‌فاصله — same «محصولات تخفیف‌دار» spelling as the
                 homepage section title (consistent Persian typography). */}
             {isDiscounted ? "محصولات تخفیف\u200Cدار" : "محصولات"}
           </h1>
-          <p className="mt-2 text-muted-foreground">
+          <p className="mt-2 text-sm text-sf-dim">
             {isLoading ? "..." : `${totalProducts} محصول در فروشگاه`}
           </p>
         </div>
         {isDiscounted && (
           <Link
             href="/products"
-            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-muted-foreground backdrop-blur transition-colors hover:bg-white/10 hover:text-white"
+            className="inline-flex items-center gap-1 rounded-full border border-sf-line bg-sf-chip px-3.5 py-2 text-sm font-medium text-sf-dim transition-colors hover:bg-sf-chip/60 hover:text-sf-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
           >
             مشاهده همه محصولات
           </Link>
@@ -151,7 +152,7 @@ export default function ProductsCatalogPage() {
         {/* Search row */}
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
-            <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sf-dim" />
             <Input
               placeholder="جستجوی محصولات..."
               value={searchQuery}
@@ -163,15 +164,18 @@ export default function ProductsCatalogPage() {
               onKeyDown={(e) => {
                 if (e.key === "Escape") setSuggestionsOpen(false);
               }}
-              className="border-white/10 bg-white/5 pr-9"
+              aria-label="جستجوی محصولات"
+              className="border-sf-line bg-sf-chip pr-9 text-sf-strong placeholder:text-sf-dim"
             />
             {searchQuery && (
               <button
+                type="button"
+                aria-label="پاک کردن جستجو"
                 onClick={() => {
                   setSearchQuery("");
                   setSuggestionsOpen(false);
                 }}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute left-2.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-sf-dim transition-colors hover:bg-sf-chip hover:text-sf-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -186,9 +190,27 @@ export default function ProductsCatalogPage() {
               onClose={() => setSuggestionsOpen(false)}
             />
           </div>
+          {/* Desktop/tablet quick sort — same setSortBy state, same URL
+              contract as the chips inside the filter panel below. */}
+          <label className="sr-only" htmlFor="catalog-sort">
+            مرتب‌سازی
+          </label>
+          <select
+            id="catalog-sort"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="hidden h-10 shrink-0 rounded-xl border border-sf-line bg-sf-chip px-3 text-sm text-sf-strong outline-none transition-colors focus:border-primary/60 focus:ring-2 focus:ring-primary/25 sm:block"
+          >
+            {sortOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
           <Button
             variant="outline"
-            className="gap-2"
+            aria-expanded={showFilters}
+            className="h-10 gap-2 border-sf-line bg-sf-chip text-sf-dim hover:bg-sf-chip/60 hover:text-sf-strong"
             onClick={() => setShowFilters(!showFilters)}
           >
             <SlidersHorizontal className="h-4 w-4" />
@@ -203,7 +225,7 @@ export default function ProductsCatalogPage() {
 
         {/* Filters panel */}
         {showFilters && (
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 space-y-4 backdrop-blur">
+          <div className="animate-in fade-in slide-in-from-top-2 rounded-2xl border border-sf-line bg-sf-card/60 p-4 space-y-4 backdrop-blur duration-200">
             <FilterChipGroup
               title="دسته‌بندی"
               options={categories || []}
@@ -264,7 +286,11 @@ export default function ProductsCatalogPage() {
                     variant={sortBy === option.value ? "default" : "outline"}
                     size="sm"
                     onClick={() => setSortBy(option.value)}
-                    className="gap-1"
+                    className={cn(
+                      "gap-1",
+                      sortBy !== option.value &&
+                        "border-sf-line bg-sf-chip text-sf-dim hover:border-primary/40 hover:bg-sf-chip/60 hover:text-sf-strong"
+                    )}
                   >
                     {option.value === "price_asc" ||
                     option.value === "price_desc" ? (
@@ -421,31 +447,45 @@ export default function ProductsCatalogPage() {
       {/* Products Grid */}
       {isLoading ? (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {/* Skeletons mirror the real card geometry (image stage → meta →
+              title → price → CTA) so the loading state never shifts layout. */}
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="space-y-3">
-              <Skeleton className="aspect-square w-full rounded-xl" />
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-5 w-full" />
-              <Skeleton className="h-6 w-32" />
-              <Skeleton className="h-9 w-full" />
+            <div
+              key={i}
+              className="overflow-hidden rounded-3xl border border-sf-line bg-sf-card/40"
+            >
+              <Skeleton className="aspect-square w-full rounded-none bg-sf-skeleton" />
+              <div className="space-y-3 p-4">
+                <Skeleton className="h-3 w-16 bg-sf-skeleton" />
+                <Skeleton className="h-4 w-full bg-sf-skeleton" />
+                <Skeleton className="h-4 w-2/3 bg-sf-skeleton" />
+                <Skeleton className="h-6 w-28 bg-sf-skeleton" />
+                <Skeleton className="h-9 w-full bg-sf-skeleton" />
+              </div>
             </div>
           ))}
         </div>
       ) : isError ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <AlertCircle className="mb-3 h-12 w-12 text-destructive" />
+          <AlertCircle className="mb-4 h-12 w-12 text-destructive" />
           <h3 className="mb-2 text-lg font-semibold">خطا در دریافت محصولات</h3>
           <p className="mb-4 text-sm text-muted-foreground">
             ممکن است اتصال اینترنت خود را بررسی کنید
           </p>
-          <Button variant="outline" onClick={() => refetch()}>
+          <Button
+            variant="outline"
+            className="border-sf-line bg-sf-chip text-sf-dim hover:bg-sf-chip/60 hover:text-sf-strong"
+            onClick={() => refetch()}
+          >
             <RefreshCw className="ml-2 h-4 w-4" />
             تلاش مجدد
           </Button>
         </div>
       ) : !products || products.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Package className="mb-3 h-12 w-12 text-muted-foreground" />
+          <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-sf-line bg-sf-chip">
+            <Package className="h-8 w-8 text-sf-dim" />
+          </span>
           {/* Session 79 — honest lens empty state: only when the server
               returned ZERO matches (total === 0) AND no other filter could
               be responsible. A filtered search or an out-of-range page keeps
@@ -462,7 +502,7 @@ export default function ProductsCatalogPage() {
               </p>
               <Link
                 href="/products"
-                className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-muted-foreground backdrop-blur transition-colors hover:bg-white/10 hover:text-white"
+                className="inline-flex items-center rounded-full border border-sf-line bg-sf-chip px-4 py-2 text-sm font-medium text-sf-dim transition-colors hover:bg-sf-chip/60 hover:text-sf-strong"
               >
                 مشاهده همه محصولات
               </Link>
@@ -476,7 +516,11 @@ export default function ProductsCatalogPage() {
                   : "هنوز محصولی در فروشگاه ثبت نشده است"}
               </p>
               {hasActiveFilters && (
-                <Button variant="outline" onClick={clearFilters}>
+                <Button
+                  variant="outline"
+                  className="border-sf-line bg-sf-chip text-sf-dim hover:bg-sf-chip/60 hover:text-sf-strong"
+                  onClick={clearFilters}
+                >
                   پاک کردن فیلترها
                 </Button>
               )}

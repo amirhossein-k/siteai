@@ -4,6 +4,7 @@ import "./globals.css";
 import Providers from "@/app/Providers";
 import { OrganizationJsonLd, WebsiteJsonLd } from "@/components/seo/json-ld-script";
 import { APP_NAME, APP_DESCRIPTION, APP_URL } from "@/lib/constants";
+import { STOREFRONT_THEME_INIT_SCRIPT } from "@/lib/storefront-theme";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -76,6 +77,14 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        {/* Session 93 — storefront theme initializer. Render-blocking and
+            first in <head>: the `data-sf-theme` attribute is on <html> before
+            the body paints, so the selected theme (dark by default) applies
+            without a flash of the wrong theme. `suppressHydrationWarning` on
+            <html> covers the attribute this script adds. */}
+        <script
+          dangerouslySetInnerHTML={{ __html: STOREFRONT_THEME_INIT_SCRIPT }}
+        />
         <OrganizationJsonLd />
         <WebsiteJsonLd />
       </head>

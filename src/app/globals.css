@@ -3,7 +3,43 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Two layers:
+
+   1. The original shadcn/ui token layer (`--background`, `--card`, …) which is
+      inherited by EVERY area of the app (admin, supplier, auth).
+   2. The storefront semantic layer (`--sf-*`) which the public storefront
+      components consume through Tailwind utilities (`bg-sf-card`,
+      `text-sf-strong`, `border-sf-line`, …) and through the glass/panel
+      utilities further down.
+
+   THEME ARCHITECTURE (Storefront, Session 93)
+   -------------------------------------------
+   The storefront has TWO complete themes that are BOTH driven by this single
+   token layer — no component knows which theme is active:
+
+     • `:root` holds the LIGHT values (this is also the admin/auth default).
+     • `html:not([data-sf-theme="light"]) .storefront` overrides them with the
+       DARK storefront values. This is the DEFAULT storefront theme, so even
+       with JavaScript disabled (or on the very first paint before the init
+       script runs) the storefront renders dark exactly as before.
+     • Selecting the light theme simply sets `data-sf-theme="light"` on
+       <html> (see `src/lib/storefront-theme.ts` + the inline init script in
+       `src/app/layout.tsx`), which disables the dark override and lets the
+       `:root` light values cascade back in.
+
+   Because both themes are plain custom-property value swaps, every storefront
+   component — cards, badges, inputs, dialogs, dropdowns, skeletons, prices,
+   hover/focus states — re-themes without a single conditional class.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 :root {
+  color-scheme: light;
+
+  /* ── shadcn/ui base tokens (LIGHT — admin/supplier/auth + light storefront) */
   --background: hsl(0 0% 100%);
   --foreground: hsl(240 10% 3.9%);
   --card: hsl(0 0% 100%);
@@ -29,6 +65,94 @@
   --chart-3: hsl(197 37% 24%);
   --chart-4: hsl(43 74% 66%);
   --chart-5: hsl(27 87% 67%);
+
+  /* ── Storefront semantic layer — LIGHT theme (also the graceful default for
+        any non-storefront surface that happens to reference an `sf-*` token) */
+  --sf-page: hsl(220 24% 98%);
+  --sf-card: hsl(0 0% 100%);
+  --sf-elevated: hsl(0 0% 100%);
+  --sf-strong: hsl(224 32% 11%);
+  --sf-dim: hsl(220 12% 44%);
+  --sf-line: hsl(220 16% 90%);
+  --sf-line-strong: hsl(220 14% 81%);
+  --sf-price: hsl(224 32% 11%);
+  --sf-accent: hsl(221 83% 53%);
+  --sf-chip: hsl(220 22% 96%);
+  --sf-image: hsl(220 24% 97.5%);
+  --sf-skeleton: hsl(220 20% 94%);
+  --sf-overlay: hsl(224 32% 11%);
+
+  --sf-glass-bg: linear-gradient(165deg, hsl(0 0% 100%), hsl(220 30% 98.5%));
+  --sf-glass-border: hsl(220 16% 90%);
+  --sf-glass-shadow: 0 1px 2px hsl(220 43% 11% / 0.05),
+    0 14px 32px -18px hsl(220 43% 11% / 0.26);
+  --sf-glass-shadow-hover: 0 2px 6px hsl(220 43% 11% / 0.06),
+    0 26px 52px -20px hsl(220 43% 11% / 0.32);
+  --sf-glow: hsl(221 83% 53% / 0.12);
+  --sf-ring-glow: hsl(221 83% 53% / 0.3);
+  --sf-panel-bg: linear-gradient(160deg, hsl(214 100% 97%), hsl(220 44% 99%));
+  --sf-panel-border: hsl(214 90% 88%);
+  --sf-panel-shadow: 0 18px 42px -26px hsl(221 83% 53% / 0.4);
+  --sf-header-bg: hsl(0 0% 100% / 0.85);
+  --sf-header-border: hsl(220 16% 90%);
+  --sf-dot: hsl(220 43% 11% / 0.05);
+  --sf-cta-from: hsl(221 83% 53%);
+  --sf-cta-to: hsl(224 76% 40%);
+  --sf-cta-shadow: hsl(224 76% 30% / 0.35);
+  --sf-on-strong: hsl(0 0% 100%);
+  --sf-success: hsl(158 84% 30%);
+  --sf-warning: hsl(32 95% 36%);
+
+  /* Toast surface — the shared <Toaster> is mounted once at the root, OUTSIDE
+     the `.storefront` wrapper, so it cannot use the sf-* tokens directly.
+     These three variables are re-scoped for the dark storefront just below
+     and otherwise follow the light palette. */
+  --sf-toast-bg: hsl(0 0% 100%);
+  --sf-toast-fg: hsl(224 32% 11%);
+  --sf-toast-line: hsl(220 16% 90%);
+  --sf-toast-dim: hsl(220 12% 44%);
+}
+
+/* ── LIGHT STOREFRONT THEME
+
+   Selected by the Theme Switcher (`data-sf-theme="light"` on <html>).
+
+   Two things happen here:
+
+   1. The shadcn/ui tokens are re-declared with the LIGHT STOREFRONT palette.
+      The `:root` values cannot be reused verbatim because the storefront needs
+      the BRAND BLUE accent (`--primary`) instead of the neutral near-black used
+      by admin/auth — blue-600 (#2563eb) keeps `text-primary` links at ≈5.1:1 on
+      the light page surface AND white button labels at 5.17:1 (both WCAG AA),
+      while `--destructive` is deepened to 45% lightness so white labels on it
+      also reach 5.7:1.
+
+   2. Nothing else: the `--sf-*` semantic layer defined in `:root` is ALREADY
+      the light palette, so omitting the dark override above simply lets those
+      values cascade back in. That is the whole switch — one attribute.
+   ─────────────────────────────────────────────────────────────────────── */
+html[data-sf-theme="light"] .storefront {
+  color-scheme: light;
+
+  --background: hsl(220 24% 98%);
+  --foreground: hsl(224 32% 11%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(224 32% 11%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(224 32% 11%);
+  --primary: hsl(221 83% 53%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(220 22% 96%);
+  --secondary-foreground: hsl(224 32% 14%);
+  --muted: hsl(220 22% 96%);
+  --muted-foreground: hsl(220 12% 42%);
+  --accent: hsl(220 22% 95%);
+  --accent-foreground: hsl(224 32% 14%);
+  --destructive: hsl(0 72% 45%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(220 16% 90%);
+  --input: hsl(220 16% 88%);
+  --ring: hsl(221 83% 53%);
 }
 
 .dark {
@@ -58,6 +182,96 @@
   --chart-5: hsl(340 75% 55%);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK STOREFRONT THEME (Session 85 palette, Session 93 token restructure)
+
+   `.storefront` redefines the shared tokens for the PUBLIC storefront routes
+   only (homepage + the (storefront) layout group). Admin, supplier and auth
+   areas keep the light `:root` tokens untouched.
+
+   The palette follows the approved productcarousel / productPage reference
+   language (near-black navy background, blue accent system) adapted to the
+   real data model and to WCAG AA contrast on dark — the axe gate scans the
+   homepage, catalog, product detail, supplier detail, login, register and
+   forgot-password pages and must stay fully clean.
+
+   Key contrast decision: the single `--primary` token serves BOTH `text-
+   primary` links on dark (blue-500 ≈ 5.4:1) AND `bg-primary` buttons with
+   the dark navy `--primary-foreground` (≈ 4.9:1) — both pass AA. A darker
+   blue would fail the link path; a lighter one would fail the button path.
+   (Identical values to Session 85 — verified by the axe gate.)
+   ═══════════════════════════════════════════════════════════════════════════ */
+html:not([data-sf-theme="light"]) .storefront {
+  color-scheme: dark;
+
+  /* dark surfaces */
+  --background: hsl(228 25% 5%);
+  --foreground: hsl(0 0% 97%);
+  --card: hsl(228 18% 8%);
+  --card-foreground: hsl(0 0% 97%);
+  --popover: hsl(228 16% 10%);
+  --popover-foreground: hsl(0 0% 97%);
+  --secondary: hsl(228 14% 12%);
+  --secondary-foreground: hsl(0 0% 97%);
+  --muted: hsl(228 14% 11%);
+  --muted-foreground: hsl(228 10% 68%);
+  --accent: hsl(228 14% 13%);
+  --accent-foreground: hsl(0 0% 97%);
+  --destructive: hsl(0 72% 56%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --border: hsl(228 14% 18%);
+  --input: hsl(228 14% 16%);
+  /* blue accent system (reference #2b7fff family) */
+  --primary: hsl(217 91% 60%);
+  --primary-foreground: hsl(228 45% 8%);
+  --ring: hsl(217 91% 60%);
+
+  /* dark semantic storefront layer */
+  --sf-page: hsl(228 25% 5%);
+  --sf-card: hsl(228 18% 8%);
+  --sf-elevated: hsl(228 17% 11%);
+  --sf-strong: hsl(0 0% 99%);
+  --sf-dim: hsl(228 10% 68%);
+  --sf-line: hsl(228 14% 18%);
+  --sf-line-strong: hsl(228 14% 26%);
+  --sf-price: hsl(0 0% 100%);
+  --sf-accent: hsl(217 91% 65%);
+  --sf-chip: hsl(228 15% 14%);
+  --sf-image: hsl(228 18% 9%);
+  --sf-skeleton: hsl(228 14% 14%);
+  --sf-overlay: hsl(0 0% 100%);
+
+  --sf-glass-bg: linear-gradient(
+    162deg,
+    hsl(0 0% 100% / 0.07),
+    hsl(0 0% 100% / 0.015)
+  );
+  --sf-glass-border: hsl(0 0% 100% / 0.09);
+  --sf-glass-shadow: 0 22px 50px -22px hsl(0 0% 0% / 0.75),
+    inset 0 1px 0 hsl(0 0% 100% / 0.06);
+  --sf-glass-shadow-hover: 0 32px 70px -26px hsl(0 0% 0% / 0.85),
+    inset 0 1px 0 hsl(0 0% 100% / 0.11);
+  --sf-glow: hsl(217 91% 62% / 0.18);
+  --sf-ring-glow: hsl(217 91% 62% / 0.45);
+  --sf-panel-bg: linear-gradient(
+    160deg,
+    hsl(220 90% 55% / 0.16),
+    hsl(224 70% 25% / 0.06)
+  );
+  --sf-panel-border: hsl(216 100% 66% / 0.32);
+  --sf-panel-shadow: 0 0 60px hsl(217 100% 60% / 0.26),
+    inset 0 1px 0 hsl(212 100% 80% / 0.18);
+  --sf-header-bg: hsl(228 30% 5% / 0.75);
+  --sf-header-border: hsl(0 0% 100% / 0.08);
+  --sf-dot: hsl(0 0% 100% / 0.05);
+  --sf-cta-from: hsl(217 91% 60%);
+  --sf-cta-to: hsl(224 76% 42%);
+  --sf-cta-shadow: hsl(228 60% 6% / 0.6);
+  --sf-on-strong: hsl(228 45% 8%);
+  --sf-success: hsl(152 66% 52%);
+  --sf-warning: hsl(38 92% 58%);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -83,11 +297,30 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+
+  /* Storefront semantic utilities: bg-sf-card, text-sf-strong, border-sf-line … */
+  --color-sf-page: var(--sf-page);
+  --color-sf-card: var(--sf-card);
+  --color-sf-elevated: var(--sf-elevated);
+  --color-sf-strong: var(--sf-strong);
+  --color-sf-dim: var(--sf-dim);
+  --color-sf-line: var(--sf-line);
+  --color-sf-line-strong: var(--sf-line-strong);
+  --color-sf-price: var(--sf-price);
+  --color-sf-accent: var(--sf-accent);
+  --color-sf-chip: var(--sf-chip);
+  --color-sf-image: var(--sf-image);
+  --color-sf-skeleton: var(--sf-skeleton);
+  --color-sf-overlay: var(--sf-overlay);
+  --color-sf-success: var(--sf-success);
+  --color-sf-warning: var(--sf-warning);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: var(--font-geist-sans), var(--font-vazirmatn), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-geist-sans), var(--font-vazirmatn), ui-sans-serif,
+    system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 }
 
@@ -111,99 +344,139 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Session 85 — Storefront dark-glass theme (Phase A foundation)
+   STOREFRONT SURFACES + TEXTURE UTILITIES (Session 93 — theme-agnostic)
 
-   `.storefront` redefines the shared CSS custom properties for the PUBLIC
-   storefront routes only (homepage + the (storefront) layout group). Admin,
-   supplier and auth areas keep the light `:root` tokens untouched.
+   The storefront base surface + the reference background texture. Both are
+   driven purely by the scoped `--sf-*` tokens, so they render the dark glass
+   language in the dark theme and a clean white/elevated-card language in the
+   light theme without any component-level branching.
 
-   The palette follows the approved productcarousel / productPage reference
-   language (near-black background, blue accent system) adapted to the real
-   data model and to WCAG AA contrast on dark — the axe gate scans the
-   homepage, catalog and product detail and must stay fully clean.
-
-   Key contrast decision: the single `--primary` token serves BOTH `text-
-   primary` links on dark (blue-500 ≈ 5.4:1) AND `bg-primary` buttons with
-   the dark navy `--primary-foreground` (≈ 4.9:1) — both pass AA. A darker
-   blue would fail the link path; a lighter one would fail the button path.
+   Document scroll surface: `:has()` mirrors the storefront background onto
+   <html> so overscroll gutters and the page scrollbar match the selected
+   theme (admin/auth keep the light `:root` surface).
    ═══════════════════════════════════════════════════════════════════════ */
 .storefront {
-  /* dark surfaces */
-  --background: hsl(228 25% 5%);
-  --foreground: hsl(0 0% 97%);
-  --card: hsl(228 18% 8%);
-  --card-foreground: hsl(0 0% 97%);
-  --popover: hsl(228 16% 10%);
-  --popover-foreground: hsl(0 0% 97%);
-  --secondary: hsl(228 14% 12%);
-  --secondary-foreground: hsl(0 0% 97%);
-  --muted: hsl(228 14% 11%);
-  --muted-foreground: hsl(228 10% 66%);
-  --accent: hsl(228 14% 13%);
-  --accent-foreground: hsl(0 0% 97%);
-  --destructive: hsl(0 84.2% 60.2%);
-  --destructive-foreground: hsl(0 0% 98%);
-  --border: hsl(228 14% 18%);
-  --input: hsl(228 14% 16%);
-  /* blue accent system (reference #2b7fff family) */
-  --primary: hsl(217 91% 60%);
-  --primary-foreground: hsl(228 45% 8%);
-  --ring: hsl(217 91% 60%);
-
-  background-color: var(--background);
+  background-color: var(--sf-page);
   color: var(--foreground);
-  color-scheme: dark;
 }
 
-/* Reference background texture: faint dot grid (productcarousel/productPage
-   `dot-grid`) layered over the scoped background color. */
+html:has(.storefront):not([data-sf-theme="light"]) {
+  background-color: hsl(228 25% 5%);
+  color-scheme: dark;
+
+  --sf-toast-bg: hsl(228 18% 8%);
+  --sf-toast-fg: hsl(0 0% 97%);
+  --sf-toast-line: hsl(0 0% 100% / 0.12);
+  --sf-toast-dim: hsl(228 10% 70%);
+}
+
+html:has(.storefront)[data-sf-theme="light"] {
+  background-color: hsl(220 24% 98%);
+  color-scheme: light;
+}
+
+/* Reference background texture: faint dot grid layered over the scoped
+   background color (dark: light dots; light: faint slate dots). */
 @utility dot-grid {
-  background-image: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-image: radial-gradient(var(--sf-dot) 1px, transparent 1px);
   background-size: 26px 26px;
 }
 
-/* Reference `glass-card` surface (productcarousel/productPage). Foundation
-   utility — consumed by the Phase B card/rail restyle. */
-@utility glass-card {
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015));
+/* ── Reference `glass-card` surface — the primary storefront card treatment.
+      Dark: translucent gradient glass + deep shadow + hover lift.
+      Light: opaque white card + hairline border + soft ambient shadow. Both
+      share the same geometry so layouts never shift when the theme changes. */
+@utility sf-surface {
+  background: var(--sf-glass-bg);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  transition: transform 0.35s ease, box-shadow 0.35s ease;
+  border: 1px solid var(--sf-glass-border);
+  box-shadow: var(--sf-glass-shadow);
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease,
+    border-color 0.3s ease;
 
   &:hover {
-    transform: translateY(-8px);
-    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transform: translateY(-6px);
+    box-shadow: var(--sf-glass-shadow-hover);
   }
 }
 
-/* Reference `glass-strong` header bar (productPage) — used by the storefront
-   header. */
+/* Backwards-compatible alias — the Session 85 utility name. */
+@utility glass-card {
+  background: var(--sf-glass-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--sf-glass-border);
+  box-shadow: var(--sf-glass-shadow);
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease,
+    border-color 0.3s ease;
+
+  &:hover {
+    transform: translateY(-6px);
+    box-shadow: var(--sf-glass-shadow-hover);
+  }
+}
+
+/* `glass-strong` — the sticky translucent header / mobile buy bar. The blur +
+   alpha only read as "glass" on dark; on light it becomes a crisp frosted
+   white bar. */
 @utility glass-strong {
-  background: rgba(9, 13, 22, 0.72);
+  background: var(--sf-header-bg);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid var(--sf-header-border);
 }
 
-/* Reference blue gradient accent (#2b7fff → #1560e0). Decorative surfaces
-   only — any text placed on it must meet WCAG AA per usage. */
-@utility blue-grad {
-  background-image: linear-gradient(160deg, #2b7fff, #1560e0);
-}
-
-/* Reference `glass-panel` (productPage): blue-tinted translucent panel for
-   the product gallery stage and detail sections. No hover transform (unlike
-   glass-card) so large panels stay static. */
+/* `glass-panel` — the blue-tinted gallery/detail stage. No hover transform so
+   large panels stay static. */
 @utility glass-panel {
-  background: linear-gradient(160deg, rgba(40, 90, 220, 0.16), rgba(20, 40, 110, 0.05));
-  border: 1px solid rgba(80, 140, 255, 0.35);
-  box-shadow: 0 0 60px rgba(40, 110, 255, 0.3), inset 0 1px 0 rgba(140, 180, 255, 0.2);
+  background: var(--sf-panel-bg);
+  border: 1px solid var(--sf-panel-border);
+  box-shadow: var(--sf-panel-shadow);
 }
 
-/* Session 85 — respect prefers-reduced-motion app-wide (later phases add
-   transition/animation treatments; the gate applies from the foundation). */
+/* Brand CTA gradient (reference #2b7fff → #1560e0 family). Both stops keep
+   white label text ≥ 4.5:1 in BOTH themes. */
+@utility blue-grad {
+  background-image: linear-gradient(
+    160deg,
+    var(--sf-cta-from),
+    var(--sf-cta-to)
+  );
+}
+
+/* Small surface chip/pill (badges, meta tags, filter pills). */
+@utility sf-chip {
+  background-color: var(--sf-chip);
+  color: var(--sf-dim);
+  border: 1px solid var(--sf-line);
+}
+
+/* Rounded icon button / nav button — the shared hit target for header
+   actions, rail arrows and card quick-action buttons. 44px minimum touch
+   target on small screens, 36px on pointer devices (lg+). */
+@utility sf-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  color: var(--sf-dim);
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+
+  &:hover {
+    background-color: var(--sf-chip);
+    color: var(--sf-strong);
+  }
+}
+
+/* Session 93 — respect prefers-reduced-motion app-wide. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

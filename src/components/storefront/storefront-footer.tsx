@@ -9,7 +9,7 @@ export function StorefrontFooter() {
   return (
     /* Session 85 — footer surface restyle: translucent border on the dark
        storefront (the scoped tokens already darken the text/links). */
-    <footer className="border-t border-white/5 bg-transparent">
+    <footer className="border-t border-sf-line bg-transparent">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -75,7 +75,7 @@ export function StorefrontFooter() {
                 <Link
                   key={social}
                   href="#"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-sf-line bg-sf-chip text-xs font-medium text-sf-dim transition-colors hover:border-primary/40 hover:text-primary"
                 >
                   {social[0]}
                 </Link>

@@ -124,8 +124,7 @@ export function ImageLightbox({
         type="button"
         aria-label="بستن"
         tabIndex={-1}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/90 backdrop-blur-sm"
+        onClick={onClose}            className="absolute inset-0 bg-black/90 backdrop-blur-sm"
       />
 
       {/* Close button */}
@@ -186,7 +185,7 @@ export function ImageLightbox({
 
         {/* Error state */}
         {hasError ? (
-          <div className="flex flex-col items-center gap-3 text-white/60">
+          <div className="flex flex-col items-center gap-3 text-white/80">
             <ImageOff className="h-20 w-20" />
             <p className="text-sm">بارگذاری تصویر با خطا مواجه شد</p>
             {/* Retry only makes sense for a transient network failure — a
@@ -220,7 +219,7 @@ export function ImageLightbox({
           >
             {/* Zoom hint */}
             {!isZoomed && (
-              <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1 text-[10px] text-white/70">
+              <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[10px] text-white">
                 <ZoomIn className="h-3 w-3" />
                 بزرگ‌نمایی
               </div>

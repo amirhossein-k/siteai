@@ -55,7 +55,7 @@ export default function PublicCouponsPage() {
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="mb-8 text-center">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-800 text-white shadow-lg">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-800 text-white shadow-lg shadow-emerald-950/20">
           <Ticket className="h-8 w-8" />
         </div>
         <h1 className="text-3xl font-bold tracking-tight">کدهای تخفیف</h1>
@@ -132,7 +132,7 @@ export default function PublicCouponsPage() {
                         {coupon.code}
                       </p>
                     </div>
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 text-sf-success">
                       {coupon.type === "percent" ? (
                         <Percent className="h-5 w-5" />
                       ) : (

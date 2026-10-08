@@ -81,7 +81,7 @@ export function ProductRail({
   const showEmpty = !loading && !error && products.length === 0;
 
   const navButton =
-    "flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/5 text-muted-foreground backdrop-blur transition-all duration-200 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60";
+    "flex h-11 w-11 items-center justify-center rounded-full border border-sf-line bg-sf-chip text-sf-dim backdrop-blur transition-all duration-200 hover:border-primary/40 hover:bg-sf-chip/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60";
 
   return (
     <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
@@ -95,7 +95,7 @@ export function ProductRail({
       />
 
       {error ? (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center text-sm text-muted-foreground">
+        <div className="rounded-2xl border border-sf-line bg-sf-card/40 p-6 text-center text-sm text-sf-dim">
           خطا در دریافت محصولات — لطفاً بعداً دوباره تلاش کنید
         </div>
       ) : loading ? (
@@ -105,7 +105,7 @@ export function ProductRail({
               key={i}
               className={cn(
                 CARD_WIDTH,
-                "overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]"
+                "overflow-hidden rounded-3xl border border-sf-line bg-sf-card/40"
               )}
             >
               <Skeleton className="aspect-square w-full rounded-none" />
@@ -118,9 +118,9 @@ export function ProductRail({
           ))}
         </div>
       ) : showEmpty ? (
-        <div className="flex flex-col items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-8 text-center">
-          <PackageOpen className="h-8 w-8 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">
+        <div className="flex flex-col items-center gap-2 rounded-2xl border border-sf-line bg-sf-card/40 p-8 text-center">
+          <PackageOpen className="h-8 w-8 text-sf-dim/50" />
+          <p className="text-sm text-sf-dim">
             هنوز محصولی برای نمایش وجود ندارد
           </p>
         </div>
@@ -133,7 +133,7 @@ export function ProductRail({
                 type="button"
                 aria-label="اسکرول به راست"
                 onClick={() => scrollByCard(1)}
-                className="absolute -right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/40 text-muted-foreground shadow-md backdrop-blur transition-all hover:scale-105 hover:text-white md:hidden"
+                className="absolute -right-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-sf-line bg-sf-card/90 text-sf-dim shadow-md backdrop-blur transition-all hover:scale-105 hover:text-sf-strong md:hidden"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -141,7 +141,7 @@ export function ProductRail({
                 type="button"
                 aria-label="اسکرول به چپ"
                 onClick={() => scrollByCard(-1)}
-                className="absolute -left-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/40 text-muted-foreground shadow-md backdrop-blur transition-all hover:scale-105 hover:text-white md:hidden"
+                className="absolute -left-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-sf-line bg-sf-card/90 text-sf-dim shadow-md backdrop-blur transition-all hover:scale-105 hover:text-sf-strong md:hidden"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>

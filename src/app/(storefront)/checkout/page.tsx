@@ -136,7 +136,7 @@ export default function CheckoutPage() {
         <div className="mx-auto max-w-md text-center">
           <div className="mb-6 flex justify-center">
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/15">
-              <CheckCircle2 className="h-10 w-10 text-emerald-300" />
+              <CheckCircle2 className="h-10 w-10 text-sf-success" />
             </div>
           </div>
           <h1 className="mb-2 text-2xl font-bold tracking-tight">
@@ -249,8 +249,8 @@ export default function CheckoutPage() {
             {!session && (
               <Card className="border-amber-400/30 bg-amber-500/15">
                 <CardContent className="flex items-center gap-3 p-4">
-                  <AlertCircle className="h-5 w-5 shrink-0 text-amber-300" />
-                  <p className="text-sm text-amber-300">
+                  <AlertCircle className="h-5 w-5 shrink-0 text-sf-warning" />
+                  <p className="text-sm text-sf-warning">
                     برای ثبت سفارش باید{" "}
                     <Link
                       href="/login?callbackUrl=/checkout"
@@ -461,7 +461,7 @@ export default function CheckoutPage() {
                             : `${formatPrice(appliedCoupon.value)} تخفیف`}
                         </p>
                         {appliedCoupon.minSubtotal > totalPrice && (
-                          <p className="text-[10px] text-amber-300">
+                          <p className="text-[10px] text-sf-warning">
                             حداقل مبلغ سبد برای این کد:{" "}
                             {formatPrice(appliedCoupon.minSubtotal)}
                           </p>
@@ -522,7 +522,7 @@ export default function CheckoutPage() {
                     </span>
                   </div>
                   {couponDiscount > 0 && (
-                    <div className="flex items-center justify-between text-sm text-emerald-300">
+                    <div className="flex items-center justify-between text-sm text-sf-success">
                       <span className="text-muted-foreground">
                         تخفیف ({appliedCoupon?.code})
                       </span>
@@ -540,7 +540,7 @@ export default function CheckoutPage() {
                 <div className="border-t pt-4">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold">قابل پرداخت</span>
-                    <span className="text-xl font-bold text-emerald-300">
+                    <span className="text-xl font-black text-sf-success">
                       {formatPrice(payable)}
                     </span>
                   </div>
@@ -601,7 +601,7 @@ function PublicCouponPicker({ onPick }: { onPick: (code: string) => void }) {
               onPick(c.code);
               showToast.info(`کد ${c.code} درج شد — دکمه اعمال را بزنید`);
             }}
-            className="rounded-md border border-dashed px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-emerald-400/40 hover:text-emerald-300"
+            className="rounded-md border border-dashed border-sf-line-strong px-2 py-1 font-mono text-[11px] text-sf-dim transition-colors hover:border-primary/40 hover:text-primary"
             dir="ltr"
           >
             {c.code}

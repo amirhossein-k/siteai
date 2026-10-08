@@ -73,7 +73,7 @@ export function SearchSuggestions({
   return (
     <div
       ref={dropdownRef}
-      className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-lg border bg-card shadow-lg"
+      className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border border-sf-line bg-popover text-popover-foreground shadow-xl"
     >
       {isLoading ? (
         <div className="space-y-2 p-3">
@@ -105,7 +105,7 @@ export function SearchSuggestions({
                 e.preventDefault();
                 handleSelect(suggestion);
               }}
-              className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-muted"
+              className="flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm transition-colors hover:bg-sf-chip"
             >
               <Search className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
               <span className="truncate">{suggestion}</span>

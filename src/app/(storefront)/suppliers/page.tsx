@@ -48,7 +48,7 @@ export default function SuppliersListingPage() {
           </p>
         </div>
         <Link href="/become-supplier">
-          <Button variant="outline" className="gap-2 border-emerald-400/40 text-emerald-300">
+          <Button variant="outline" className="gap-2 border-emerald-500/40 text-sf-success hover:bg-emerald-500/10">
             <Store className="h-4 w-4" />
             ثبت درخواست فروشندگی
           </Button>

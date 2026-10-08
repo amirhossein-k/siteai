@@ -103,8 +103,8 @@ export function AccountMenu() {
         title="حساب کاربری"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
-          open && "bg-accent text-accent-foreground"
+          "sf-icon-btn h-10 w-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
+          open && "bg-sf-chip text-sf-strong"
         )}
       >
         <User className="h-5 w-5" />
@@ -116,7 +116,7 @@ export function AccountMenu() {
           id={panelId}
           role="menu"
           aria-label="حساب کاربری"
-          className="absolute left-0 top-full z-50 mt-2 w-56 rounded-xl border bg-card p-1 shadow-lg"
+          className="absolute left-0 top-full z-50 mt-2 w-60 animate-in fade-in slide-in-from-top-2 overflow-hidden rounded-2xl border border-sf-line bg-popover p-1.5 shadow-2xl duration-150"
         >
           {items.map((item) => {
             const Icon = item.icon;
@@ -127,10 +127,10 @@ export function AccountMenu() {
                 href={item.href}
                 role="menuitem"
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
                   isActive
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    ? "bg-primary/10 text-primary"
+                    : "text-sf-dim hover:bg-sf-chip hover:text-sf-strong"
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -139,13 +139,13 @@ export function AccountMenu() {
             );
           })}
 
-          <div role="separator" className="my-1 h-px bg-border" />
+          <div role="separator" className="my-1.5 h-px bg-sf-line" />
 
           <button
             type="button"
             role="menuitem"
             onClick={() => signOut({ callbackUrl: "/" })}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60"
           >
             <LogOut className="h-4 w-4" />
             <span>خروج</span>

@@ -118,13 +118,14 @@ export function VariantSelector({ variants, onSelect }: VariantSelectorProps) {
                   type="button"
                   disabled={!isAvailable}
                   onClick={() => handleSelect(group.name, value)}
+                  aria-pressed={isSelected}
                   className={cn(
-                    "rounded-xl border px-4 py-2 text-sm font-medium transition-all",
+                    "rounded-xl border px-4 py-2 text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                     isSelected
-                      ? "border-primary bg-primary text-primary-foreground shadow-[0_0_16px_rgba(59,130,246,0.4)]"
+                      ? "border-primary bg-primary text-primary-foreground shadow-[0_0_16px_var(--sf-ring-glow)]"
                       : isAvailable
-                      ? "border-white/10 bg-white/5 text-foreground backdrop-blur hover:border-primary/60 hover:bg-white/10 hover:shadow-[0_0_12px_rgba(59,130,246,0.25)]"
-                      : "cursor-not-allowed border-white/5 bg-white/[0.02] text-muted-foreground/40 line-through"
+                      ? "border-sf-line bg-sf-chip text-foreground hover:border-primary/60 hover:bg-sf-chip/60 hover:shadow-[0_0_12px_var(--sf-ring-glow)]"
+                      : "cursor-not-allowed border-sf-line bg-sf-card/40 text-sf-dim/40 line-through"
                   )}
                 >
                   {value}

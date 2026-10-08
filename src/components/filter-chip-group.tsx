@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 interface FilterChipOption {
   _id: string;
@@ -46,6 +47,11 @@ export function FilterChipGroup({
           <Button
             variant={!selected ? "default" : "outline"}
             size="sm"
+            className={
+              !selected
+                ? undefined
+                : "border-sf-line bg-sf-chip text-sf-dim hover:border-primary/40 hover:bg-sf-chip/60 hover:text-sf-strong"
+            }
             onClick={() => onSelect("")}
           >
             همه
@@ -58,14 +64,21 @@ export function FilterChipGroup({
                 variant={selected === opt._id ? "default" : "outline"}
                 size="sm"
                 onClick={() => onSelect(selected === opt._id ? "" : opt._id)}
-                className="gap-1"
+                className={cn(
+                  "gap-1",
+                  selected !== opt._id &&
+                    "border-sf-line bg-sf-chip text-sf-dim hover:border-primary/40 hover:bg-sf-chip/60 hover:text-sf-strong"
+                )}
               >
                 {opt.name}
+                {/* Count pill. Inverted when selected: `primary-foreground`
+                    on `primary` keeps ≥4.5:1 in BOTH storefront themes
+                    (blue-on-near-black / blue-on-white). */}
                 {count !== undefined && (
                   <span
                     className={`rounded-full px-1.5 text-xs tabular-nums ${
                       selected === opt._id
-                        ? "bg-background/20 text-background"
+                        ? "bg-primary-foreground text-primary"
                         : "bg-muted text-muted-foreground"
                     }`}
                   >

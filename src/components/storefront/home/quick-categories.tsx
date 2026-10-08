@@ -41,7 +41,7 @@ export function QuickCategories({ section }: HomepageSectionRendererProps) {
           ))}
         </div>
       ) : isError || count === 0 ? (
-        <p className="rounded-xl border bg-muted/30 p-5 text-center text-sm text-muted-foreground">
+        <p className="rounded-xl border border-sf-line bg-sf-card/40 p-5 text-center text-sm text-sf-dim">
           دسته‌بندی‌ها در دسترس نیستند
         </p>
       ) : (
@@ -63,7 +63,7 @@ export function QuickCategories({ section }: HomepageSectionRendererProps) {
               >
                 {/* Session 85 — glass tile surface (dark reference); category
                    data, links and the image/letter fallback unchanged. */}
-                <span className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white/5 text-lg font-bold text-muted-foreground shadow-sm ring-1 ring-white/10 backdrop-blur-sm transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:ring-white/20 sm:h-20 sm:w-20 sm:rounded-3xl">
+                <span className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-sf-chip text-lg font-bold text-sf-dim shadow-sm ring-1 ring-sf-line transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-md group-hover:ring-primary/40 sm:h-20 sm:w-20 sm:rounded-3xl">
                   {categoryImage ? (
                     <Image
                       src={categoryImage}
@@ -77,7 +77,7 @@ export function QuickCategories({ section }: HomepageSectionRendererProps) {
                     <span>{category.name[0]}</span>
                   )}
                 </span>
-                <span className="max-w-full truncate text-center text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+                <span className="max-w-full truncate text-center text-xs font-medium text-sf-dim transition-colors group-hover:text-primary">
                   {category.name}
                 </span>
               </Link>

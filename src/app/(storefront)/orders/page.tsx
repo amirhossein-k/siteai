@@ -35,12 +35,12 @@ const statusConfig: Record<
   // Session 86 — tinted dark status chips (the fixed-dark storefront never
   // sets the `dark` class, so the old light bg-*-50 / dark:* pairs rendered
   // OS-dependent light circles on the dark theme).
-  pending_payment: { label: "در انتظار پرداخت", variant: "secondary", icon: Clock, color: "bg-white/10 text-muted-foreground" },
-  processing: { label: "در حال پردازش", variant: "warning", icon: Package, color: "bg-amber-500/15 text-amber-300" },
-  confirmed: { label: "تأیید شده", variant: "default", icon: CheckCircle2, color: "bg-blue-500/15 text-blue-300" },
+  pending_payment: { label: "در انتظار پرداخت", variant: "secondary", icon: Clock, color: "bg-sf-chip text-sf-dim" },
+  processing: { label: "در حال پردازش", variant: "warning", icon: Package, color: "bg-amber-500/10 text-sf-warning" },
+  confirmed: { label: "تأیید شده", variant: "default", icon: CheckCircle2, color: "bg-primary/10 text-primary" },
   shipped: { label: "ارسال شده", variant: "default", icon: Truck, color: "bg-indigo-500/15 text-indigo-300" },
-  delivered: { label: "تحویل شده", variant: "success", icon: CheckCircle2, color: "bg-emerald-500/15 text-emerald-300" },
-  cancelled: { label: "لغو شده", variant: "destructive", icon: Ban, color: "bg-red-500/15 text-red-300" },
+  delivered: { label: "تحویل شده", variant: "success", icon: CheckCircle2, color: "bg-emerald-500/10 text-sf-success" },
+  cancelled: { label: "لغو شده", variant: "destructive", icon: Ban, color: "bg-destructive/10 text-destructive" },
 };
 
 const statusFilters = [
@@ -253,7 +253,7 @@ export default function CustomerOrdersPage() {
 
                       {/* Right: Price + Status */}
                       <div className="text-left shrink-0">
-                        <p className="font-bold text-emerald-300 text-sm whitespace-nowrap">
+                        <p className="font-bold text-sf-success text-sm whitespace-nowrap">
                           {formatPrice(order.totalAmount)}
                         </p>
                         <Badge

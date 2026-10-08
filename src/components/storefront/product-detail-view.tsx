@@ -228,7 +228,7 @@ export function ProductDetailView({ product }: { product: Product }) {
               real product image (productPage reference). Click opens the
               existing lightbox. */}
           <div
-            className="glass-panel relative aspect-square cursor-pointer overflow-hidden rounded-[2rem]"
+            className="glass-panel group relative aspect-square cursor-pointer overflow-hidden rounded-[2rem]"
             onClick={() => displayImages.length > 0 && setLightboxOpen(true)}
           >
             {/* Radial floor glow behind the image */}
@@ -246,7 +246,7 @@ export function ProductDetailView({ product }: { product: Product }) {
                 {/* Loading skeleton */}
                 {!imageLoaded[selectedImage] && (
                   <div className="absolute inset-0 z-[1] flex items-center justify-center animate-pulse">
-                    <span className="text-8xl font-bold text-white/10">
+                    <span className="text-8xl font-bold text-sf-strong/10">
                       {product.name?.[0] || "?"}
                     </span>
                   </div>
@@ -270,7 +270,7 @@ export function ProductDetailView({ product }: { product: Product }) {
                 />
 
                 {/* Click to enlarge hint */}
-                <div className="pointer-events-none absolute bottom-3 left-3 z-[2] flex items-center gap-1.5 rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[10px] text-white/70 opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
+                <div className="pointer-events-none absolute bottom-3 left-3 z-[2] flex items-center gap-1.5 rounded-full border border-white/15 bg-black/60 px-2.5 py-1 text-[10px] text-white opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
                   <ZoomIn className="h-3 w-3" />
                   بزرگ‌نمایی
                 </div>
@@ -286,7 +286,7 @@ export function ProductDetailView({ product }: { product: Product }) {
                         );
                       }}
                       aria-label="تصویر قبلی"
-                      className="absolute left-3 top-1/2 z-[2] flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white shadow-lg backdrop-blur transition-all hover:scale-110 hover:bg-black/60"
+                      className="absolute left-3 top-1/2 z-[2] flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white shadow-lg backdrop-blur transition-all hover:scale-110 hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
                     >
                       <ChevronLeft className="h-5 w-5" />
                     </button>
@@ -298,7 +298,7 @@ export function ProductDetailView({ product }: { product: Product }) {
                         );
                       }}
                       aria-label="تصویر بعدی"
-                      className="absolute right-3 top-1/2 z-[2] flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white shadow-lg backdrop-blur transition-all hover:scale-110 hover:bg-black/60"
+                      className="absolute right-3 top-1/2 z-[2] flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white shadow-lg backdrop-blur transition-all hover:scale-110 hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
                     >
                       <ChevronRightIcon className="h-5 w-5" />
                     </button>
@@ -308,12 +308,12 @@ export function ProductDetailView({ product }: { product: Product }) {
             ) : (
               <div className="relative z-[1] flex h-full w-full items-center justify-center">
                 {imageError[selectedImage] ? (
-                  <div className="flex flex-col items-center gap-2 text-white/40">
+                  <div className="flex flex-col items-center gap-2 text-sf-dim/60">
                     <ImageOff className="h-16 w-16" />
                     <span className="text-sm">بارگذاری تصویر با خطا مواجه شد</span>
                   </div>
                 ) : (
-                  <span className="text-8xl font-bold text-white/20">
+                  <span className="text-8xl font-bold text-sf-strong/20">
                     {product.name?.[0] || "?"}
                   </span>
                 )}
@@ -357,10 +357,10 @@ export function ProductDetailView({ product }: { product: Product }) {
                     }
                   }}
                   className={cn(
-                    "relative aspect-square w-20 flex-shrink-0 overflow-hidden rounded-2xl border bg-white/[0.03] transition-all duration-200 hover:opacity-90",
+                    "relative aspect-square w-20 flex-shrink-0 overflow-hidden rounded-2xl border bg-sf-image transition-all duration-200 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
                     selectedImage === idx
-                      ? "border-blue-400/80 shadow-[0_0_22px_rgba(50,120,255,0.45)]"
-                      : "border-white/10 opacity-60 hover:opacity-80"
+                      ? "border-primary shadow-[0_0_22px_var(--sf-ring-glow)]"
+                      : "border-sf-line opacity-55 hover:opacity-85"
                   )}
                 >
                   <Image
@@ -381,20 +381,20 @@ export function ProductDetailView({ product }: { product: Product }) {
         <div className="flex min-w-0 flex-col gap-5">
           {/* Chips — category (blue glass) + honest stock state */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-blue-400/30 bg-blue-500/15 px-3 py-1 text-[11px] font-bold text-blue-300">
+            <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-bold text-primary">
               {categoryName}
             </span>
             {displayStock === 0 ? (
-              <span className="rounded-full border border-red-400/30 bg-red-500/15 px-3 py-1 text-[11px] font-bold text-red-300">
+              <span className="rounded-full border border-destructive/30 bg-destructive/10 px-3 py-1 text-[11px] font-bold text-destructive">
                 ناموجود
               </span>
             ) : displayStock <= 3 ? (
-              <span className="rounded-full border border-amber-400/30 bg-amber-500/15 px-3 py-1 text-[11px] font-bold text-amber-300">
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] font-bold text-sf-warning">
                 تنها {displayStock} عدد باقیست
               </span>
             ) : (
-              <span className="flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-[11px] font-bold text-emerald-300">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] font-bold text-sf-success">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sf-success" />
                 موجود در انبار
               </span>
             )}
@@ -411,7 +411,7 @@ export function ProductDetailView({ product }: { product: Product }) {
 
           {/* Price card (glass) — original struck through when a discount is
               active, effective price dominant, countdown in glass tiles. */}
-          <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-5 shadow-2xl shadow-black/40 backdrop-blur">
+          <div className="rounded-2xl border border-sf-line bg-sf-card/70 p-5 shadow-lg backdrop-blur">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 {hasActiveDiscount && (
@@ -419,7 +419,7 @@ export function ProductDetailView({ product }: { product: Product }) {
                     {formatPrice(displayOriginalPrice)}
                   </div>
                 )}
-                <div className="text-3xl font-black text-white sm:text-4xl">
+                <div className="text-3xl font-black tracking-tight text-sf-price sm:text-4xl">
                   {formatPrice(displayPrice)}
                 </div>
               </div>
@@ -451,20 +451,20 @@ export function ProductDetailView({ product }: { product: Product }) {
           <div className="flex flex-wrap gap-2">
             {activeVariant?.sku && (
               <span
-                className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-muted-foreground"
+                className="rounded-full border border-sf-line bg-sf-chip px-3 py-1 text-[11px] text-sf-dim"
                 dir="ltr"
               >
                 SKU: {activeVariant.sku}
               </span>
             )}
             {variantLabel && (
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-muted-foreground">
+              <span className="rounded-full border border-sf-line bg-sf-chip px-3 py-1 text-[11px] text-sf-dim">
                 {variantLabel}
               </span>
             )}
             {supplierName && supplierInfo && (
               <Link href={`/suppliers/${supplierInfo._id}`}>
-                <span className="flex items-center gap-1 rounded-full border border-blue-400/30 bg-blue-500/15 px-3 py-1 text-[11px] font-bold text-blue-300 transition-colors hover:bg-blue-500/25">
+                <span className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11px] font-bold text-primary transition-colors hover:bg-primary/20">
                   <Store className="h-3 w-3" />
                   {supplierName}
                 </span>
@@ -480,7 +480,7 @@ export function ProductDetailView({ product }: { product: Product }) {
           <div className="flex flex-wrap gap-2">
             <Button
               size="lg"
-              className="flex-1 gap-2 bg-gradient-to-b from-blue-600 to-blue-800 text-base text-white shadow-lg shadow-blue-950/50 transition-all hover:-translate-y-0.5 hover:from-blue-600 hover:to-blue-700 hover:shadow-blue-900/60"
+              className="blue-grad flex-1 gap-2 text-base font-bold text-white shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 active:translate-y-0 active:scale-[0.99]"
               disabled={cartDisabled}
               onClick={handleAddToCart}
             >
@@ -497,9 +497,9 @@ export function ProductDetailView({ product }: { product: Product }) {
               size="lg"
               variant="outline"
               className={cn(
-                "gap-2 border-white/15 bg-white/5 text-base text-muted-foreground backdrop-blur transition-all hover:bg-white/10 hover:text-white",
+                "gap-2 border-sf-line bg-sf-chip text-base text-sf-dim transition-all hover:bg-sf-chip/60 hover:text-sf-strong",
                 inWishlist &&
-                  "border-rose-400/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15 hover:text-rose-200"
+                  "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15"
               )}
               onClick={() => {
                 if (!isCustomer) {
@@ -535,7 +535,7 @@ export function ProductDetailView({ product }: { product: Product }) {
               <Heart
                 className={cn(
                   "h-5 w-5",
-                  inWishlist && "fill-rose-400 text-rose-400"
+                  inWishlist && "fill-destructive text-destructive"
                 )}
               />
               {inWishlist ? "در علاقه‌مندی‌ها" : "افزودن به علاقه‌مندی‌ها"}
@@ -545,7 +545,7 @@ export function ProductDetailView({ product }: { product: Product }) {
           {/* Honest stock indicator — NO fabricated capacity bar (the data
               model has no max-stock denominator), only real stock states. */}
           {displayStock > 0 && displayStock <= 10 && (
-            <p className="text-xs font-bold text-amber-300">
+            <p className="text-xs font-bold text-sf-warning">
               🔥 تنها {displayStock} عدد در انبار باقی مانده
             </p>
           )}
@@ -553,13 +553,13 @@ export function ProductDetailView({ product }: { product: Product }) {
           {/* Perk tiles — the store's EXISTING honest copy, glass-styled
               (the reference's 24h/18-month/7-day demo claims are NOT copied). */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-3 text-center shadow-xl shadow-black/30 backdrop-blur">
-              <Truck className="mx-auto mb-1 h-5 w-5 text-blue-300" />
+            <div className="rounded-xl border border-sf-line bg-sf-card/60 p-3 text-center backdrop-blur">
+              <Truck className="mx-auto mb-1 h-5 w-5 text-primary" />
               <p className="text-xs font-medium">ارسال سریع</p>
               <p className="text-[10px] text-muted-foreground">۲۴ تا ۴۸ ساعت</p>
             </div>
-            <div className="rounded-xl border border-white/10 bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-3 text-center shadow-xl shadow-black/30 backdrop-blur">
-              <TrendingUp className="mx-auto mb-1 h-5 w-5 text-blue-300" />
+            <div className="rounded-xl border border-sf-line bg-sf-card/60 p-3 text-center backdrop-blur">
+              <TrendingUp className="mx-auto mb-1 h-5 w-5 text-primary" />
               <p className="text-xs font-medium">ضمانت قیمت</p>
               <p className="text-[10px] text-muted-foreground">
                 بهترین قیمت بازار
@@ -593,8 +593,8 @@ export function ProductDetailView({ product }: { product: Product }) {
                 className={cn(
                   "inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
                   active
-                    ? "bg-gradient-to-b from-blue-600 to-blue-800 text-white shadow-lg shadow-blue-950/50"
-                    : "border border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-white"
+                    ? "blue-grad text-white shadow-lg"
+                    : "border border-sf-line bg-sf-chip text-sf-dim hover:bg-sf-chip/60 hover:text-sf-strong"
                 )}
               >
                 <Icon className="h-4 w-4" />
@@ -604,7 +604,7 @@ export function ProductDetailView({ product }: { product: Product }) {
           })}
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-gradient-to-b from-blue-500/[0.05] to-transparent p-6 shadow-2xl shadow-black/30 sm:p-10">
+        <div className="rounded-3xl border border-sf-line bg-sf-card/50 p-6 shadow-lg sm:p-10">
           {/* توضیحات */}
           <div
             role="tabpanel"
@@ -633,7 +633,7 @@ export function ProductDetailView({ product }: { product: Product }) {
                 {specs.map((spec) => (
                   <div
                     key={`${spec.name}:${spec.value}`}
-                    className="flex justify-between gap-4 border-b border-white/5 py-3.5 text-sm"
+                    className="flex justify-between gap-4 border-b border-sf-line py-3.5 text-sm"
                   >
                     <dt className="text-muted-foreground">{spec.name}</dt>
                     <dd className="font-medium text-foreground">{spec.value}</dd>
@@ -674,7 +674,7 @@ export function ProductDetailView({ product }: { product: Product }) {
           reuses the exact same add-to-cart handler + disabled state as the
           main CTA. Never duplicates the desktop action. ── */}
       <div
-        className="glass-strong fixed inset-x-0 bottom-0 z-40 border-t border-white/10 lg:hidden"
+        className="glass-strong fixed inset-x-0 bottom-0 z-40 border-t border-sf-line lg:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="flex items-center justify-between gap-3 px-4 py-3">
@@ -684,12 +684,12 @@ export function ProductDetailView({ product }: { product: Product }) {
                 {formatPrice(displayOriginalPrice)}
               </div>
             )}
-            <div className="truncate text-lg font-black text-white">
+            <div className="truncate text-lg font-black text-sf-price">
               {formatPrice(displayPrice)}
             </div>
           </div>
           <Button
-            className="shrink-0 gap-2 bg-gradient-to-b from-blue-600 to-blue-800 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-blue-950/50"
+            className="blue-grad shrink-0 gap-2 px-6 py-3 text-sm font-bold text-white shadow-lg"
             disabled={cartDisabled}
             onClick={handleAddToCart}
           >
