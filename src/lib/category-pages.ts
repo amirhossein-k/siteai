@@ -9,6 +9,7 @@ import { buildProductUrl } from "@/lib/product-slug";
 import { parsePageParam } from "@/lib/pagination";
 import { isAllowedImageSrc } from "@/lib/utils";
 import type { Product as CatalogProduct } from "@/types";
+import { computeRatingSummaries } from "@/lib/rating-summary";
 
 /**
  * Category page data layer (Session 75) — the SINGLE implementation of the
@@ -296,6 +297,11 @@ export async function getCategoryPage(
       .lean(),
   ]);
 
+  const serialized = JSON.parse(JSON.stringify(products)) as CatalogProduct[];
+  const ratings = await computeRatingSummaries(
+    serialized.map((p) => String(p._id))
+  );
+
   return {
     category: {
       _id: String(category._id),
@@ -309,7 +315,10 @@ export async function getCategoryPage(
     ancestorChain,
     // JSON round-trip: ObjectIds → hex strings, Dates → ISO strings — safe
     // as RSC props (same convention as src/lib/public-products.ts).
-    products: JSON.parse(JSON.stringify(products)) as CatalogProduct[],
+    products: serialized.map((p) => ({
+      ...p,
+      ratingSummary: ratings.get(String(p._id)) ?? { average: 0, count: 0 },
+    })),
     total,
     totalPages: Math.max(
       1,
