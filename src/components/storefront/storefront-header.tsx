@@ -62,11 +62,23 @@ export function StorefrontHeader() {
     ...(session
       ? [
           { href: "/coupons", label: "کدهای تخفیف", icon: Tag, exact: false },
-          { href: "/orders", label: "سفارشات", icon: ClipboardList, exact: false },
+          {
+            href: "/orders",
+            label: "سفارشات",
+            icon: ClipboardList,
+            exact: false,
+          },
         ]
       : []),
     ...(isCustomer
-      ? [{ href: "/wishlist", label: "علاقه‌مندی‌ها", icon: Heart, exact: false }]
+      ? [
+          {
+            href: "/wishlist",
+            label: "علاقه‌مندی‌ها",
+            icon: Heart,
+            exact: false,
+          },
+        ]
       : []),
   ];
 
@@ -91,7 +103,10 @@ export function StorefrontHeader() {
             </span>
           </Link>
 
-          <nav aria-label="ناوبری اصلی" className="hidden items-center gap-1 lg:flex">
+          <nav
+            aria-label="ناوبری اصلی"
+            className="hidden items-center gap-1 lg:flex"
+          >
             {navItems.map((item) => {
               const active = isActive(item.href, item.exact);
               return (
@@ -177,7 +192,7 @@ export function StorefrontHeader() {
               <>
                 <Link
                   href="/login"
-                  className="hidden rounded-xl px-3 py-2 text-sm font-medium text-sf-dim transition-colors hover:bg-sf-chip hover:text-sf-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 sm:block"
+                  className="rounded-xl px-2.5 py-2 text-sm font-medium text-sf-dim transition-colors hover:bg-sf-chip hover:text-sf-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 sm:px-3"
                 >
                   ورود
                 </Link>
