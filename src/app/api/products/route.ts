@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
+import Review from "@/models/Review";
 import mongoose from "mongoose";
 import { dbConnect } from "@/lib/dbConnect";
 import Product from "@/models/Product";
@@ -8,6 +9,11 @@ import Tag from "@/models/Tag";
 import Category from "@/models/Category";
 import { getPublicProductById, getPublicProductBySlug } from "@/lib/public-products";
 import { applyEffectivePricing } from "@/lib/product-pricing";
+import {
+  computeRatingSummaries,
+  getRatedProductOrder,
+  parseMinRating,
+} from "@/lib/rating-summary";
 import {
   parsePaginationParams,
   buildPaginatedResponse,
@@ -216,6 +222,35 @@ export async function GET(req: NextRequest) {
       filter.price = priceFilter;
     }
 
+    // Rating filter / sort (approved reviews only). `minRating` restricts the
+    // filter to products with an approved average >= minRating (unrated
+    // products never match). The constraint is ANDed so it never overwrites
+    // the `_id` constraint set by the attribute filter.
+
+
+    const minRating = parseMinRating(searchParams.get("minRating"));
+    const ratingSort = sort === "rating_desc";
+
+    let ratedOrder: Array<{
+      _id: mongoose.Types.ObjectId;
+      average: number;
+      count: number;
+    }> | null = null;
+
+    if (minRating !== null || ratingSort) {
+      ratedOrder = await getRatedProductOrder(minRating);
+    }
+
+    // فقط فیلتر حداقل امتیاز، محصولات را به شناسه‌های واجد شرایط محدود می‌کند.
+    // مرتب‌سازی rating_desc به‌تنهایی نباید محصولات بدون نظر را حذف کند.
+    if (minRating !== null && ratedOrder !== null) {
+      const ratedIds = ratedOrder.map((r) => r._id);
+      filter.$and = [
+        ...((filter.$and as Record<string, unknown>[] | undefined) ?? []),
+        { _id: { $in: ratedIds } },
+      ];
+    }
+
     // Sort
     let sortOption: Record<string, 1 | -1> = { createdAt: -1 };
     if (sort === "price_asc") sortOption = { price: 1 };
@@ -237,7 +272,7 @@ export async function GET(req: NextRequest) {
     // then the EXISTING populate chain re-hydrates the page's ids (response
     // shape unchanged). Pagination happens inside the aggregation (skip/limit)
     // — never fetch-all.
-    if (search && sort === "newest" && searchMeta) {
+    if (search && (sort === "newest" || ratingSort) && searchMeta) {
       const { safeSearch, brandIds, tagIds, categoryIds } = searchMeta;
       const rankedIds = await Product.aggregate([
         { $match: filter },
@@ -293,31 +328,31 @@ export async function GET(req: NextRequest) {
                   : []),
                 ...(tagIds.length
                   ? [
-                      {
-                        $cond: [
-                          {
-                            $gt: [
-                              {
-                                $size: {
-                                  $setIntersection: [
-                                    { $ifNull: ["$tags", []] },
-                                    tagIds,
-                                  ],
-                                },
+                    {
+                      $cond: [
+                        {
+                          $gt: [
+                            {
+                              $size: {
+                                $setIntersection: [
+                                  { $ifNull: ["$tags", []] },
+                                  tagIds,
+                                ],
                               },
-                              0,
-                            ],
-                          },
-                          25,
-                          0,
-                        ],
-                      },
-                    ]
+                            },
+                            0,
+                          ],
+                        },
+                        25,
+                        0,
+                      ],
+                    },
+                  ]
                   : []),
                 ...(categoryIds.length
                   ? [
-                      { $cond: [{ $in: ["$category", categoryIds] }, 25, 0] },
-                    ]
+                    { $cond: [{ $in: ["$category", categoryIds] }, 25, 0] },
+                  ]
                   : []),
                 {
                   $cond: [
@@ -386,7 +421,75 @@ export async function GET(req: NextRequest) {
             },
           },
         },
-        { $sort: { score: -1, createdAt: -1 } },
+        ...(ratingSort
+          ? [
+            {
+              $lookup: {
+                from: Review.collection.name,
+                let: { productId: "$_id" },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ["$product", "$$productId"] },
+                          { $eq: ["$status", "approved"] },
+                        ],
+                      },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: null,
+                      average: { $avg: "$rating" },
+                      count: { $sum: 1 },
+                    },
+                  },
+                  {
+                    $project: {
+                      _id: 0,
+                      average: { $round: ["$average", 1] },
+                      count: 1,
+                    },
+                  },
+                ],
+                as: "ratingStats",
+              },
+            },
+            {
+              $addFields: {
+                ratingAverage: {
+                  $ifNull: [
+                    { $arrayElemAt: ["$ratingStats.average", 0] },
+                    0,
+                  ],
+                },
+                ratingCount: {
+                  $ifNull: [
+                    { $arrayElemAt: ["$ratingStats.count", 0] },
+                    0,
+                  ],
+                },
+              },
+            },
+            {
+              $sort: {
+                score: -1,
+                ratingAverage: -1,
+                ratingCount: -1,
+                createdAt: -1,
+                _id: -1,
+              } as const,
+            },
+          ]
+          : [
+            {
+              $sort: {
+                score: -1,
+                createdAt: -1,
+              } as const,
+            },
+          ]),
         { $skip: skip },
         { $limit: limit },
         { $project: { _id: 1 } },
@@ -397,12 +500,12 @@ export async function GET(req: NextRequest) {
         Product.countDocuments(filter),
         ids.length
           ? Product.find({ _id: { $in: ids } })
-              .select("-soldCount") // Session 56 — internal field, never public
-              .populate("category", "name slug")
-              .populate("supplier", "_id businessName logo")
-              .populate("brand", "name slug logo")
-              .populate("tags", "name slug")
-              .lean()
+            .select("-soldCount") // Session 56 — internal field, never public
+            .populate("category", "name slug")
+            .populate("supplier", "_id businessName logo")
+            .populate("brand", "name slug logo")
+            .populate("tags", "name slug")
+            .lean()
           : Promise.resolve([]),
       ]);
 
@@ -414,17 +517,24 @@ export async function GET(req: NextRequest) {
           (orderMap.get(String((b as { _id: unknown })._id)) ?? 0)
       );
 
+      const ratings = await computeRatingSummaries(
+        products.map((p) => String((p as { _id: unknown })._id))
+      );
+
       return NextResponse.json(
         buildPaginatedResponse(
-          products.map((p) =>
-            applyEffectivePricing(
+          products.map((p) => ({
+            ...applyEffectivePricing(
               p as unknown as {
                 price: number;
                 discount?: unknown;
                 variants?: Array<{ price: number }>;
               }
-            )
-          ),
+            ),
+            ratingSummary: ratings.get(
+              String((p as { _id: unknown })._id)
+            ) ?? { average: 0, count: 0 },
+          })),
           total,
           page,
           limit
@@ -432,32 +542,91 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const [total, products] = await Promise.all([
-      Product.countDocuments(filter),
-      Product.find(filter)
-        .select("-soldCount") // Session 56 — internal field, never public
-        .populate("category", "name slug")
-        .populate("supplier", "_id businessName logo")
-        .populate("brand", "name slug logo")
-        .populate("tags", "name slug")
-        .sort(sortOption)
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-    ]);
+    // rating_desc: rated products first in average order, then unrated products
+    // by newest. Ordering happens over the FULL filtered set (ids), then
+    // pagination is applied to that ordering — never per page. With minRating,
+    // the rated order only contains qualifying products, so the unrated list is empty.
+    let products: Array<Record<string, unknown>>;
+    let total: number;
+    if (ratingSort && ratedOrder) {
+      const matchingIds = (await Product.find(filter)
+        .select("_id createdAt")
+        .lean()) as unknown as Array<{
+          _id: mongoose.Types.ObjectId;
+          createdAt: Date;
+        }>;
+      const ratedRank = new Map(
+        ratedOrder.map((r, i) => [String(r._id), i])
+      );
+      const rated = matchingIds
+        .filter((p) => ratedRank.has(String(p._id)))
+        .sort(
+          (a, b) =>
+            (ratedRank.get(String(a._id)) ?? 0) -
+            (ratedRank.get(String(b._id)) ?? 0)
+        );
+      const unrated = matchingIds
+        .filter((p) => !ratedRank.has(String(p._id)))
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+      const ordered = [...rated, ...unrated];
+      total = ordered.length;
+      const pageIds = ordered.slice(skip, skip + limit).map((p) => p._id);
+      const pageDocs = pageIds.length
+        ? await Product.find({ _id: { $in: pageIds } })
+          .select("-soldCount")
+          .populate("category", "name slug")
+          .populate("supplier", "_id businessName logo")
+          .populate("brand", "name slug logo")
+          .populate("tags", "name slug")
+          .lean()
+        : [];
+      const pageOrder = new Map(pageIds.map((id, i) => [String(id), i]));
+      products = (pageDocs as Array<Record<string, unknown>>).sort(
+        (a, b) =>
+          (pageOrder.get(String(a._id)) ?? 0) -
+          (pageOrder.get(String(b._id)) ?? 0)
+      );
+    } else {
+      const [count, found] = await Promise.all([
+        Product.countDocuments(filter),
+        Product.find(filter)
+          .select("-soldCount") // Session 56 — internal field, never public
+          .populate("category", "name slug")
+          .populate("supplier", "_id businessName logo")
+          .populate("brand", "name slug logo")
+          .populate("tags", "name slug")
+          .sort(sortOption)
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+      ]);
+      total = count;
+      products = found as Array<Record<string, unknown>>;
+    }
+
+    const ratings = await computeRatingSummaries(
+      products.map((p) => String((p as { _id: unknown })._id))
+    );
 
     return NextResponse.json(
       buildPaginatedResponse(
         // Session 77 — effective pricing on every list row (active-only discount).
-        products.map((p) =>
-          applyEffectivePricing(
+        products.map((p) => ({
+          ...applyEffectivePricing(
             p as unknown as {
               price: number;
               discount?: unknown;
               variants?: Array<{ price: number }>;
             }
-          )
-        ),
+          ),
+          ratingSummary: ratings.get(String((p as { _id: unknown })._id)) ?? {
+            average: 0,
+            count: 0,
+          },
+        })),
         total,
         page,
         limit

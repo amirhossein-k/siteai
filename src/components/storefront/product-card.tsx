@@ -5,14 +5,14 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ShoppingCart, ImageOff, Heart, Store, Check } from "lucide-react";
+import { ShoppingCart, ImageOff, Heart, Store, Check, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn, formatPrice, isAllowedImageSrc } from "@/lib/utils";
 import { useCartStore } from "@/stores/cart-store";
 import { showToast } from "@/components/ui/toast";
 import { useWishlistIds, useToggleWishlist } from "@/hooks/use-wishlist";
 import { DiscountCountdown } from "@/components/storefront/discount-countdown";
-import type { Product } from "@/types";
+import type { Product, RatingSummary } from "@/types";
 
 interface ProductCardProps {
   product: Product;
@@ -24,6 +24,44 @@ interface ProductCardProps {
    * omit it — default behavior unchanged.
    */
   onCountdownExpire?: (endsAt: string) => void;
+}
+
+/**
+ * Rating area shown on every card. Only approved reviews reach `summary`
+ * (server-side). With zero approved reviews it renders the explicit
+ * «بدون امتیاز» state — never a fabricated score or default stars.
+ */
+function ProductRating({ summary }: { summary?: RatingSummary }) {
+  const count = summary?.count ?? 0;
+  if (count <= 0 || !summary) {
+    return (
+      <p className="mb-2 text-[11px] text-sf-dim">بدون امتیاز</p>
+    );
+  }
+  const average = summary.average;
+  return (
+    <div className="mb-2 flex items-center gap-1.5 text-[11px] text-sf-dim">
+      <span className="flex items-center gap-0.5" aria-hidden="true">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Star
+            key={star}
+            className={cn(
+              "h-3 w-3",
+              star <= Math.round(average)
+                ? "fill-amber-400 text-amber-400"
+                : "text-sf-dim/40"
+            )}
+          />
+        ))}
+      </span>
+      <span className="sr-only">
+        امتیاز {average} از ۵ از {count} دیدگاه تأییدشده
+      </span>
+      <span aria-hidden="true">
+        {average} ({count})
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -248,6 +286,8 @@ export function ProductCard({
             {product.name}
           </h3>
         </Link>
+
+        <ProductRating summary={product.ratingSummary} />
 
         {/* Price hierarchy — dominant effective price (the theme's strongest
             text token), struck-through original + supplier link secondary. */}

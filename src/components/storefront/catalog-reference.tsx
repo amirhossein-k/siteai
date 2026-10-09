@@ -35,8 +35,8 @@ const sorts = [
   ["best_selling", "پرفروش‌ترین"],
   ["price_asc", "ارزان‌ترین"],
   ["price_desc", "گران‌ترین"],
+  ["rating_desc", "بیشترین امتیاز"],
   ["oldest", "قدیمی‌ترین"],
-  ["name", "نام (الفبا)"],
 ];
 function Section({
   title,
@@ -176,6 +176,12 @@ export default function CatalogReference() {
         f.setMaxPrice("");
       },
     });
+  if (f.minRating)
+    chips.push({
+      key: "rating",
+      label: `امتیاز: ${f.minRating} ستاره و بالاتر`,
+      remove: () => f.setMinRating(""),
+    });
   const emptyDiscount = f.isDiscounted && chips.length === 0 && total === 0;
 
   function filters(prefix: string) {
@@ -288,6 +294,25 @@ export default function CatalogReference() {
               </p>
             )}
         </Section>
+        <Section title="حداقل امتیاز" count={f.minRating ? 1 : 0}>
+          <p className="cr-hint">فقط محصولات با دیدگاه تأییدشده</p>
+          <div className="cr-presets">
+            {[
+              ["همه", ""],
+              ["۳ ستاره و بالاتر", "3"],
+              ["۴ ستاره و بالاتر", "4"],
+            ].map(([label, value]) => (
+              <button
+                key={label}
+                aria-pressed={f.minRating === value}
+                onClick={() => f.setMinRating(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </Section>
+
         <Section title="برچسب" count={f.selectedTag ? 1 : 0}>
           {tagsLoading ? (
             <p>در حال دریافت…</p>
