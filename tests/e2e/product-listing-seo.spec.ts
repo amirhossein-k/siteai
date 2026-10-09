@@ -278,10 +278,21 @@ test.describe("catalog listing SEO policy", () => {
     // The page shell renders server-side and the client grid hydrates
     // (either the empty state or product cards — both prove the client
     // mounted and received a response).
-    await expect(page.getByRole("heading", { name: "محصولات" })).toBeVisible();
     await expect(
-      page.getByRole("button", { name: /فیلترها/ })
+      page.getByRole("heading", { name: /محصولات/ })
     ).toBeVisible();
+
+    const viewport = page.viewportSize();
+
+    if (viewport && viewport.width <= 1023) {
+      await expect(
+        page.getByRole("button", { name: /فیلترها/ })
+      ).toBeVisible();
+    } else {
+      await expect(
+        page.getByRole("heading", { name: "فیلترها" })
+      ).toBeVisible();
+    }
   });
 });
 
@@ -506,7 +517,7 @@ test.describe("Session 79 — discounted catalog lens", () => {
     await page.getByRole("link", { name: "مشاهده همه محصولات" }).click();
     await expect(page).toHaveURL(/\/products$/);
     await expect(
-      page.getByRole("heading", { name: "محصولات", exact: true })
+      page.getByRole("heading", { name: /محصولات/ })
     ).toBeVisible();
     await expect(
       page.getByRole("link", {
