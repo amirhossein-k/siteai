@@ -51,6 +51,8 @@ export function useCatalogFilters() {
     Record<string, string>
   >({});
   const [sortBy, setSortBy] = useState("newest");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
 
   // Session 76 — URL-driven page. Derived from `?page=` (parsePageParam
   // coerces missing/malformed values to 1); the URL is the single source of
@@ -95,6 +97,10 @@ export function useCatalogFilters() {
     const tag = params.get("tag");
     const search = params.get("search");
     const sort = params.get("sort");
+    const min = params.get("minPrice");
+    const max = params.get("maxPrice");
+    if (min && /^\d+$/.test(min)) setMinPrice(min);
+    if (max && /^\d+$/.test(max)) setMaxPrice(max);
     // INTENTIONAL: one-time post-hydration URL seed (Session 50). Initializing
     // state from the URL during render would mismatch the server HTML
     // (hydration warning); a lazy initializer can't read window on the server
@@ -133,7 +139,7 @@ export function useCatalogFilters() {
     "|" +
     JSON.stringify(selectedAttributes) +
     "|" +
-    sortBy;
+    sortBy + "|" + minPrice + "|" + maxPrice;
   const prevFingerprintRef = useRef(filterFingerprint);
   useEffect(() => {
     if (prevFingerprintRef.current === filterFingerprint) return;
@@ -154,6 +160,7 @@ export function useCatalogFilters() {
     if (selectedTag) count++;
     count += Object.keys(selectedAttributes).length;
     if (sortBy !== "newest") count++;
+    if (minPrice || maxPrice) count++;
     return count;
   }, [
     searchQuery,
@@ -162,6 +169,7 @@ export function useCatalogFilters() {
     selectedTag,
     selectedAttributes,
     sortBy,
+    minPrice, maxPrice,
   ]);
 
   const queryParams = useMemo<CatalogFilterValues>(() => {
@@ -171,6 +179,8 @@ export function useCatalogFilters() {
       brand: selectedBrand || undefined,
       tag: selectedTag || undefined,
       sort: sortBy,
+      minPrice: minPrice || undefined,
+      maxPrice: maxPrice || undefined,
     };
     // Session 79 — forward the URL-derived discounted lens to the API (the
     // server stays authoritative for active-window membership).
@@ -188,6 +198,7 @@ export function useCatalogFilters() {
     selectedAttributes,
     sortBy,
     isDiscounted,
+    minPrice, maxPrice,
   ]);
 
   /** Set/clear one attribute value (empty value clears the selection). */
@@ -208,6 +219,8 @@ export function useCatalogFilters() {
     setSelectedTag("");
     setSelectedAttributes({});
     setSortBy("newest");
+    setMinPrice("");
+    setMaxPrice("");
     // Session 79 — clearing filters also EXITS the discounted lens: the lens
     // lives in the URL (not local state), so navigating to the clean
     // /products URL is the only way to leave it. Per-chip partial clears stay
@@ -252,6 +265,7 @@ export function useCatalogFilters() {
     page,
     pageHref,
     isDiscounted,
+    minPrice, maxPrice, setMinPrice, setMaxPrice,
     activeFilterCount,
     queryParams,
     clearFilters,

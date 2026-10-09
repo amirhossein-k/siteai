@@ -1,5 +1,7 @@
 "use client";
 
+export { default } from "./catalog-reference";
+
 import { SearchSuggestions } from "@/components/storefront/search-suggestions";
 
 import { useCallback, useRef, useState } from "react";
@@ -52,7 +54,8 @@ const sortOptions = [
  * countdown-expiry refetch. The server stays authoritative for membership
  * and pricing; this component only renders what the API returns.
  */
-export default function ProductsCatalogPage() {
+/** Retained for comparison/rollback; /products renders the reference UI. */
+export function LegacyProductsCatalogPage() {
   const {
     searchQuery,
     setSearchQuery,
