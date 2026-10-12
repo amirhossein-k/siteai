@@ -43,7 +43,13 @@ test.describe("Admin SMS management", () => {
     await page
       .getByLabel("متن قالب", { exact: false })
       .fill("سفارش {{orderNo}} ثبت شد");
+    const createResponse = page.waitForResponse(
+      (r) =>
+        r.url().includes("/api/admin/sms/templates") &&
+        r.request().method() === "POST"
+    );
     await page.getByRole("button", { name: "ذخیره", exact: true }).click();
+    expect((await createResponse).status()).toBe(201);
 
     // The list reflects the new template with its SERVER-DERIVED variables.
     const row = page.locator("div", { has: page.getByText(templateName()) }).filter({
@@ -57,7 +63,11 @@ test.describe("Admin SMS management", () => {
     await page.getByLabel("قالب", { exact: true }).selectOption({
       label: templateName(),
     });
-    await page.locator("input.max-w-xs").last().fill("A1B2C3");
+    // The code embeds the run prefix so this run's log row is swept by
+    // global-teardown (smslogs.message $regex prefix) and never collides
+    // with rows left by earlier runs.
+    const code = `${state.prefix}code`;
+    await page.locator("input.max-w-xs").last().fill(code);
     await page.getByRole("button", { name: "ارسال پیامک" }).click();
     await expect(page.getByText("پیامک با موفقیت ارسال شد")).toBeVisible();
 
@@ -67,7 +77,7 @@ test.describe("Admin SMS management", () => {
     // strict mode otherwise.
     await page.getByRole("button", { name: "گزارش ارسال" }).click();
     const logRow = page.locator("div.p-3", {
-      hasText: "سفارش A1B2C3 ثبت شد",
+      hasText: `سفارش ${code} ثبت شد`,
     });
     await expect(logRow).toBeVisible();
     await expect(logRow).toContainText("09123456789");
