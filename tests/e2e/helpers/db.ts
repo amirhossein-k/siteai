@@ -311,7 +311,7 @@ export async function clearRateLimiterKeys(): Promise<void> {
   await db.collection<{ _id: string }>("ratelimits").deleteMany({
     _id: {
       $regex:
-        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify|supplier-apply|supplier-application-decide|conversation-create|conversation-msg|purchase-write|inventory-write|expense-write|accounting-init|accounting-config):",
+        "^rl:(login|login_ip|register|otp_request|otp_request_ip|otp_verify|supplier-apply|supplier-application-decide|conversation-create|conversation-msg|purchase-write|inventory-write|expense-write|accounting-init|accounting-config|sms-send|sms-template-write):",
     },
   });
 }

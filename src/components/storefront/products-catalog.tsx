@@ -36,6 +36,7 @@ const sortOptions = [
   { value: "oldest", label: "قدیمی‌ترین" },
   { value: "price_asc", label: "ارزان‌ترین" },
   { value: "price_desc", label: "گران‌ترین" },
+  { value: "rating_desc", label: "بیشترین امتیاز" },
   { value: "name", label: "نام (الفبا)" },
 ];
 
@@ -75,6 +76,8 @@ export function LegacyProductsCatalogPage() {
     activeFilterCount,
     queryParams,
     clearFilters,
+    setMinRating,
+    minRating,
   } = useCatalogFilters();
   const [showFilters, setShowFilters] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
@@ -123,6 +126,7 @@ export function LegacyProductsCatalogPage() {
     selectedCategory ||
     selectedBrand ||
     selectedTag ||
+    minRating ||
     Object.keys(selectedAttributes).length > 0;
 
   return (
@@ -252,7 +256,41 @@ export function LegacyProductsCatalogPage() {
               onSelect={setSelectedTag}
               loading={tagsLoading}
             />
-
+            {/* Minimum rating filter */}
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                حداقل امتیاز کاربران
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: "", label: "همه امتیازها" },
+                  { value: "1", label: "۱ ستاره به بالا" },
+                  { value: "2", label: "۲ ستاره به بالا" },
+                  { value: "3", label: "۳ ستاره به بالا" },
+                  { value: "4", label: "۴ ستاره به بالا" },
+                  { value: "5", label: "۵ ستاره" },
+                ].map((option) => (
+                  <Button
+                    key={option.value || "all"}
+                    type="button"
+                    variant={minRating === option.value ? "default" : "outline"}
+                    size="sm"
+                    aria-pressed={minRating === option.value}
+                    onClick={() => setMinRating(option.value)}
+                    className={cn(
+                      minRating !== option.value &&
+                        "border-sf-line bg-sf-chip text-sf-dim hover:border-primary/40 hover:bg-sf-chip/60 hover:text-sf-strong"
+                    )}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                فقط محصولاتی نمایش داده می‌شوند که میانگین امتیاز نظرات تأییدشده
+                آن‌ها به حد انتخاب‌شده برسد.
+              </p>
+            </div>
             {/* Attribute facets (Session 47 extension) */}
             {facetsLoading ? (
               <div className="space-y-2">
@@ -354,6 +392,16 @@ export function LegacyProductsCatalogPage() {
                     <X className="h-3 w-3" />
                   </Badge>
                 )}
+                {minRating && (
+                  <Badge
+                    variant="secondary"
+                    className="gap-1 cursor-pointer"
+                    onClick={() => setMinRating("")}
+                  >
+                    حداقل {minRating} ستاره
+                    <X className="h-3 w-3" />
+                  </Badge>
+                )}
                 {Object.entries(selectedAttributes).map(([slug, value]) => (
                   <Badge
                     key={slug}
@@ -361,7 +409,8 @@ export function LegacyProductsCatalogPage() {
                     className="gap-1 cursor-pointer"
                     onClick={() => setAttribute(slug, "")}
                   >
-                    {facets?.find((f) => f.slug === slug)?.name || slug}: {value}
+                    {facets?.find((f) => f.slug === slug)?.name || slug}:{" "}
+                    {value}
                     <X className="h-3 w-3" />
                   </Badge>
                 ))}
@@ -424,6 +473,16 @@ export function LegacyProductsCatalogPage() {
                 onClick={() => setSelectedTag("")}
               >
                 {tagName(selectedTag)}
+                <X className="h-3 w-3" />
+              </Badge>
+            )}
+            {minRating && (
+              <Badge
+                variant="secondary"
+                className="gap-1 cursor-pointer"
+                onClick={() => setMinRating("")}
+              >
+                حداقل {minRating} ستاره
                 <X className="h-3 w-3" />
               </Badge>
             )}

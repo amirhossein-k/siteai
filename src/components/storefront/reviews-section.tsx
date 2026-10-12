@@ -10,7 +10,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { showToast } from "@/components/ui/toast";
-import { useProductReviews, useMyReviews, useSubmitReview } from "@/hooks/use-reviews";
+import {
+  useProductReviews,
+  useMyReviews,
+  useSubmitReview,
+  useUpdateReview,
+} from "@/hooks/use-reviews";
 import type { ReviewStatus } from "@/types";
 
 /**
@@ -50,6 +55,12 @@ export function ReviewsSection({
   } = useMyReviews(productId);
 
   const submitMutation = useSubmitReview();
+  const updateMutation = useUpdateReview();
+  // Edit mode for the customer's PENDING review only (approved/rejected reviews
+  // never expose an edit action).
+  const [editing, setEditing] = useState(false);
+  const [editRating, setEditRating] = useState(0);
+  const [editText, setEditText] = useState("");
 
   const ratingSummary = reviewsData?.ratingSummary || { average: 0, count: 0 };
   const hasReviews = ratingSummary.count > 0;
@@ -99,6 +110,46 @@ export function ReviewsSection({
               ?.error || "خطا در ثبت دیدگاه"
           : "خطا در ثبت دیدگاه";
       showToast.error(message);
+    }
+  };
+
+  const startEdit = () => {
+    if (!myPendingReview) return;
+    setEditRating(myPendingReview.rating);
+    setEditText(myPendingReview.text);
+    setEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!myPendingReview) return;
+    if (editRating < 1 || editRating > 5) {
+      showToast.error("لطفاً یک امتیاز انتخاب کنید");
+      return;
+    }
+    if (!editText.trim()) {
+      showToast.error("لطفاً متن دیدگاه را وارد کنید");
+      return;
+    }
+    try {
+      await updateMutation.mutateAsync({
+        reviewId: myPendingReview._id,
+        productId,
+        rating: editRating,
+        text: editText.trim(),
+      });
+      showToast.success("دیدگاه شما بهروزرسانی شد");
+      setEditing(false);
+      await refetchMine();
+    } catch (err: unknown) {
+      const message =
+        err && typeof err === "object" && "response" in err
+          ? (err as { response: { data?: { error?: string } } }).response?.data
+              ?.error || "خطا در ویرایش دیدگاه"
+          : "خطا در ویرایش دیدگاه";
+      showToast.error(message);
+      // A 409 means moderation already happened; leave edit mode and refresh.
+      setEditing(false);
+      await refetchMine();
     }
   };
 
@@ -216,8 +267,67 @@ export function ReviewsSection({
           </div>
         )}
 
+        {/* Pending review edit form (rating + text only; pending status only) */}
+        {isCustomer && myPendingReview && editing && (
+          <div className="space-y-3 rounded-2xl border border-sf-line bg-sf-chip/60 p-4">
+            <h3 className="text-sm font-semibold">ویرایش دیدگاه در انتظار تأیید</h3>
+            <div className="flex items-center gap-1" role="radiogroup" aria-label="امتیاز">
+              {[1, 2, 3, 4, 5].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  role="radio"
+                  aria-checked={editRating === s}
+                  aria-label={`${s} از ۵ ستاره`}
+                  onClick={() => setEditRating(s)}
+                  className="rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
+                >
+                  <Star
+                    className={cn(
+                      "h-6 w-6",
+                      s <= editRating
+                        ? "fill-amber-400 text-amber-400"
+                        : "text-muted-foreground/30"
+                    )}
+                  />
+                </button>
+              ))}
+            </div>
+            <label className="block">
+              <span className="sr-only">متن دیدگاه</span>
+              <textarea
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                maxLength={1000}
+                rows={4}
+                className="flex w-full rounded-xl border border-sf-line bg-sf-image px-3 py-2 text-sm placeholder:text-sf-dim focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
+              />
+            </label>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={handleSaveEdit}
+                disabled={updateMutation.isPending}
+              >
+                {updateMutation.isPending && (
+                  <Loader2 className="ml-2 h-4 w-4 animate-spin" />
+                )}
+                ذخیره
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditing(false)}
+                disabled={updateMutation.isPending}
+              >
+                انصراف
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Customer's own review status (already submitted) */}
-        {isCustomer && !myLoading && !canReview && (myPendingReview || myApprovedReview || myRejectedReview) && (
+        {isCustomer && !myLoading && !canReview && !editing && (myPendingReview || myApprovedReview || myRejectedReview) && (
           <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-sf-line bg-sf-chip/60 p-4 text-sm">
             <span className="text-muted-foreground">دیدگاه شما:</span>
             {myPendingReview && myStatusBadge("pending")}
@@ -239,6 +349,11 @@ export function ReviewsSection({
                 ? `${myPendingReview.rating} از ۵ ستاره`
                 : ""}
             </span>
+            {myPendingReview && (
+              <Button size="sm" variant="outline" onClick={startEdit}>
+                ویرایش دیدگاه
+              </Button>
+            )}
           </div>
         )}
 

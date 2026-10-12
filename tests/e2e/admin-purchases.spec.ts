@@ -155,10 +155,31 @@ test.describe("Admin purchases", () => {
     ).toBeVisible();
 
     // Supplier = the per-run supplier seeded by global-setup.
-    await page
-      .locator("select")
-      .first()
-      .selectOption({ label: `فروشنده ${state.prefix}` });
+    //
+    // Flake guard (CI run 37756019729-era failure): the create page renders a
+    // Skeleton until useSuppliers() resolves, and on a transient API failure
+    // it silently renders an EMPTY select (page.tsx `suppliers ?? []`).
+    // selectOption({ label }) only waits for the <select> to be actionable —
+    // not for the option — so a cold dev-server fetch failure surfaced as
+    // "option never appeared". Two event-based guards, no sleeps:
+    //  1. assert the supplier API itself succeeded and lists the fixture —
+    //     isolates a fixture/setup or API failure from a UI-side one;
+    //  2. wait for the exact <option> to ATTACH before selecting.
+    const suppliersApi = await adminCtx.get("/api/admin/suppliers");
+    expect(suppliersApi.ok()).toBeTruthy();
+    const suppliersApiBody = (await suppliersApi.json()) as Array<{
+      businessName: string;
+    }>;
+    expect(
+      suppliersApiBody.some((s) => s.businessName === `فروشنده ${state.prefix}`)
+    ).toBe(true);
+
+    const supplierSelect = page.locator("select").first();
+    await supplierSelect
+      .locator("option")
+      .filter({ hasText: `فروشنده ${state.prefix}` })
+      .waitFor({ state: "attached" });
+    await supplierSelect.selectOption({ label: `فروشنده ${state.prefix}` });
 
     // Product = the purchased-sourcing fixture (the picker only lists purchased).
     await page

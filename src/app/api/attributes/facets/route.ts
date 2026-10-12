@@ -4,6 +4,10 @@ import { dbConnect } from "@/lib/dbConnect";
 import Product from "@/models/Product";
 import Attribute from "@/models/Attribute";
 import { escapeRegex } from "@/lib/pagination";
+import {
+  getRatedProductOrder,
+  parseMinRating,
+} from "@/lib/rating-summary";
 
 /**
  * GET /api/attributes/facets — attribute facet counts for the storefront
@@ -111,6 +115,16 @@ export async function GET(req: NextRequest) {
     for (const [key, value] of searchParams.entries()) {
       const match = key.match(/^attributes\[(.+)\]$/);
       if (match && value) attributeSelections.push({ slug: match[1], value });
+    }
+
+    // Rating eligibility must match the catalog (/api/products minRating).
+    const minRating = parseMinRating(searchParams.get("minRating"));
+    if (minRating !== null) {
+      const ratedIds = (await getRatedProductOrder(minRating)).map((r) => r._id);
+      filter.$and = [
+        ...((filter.$and as Record<string, unknown>[] | undefined) ?? []),
+        { _id: { $in: ratedIds } },
+      ];
     }
 
     // Load all attributes so we can resolve slugs AND know which are active.

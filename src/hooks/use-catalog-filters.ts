@@ -53,6 +53,8 @@ export function useCatalogFilters() {
   const [sortBy, setSortBy] = useState("newest");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
+  // Rating filter: "" = any, otherwise "1".."5" (approved-review average >= n).
+  const [minRating, setMinRating] = useState("");
 
   // Session 76 — URL-driven page. Derived from `?page=` (parsePageParam
   // coerces missing/malformed values to 1); the URL is the single source of
@@ -89,8 +91,11 @@ export function useCatalogFilters() {
   // (/products?category=…&brand=…&search=…&sort=…) pre-filter the catalog on
   // first mount. With no params present this changes nothing — the state
   // architecture stays untouched (useState remains the source of truth).
+  // Session 50 — one-time URL param seed.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (typeof window === "undefined") return;
+
     const params = new URLSearchParams(window.location.search);
     const category = params.get("category");
     const brand = params.get("brand");
@@ -99,26 +104,32 @@ export function useCatalogFilters() {
     const sort = params.get("sort");
     const min = params.get("minPrice");
     const max = params.get("maxPrice");
+    const rating = params.get("minRating");
+
     if (min && /^\d+$/.test(min)) setMinPrice(min);
     if (max && /^\d+$/.test(max)) setMaxPrice(max);
-    // INTENTIONAL: one-time post-hydration URL seed (Session 50). Initializing
-    // state from the URL during render would mismatch the server HTML
-    // (hydration warning); a lazy initializer can't read window on the server
-    // either. Deferring to an effect is the only SSR-safe option, so the rule
-    // is disabled for this effect body.
-    /* eslint-disable react-hooks/set-state-in-effect */
     if (category) setSelectedCategory(category);
+    if (rating && /^[1-5]$/.test(rating)) setMinRating(rating);
     if (brand) setSelectedBrand(brand);
     if (tag) setSelectedTag(tag);
     if (search) setSearchQuery(search);
+
     if (
       sort &&
-      ["newest", "best_selling", "price_asc", "price_desc", "name", "oldest"].includes(sort)
+      [
+        "newest",
+        "best_selling",
+        "price_asc",
+        "price_desc",
+        "name",
+        "oldest",
+        "rating_desc",
+      ].includes(sort)
     ) {
       setSortBy(sort);
     }
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Reset to page 1 whenever any filter changes. Page is DERIVED from the
   // URL, so the reset is: strip `?page` from the URL when a filter actually
@@ -139,7 +150,7 @@ export function useCatalogFilters() {
     "|" +
     JSON.stringify(selectedAttributes) +
     "|" +
-    sortBy + "|" + minPrice + "|" + maxPrice;
+    sortBy + "|" + minPrice + "|" + maxPrice + "|" + minRating;
   const prevFingerprintRef = useRef(filterFingerprint);
   useEffect(() => {
     if (prevFingerprintRef.current === filterFingerprint) return;
@@ -161,6 +172,7 @@ export function useCatalogFilters() {
     count += Object.keys(selectedAttributes).length;
     if (sortBy !== "newest") count++;
     if (minPrice || maxPrice) count++;
+    if (minRating) count++;
     return count;
   }, [
     searchQuery,
@@ -170,6 +182,7 @@ export function useCatalogFilters() {
     selectedAttributes,
     sortBy,
     minPrice, maxPrice,
+    minRating,
   ]);
 
   const queryParams = useMemo<CatalogFilterValues>(() => {
@@ -181,6 +194,7 @@ export function useCatalogFilters() {
       sort: sortBy,
       minPrice: minPrice || undefined,
       maxPrice: maxPrice || undefined,
+      minRating: minRating || undefined,
     };
     // Session 79 — forward the URL-derived discounted lens to the API (the
     // server stays authoritative for active-window membership).
@@ -199,6 +213,7 @@ export function useCatalogFilters() {
     sortBy,
     isDiscounted,
     minPrice, maxPrice,
+    minRating,
   ]);
 
   /** Set/clear one attribute value (empty value clears the selection). */
@@ -221,6 +236,7 @@ export function useCatalogFilters() {
     setSortBy("newest");
     setMinPrice("");
     setMaxPrice("");
+    setMinRating("");
     // Session 79 — clearing filters also EXITS the discounted lens: the lens
     // lives in the URL (not local state), so navigating to the clean
     // /products URL is the only way to leave it. Per-chip partial clears stay
@@ -266,6 +282,7 @@ export function useCatalogFilters() {
     pageHref,
     isDiscounted,
     minPrice, maxPrice, setMinPrice, setMaxPrice,
+    minRating, setMinRating,
     activeFilterCount,
     queryParams,
     clearFilters,

@@ -5,6 +5,7 @@ import { requireRoleOrError, serverError } from "@/lib/auth-utils";
 import Wishlist from "@/models/Wishlist";
 import Product from "@/models/Product";
 import { rateLimit } from "@/lib/rate-limiter";
+import { computeRatingSummaries } from "@/lib/rating-summary";
 import {
   parsePaginationParams,
   buildPaginatedResponse,
@@ -69,8 +70,16 @@ export async function GET(req: NextRequest) {
     const products = await Product.find({ _id: { $in: productIds } })
       .select("name slug price stock images hasVariants isActive category")
       .lean();
+    const ratings = await computeRatingSummaries(
+      products.map((p) => String(p._id))
+    );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const productMap = new Map(products.map((p: any) => [String(p._id), p]));
+    const productMap = new Map(
+      products.map((p: any) => [
+        String(p._id),
+        { ...p, ratingSummary: ratings.get(String(p._id)) ?? { average: 0, count: 0 } },
+      ])
+    );
 
     // Keep every wishlist row (never silently drop). A deleted product maps to
     // `product: null` — the UI renders an unavailable placeholder. `productId`

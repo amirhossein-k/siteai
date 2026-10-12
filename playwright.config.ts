@@ -9,11 +9,13 @@ import { defineConfig, devices } from "@playwright/test";
  * - `workers: 1`, `fullyParallel: false` — deterministic execution against the
  *   shared dev MongoDB (mirrors the sequential 33-suite regression runner).
  *   Per-spec data is PREFIX-isolated so scaling workers later is config-only.
- * - `reuseExistingServer: !CI` — locally the already-running dev server on
- *   :3000 is reused; CI boots a fresh `npm run dev` (with ZARINPAL_MOCK=1).
- * - ZARINPAL_MOCK is a dev-only env seam (src/lib/zarinpal.ts) that replaces
- *   the interactive Zarinpal sandbox gateway with a same-origin stub — the
- *   payment journey runs hermetically. See .env.example.
+ * - `reuseExistingServer: false` — every run boots its own `npm run dev` so the
+ *   mock env below is always in effect. A reused server started without the
+ *   mock would send payments to the real Zarinpal sandbox.
+ * - ZARINPAL_MOCK / SMS_MOCK are dev-only env seams (src/lib/zarinpal.ts) that
+ *   replace the interactive Zarinpal sandbox gateway and SMS provider with
+ *   hermetic stubs. They are set on the webServer for local and CI runs.
+ *   See .env.example.
  * - Auth: storageState files under tests/e2e/.auth/ are produced once per run
  *   by global-setup (API login via /api/auth/csrf + callback/credentials).
  * - Artifacts: screenshot/video/trace retained only on failure.
@@ -37,11 +39,9 @@ export default defineConfig({
   webServer: {
     command: "npm run dev",
     url: `${BASE_URL}/api/auth/csrf`,
-    reuseExistingServer: !process.env.CI || process.env.REGRESSION_SERVER === "1",
+    reuseExistingServer: false,
     timeout: 120_000,
-    env: process.env.CI
-      ? { ...process.env, ZARINPAL_MOCK: "1", SMS_MOCK: "1" }
-      : undefined,
+    env: { ...process.env, ZARINPAL_MOCK: "1", SMS_MOCK: "1" },
   },
   projects: [
     {

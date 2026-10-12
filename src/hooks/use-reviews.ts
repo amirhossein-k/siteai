@@ -75,6 +75,38 @@ export function useMyReviews(productId: string) {
   });
 }
 
+/** Customer edit of a PENDING review (rating + text only). */
+export function useUpdateReview() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      reviewId,
+      rating,
+      text,
+    }: {
+      reviewId: string;
+      productId: string;
+      rating: number;
+      text: string;
+    }): Promise<Review> => {
+      const { data } = await axios.patch(`/api/reviews/${reviewId}`, {
+        rating,
+        text,
+      });
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: reviewKeys.mine(variables.productId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: reviewKeys.all,
+      });
+    },
+  });
+}
+
 export function useSubmitReview() {
   const queryClient = useQueryClient();
 
