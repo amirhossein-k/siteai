@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import axios from "axios";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { User, Phone, Lock, Eye, EyeOff, ArrowLeft, ArrowRight, AlertCircle } from "lucide-react";
@@ -26,8 +27,14 @@ import HolographicScene from "@/components/auth/holographic-scene";
 import { AUTH_INPUT_CLASS, AUTH_INPUT_WITH_ACTION_CLASS, AUTH_SUBMIT_CLASS, AUTH_LABEL_CLASS } from "@/components/auth/auth-styles";
 import { cn } from "@/lib/utils";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Login-to-registration hand-off: /register?phone=<number> prefills the
+  // field for convenience only — the value is NEVER trusted from the URL;
+  // the register API (and OTP request) re-validate and re-normalize it
+  // server-side before any account decision.
+  const prefillPhone = searchParams.get("phone") ?? "";
   // Session 62 — OTP registration is an additional option; password stays default.
   const [mode, setMode] = useState<"password" | "otp">("password");
   const [loading, setLoading] = useState(false);
@@ -39,7 +46,7 @@ export default function RegisterPage() {
     resolver: zodResolver(registerSchema),
     defaultValues: {
       name: "",
-      phone: "",
+      phone: prefillPhone,
       password: "",
       confirmPassword: "",
     },
@@ -317,5 +324,17 @@ export default function RegisterPage() {
         </div>
       </AuthPanel>
     </div>
+  );
+}
+
+/**
+ * useSearchParams() above requires a Suspense boundary during prerendering
+ * (Next.js app-router requirement) — the exported page wraps the form.
+ */
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
   );
 }

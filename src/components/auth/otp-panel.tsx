@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { signIn } from "next-auth/react";
-import { User, Phone, ArrowLeft, AlertCircle } from "lucide-react";
+import { User, Phone, ArrowLeft, AlertCircle, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OtpCodeInput } from "@/components/auth/otp-code-input";
@@ -45,6 +46,12 @@ export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [cooldown, setCooldown] = useState(0);
+  // Login UX: the server answers 404 { reason: "not_registered" } when the
+  // phone has no account (server-enforced — never trusted from the client).
+  // The panel then stays on the request step and offers registration with
+  // the phone preserved as a query param (re-validated server-side by the
+  // register API).
+  const [notRegistered, setNotRegistered] = useState(false);
 
   // 60s resend cooldown countdown.
   useEffect(() => {
@@ -55,6 +62,7 @@ export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
 
   async function requestCode() {
     setError("");
+    setNotRegistered(false);
     const parsed = otpRequestSchema.safeParse({ phone, purpose });
     if (!parsed.success) {
       setError(parsed.error.errors[0]?.message || "اطلاعات نامعتبر است");
@@ -67,8 +75,18 @@ export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone, purpose }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        reason?: string;
+      };
       if (!res.ok) {
+        if (res.status === 404 && data.reason === "not_registered") {
+          // Server-confirmed: no account for this phone. Offer registration
+          // (phone preserved via query param; register re-validates it).
+          setNotRegistered(true);
+          setError("");
+          return;
+        }
         setError(data.error || "خطایی رخ داده است");
         return;
       }
@@ -215,6 +233,28 @@ export function OtpPanel({ purpose, onAuthenticated }: OtpPanelProps) {
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               {error}
+            </div>
+          )}
+
+          {notRegistered && (
+            <div
+              className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-sm text-amber-800"
+              role="alert"
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <div className="space-y-2">
+                <p>
+                  ثبت‌نامی با این شماره موبایل پیدا نشد. برای ورود با کد
+                  یک‌بارمصرف اول ثبت‌نام کنید.
+                </p>
+                <Link
+                  href={`/register?phone=${encodeURIComponent(phone)}`}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 font-medium text-white transition hover:bg-amber-700"
+                >
+                  <UserPlus className="h-4 w-4" aria-hidden="true" />
+                  ثبت‌نام با همین شماره
+                </Link>
+              </div>
             </div>
           )}
 

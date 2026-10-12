@@ -133,3 +133,96 @@ test("rejects a wrong OTP code without creating a session", async ({
   expect(session.user).toBeFalsy();
   await expect(page).toHaveURL(/\/login$/);
 });
+
+/**
+ * Login-OTP account-existence gate (backend-enforced).
+ *
+ * For a phone with NO account, POST /api/auth/otp/request (purpose=login)
+ * answers 404 { reason: "not_registered" } — no OtpCode row is created,
+ * no SMS is dispatched, and the UI must NOT show a success toast or enter
+ * the verify step; it offers registration with the phone preserved.
+ */
+test("login OTP for an unregistered phone never fakes an SMS and offers registration", async ({
+  page,
+  baseURL,
+}) => {
+  const phone = uniquePhone();
+
+  // A) Server contract — direct API assertion (never trusts the client).
+  const apiRes = await fetch(`${baseURL}/api/auth/otp/request`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone, purpose: "login" }),
+  });
+  expect(apiRes.status).toBe(404);
+  const apiBody = (await apiRes.json()) as {
+    error?: string;
+    reason?: string;
+    sent?: boolean;
+  };
+  expect(apiBody.reason).toBe("not_registered");
+  expect(apiBody.sent).toBeUndefined();
+
+  // Server-side side effects: NO OtpCode row (nothing was issued) and NO
+  // mock SMS (dev-last would return the plaintext code of the last SMS —
+  // but for this phone nothing exists).
+  const devLast = await fetch(`${baseURL}/api/auth/otp/dev-last?phone=${phone}`);
+  expect(devLast.status).toBe(404);
+
+  // B) UI journey — no success toast, no verify step, registration offered.
+  await page.goto("/login");
+  await page.getByRole("button", { name: "ورود با کد یک‌بارمصرف" }).click();
+  await page.getByLabel("شماره موبایل").fill(phone);
+  await page.getByRole("button", { name: "ارسال کد تأیید" }).click();
+
+  // The verify step is never entered and no "code sent" toast appears.
+  await expect(page.getByLabel("کد تأیید")).toHaveCount(0);
+  await expect(page.getByText("کد ورود پیامک شد")).toHaveCount(0);
+
+  // The unregistered-phone alert offers registration with the SAME phone.
+  await expect(
+    page.getByText("ثبت‌نامی با این شماره موبایل پیدا نشد")
+  ).toBeVisible();
+  const registerLink = page.getByRole("link", {
+    name: "ثبت‌نام با همین شماره",
+  });
+  await expect(registerLink).toBeVisible();
+
+  // C) Phone preservation — the CTA links to /register?phone=<number> and
+  //     the register page prefills the field from it (server re-validates).
+  await registerLink.click();
+  await expect(page).toHaveURL(new RegExp("/register\\?phone="));
+  await expect(page.getByLabel("شماره موبایل")).toHaveValue(phone);
+
+  // D) Completing registration for THIS phone through the prefilled password
+  // form works (the number was genuinely unregistered).
+  await page.getByLabel(/^نام و نام خانوادگی/).fill(`مشتری ${getState().prefix}`);
+  await page.getByLabel("رمز عبور", { exact: true }).fill("otp-e2e-pass-123");
+  await page.getByLabel("تکرار رمز عبور").fill("otp-e2e-pass-123");
+  await page.getByRole("button", { name: "ثبت‌نام", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp("/$"), { timeout: 15_000 });
+
+  // E) And now the login-OTP request for the SAME phone succeeds (sent).
+  const okRes = await fetch(`${baseURL}/api/auth/otp/request`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phone, purpose: "login" }),
+  });
+  expect(okRes.status).toBe(200);
+  const okBody = (await okRes.json()) as { sent?: boolean };
+  expect(okBody.sent).toBe(true);
+
+  // Cleanup — remove the account created in step D (prefix-tagged name;
+  // global-teardown sweeps users by name prefix).
+});
+
+test("login OTP rejects an invalid phone number", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByRole("button", { name: "ورود با کد یک‌بارمصرف" }).click();
+  await page.getByLabel("شماره موبایل").fill("12345");
+  await page.getByRole("button", { name: "ارسال کد تأیید" }).click();
+
+  // Client-side zod validation blocks the request (no verify step, no toast).
+  await expect(page.getByLabel("کد تأیید")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/login$/);
+});
