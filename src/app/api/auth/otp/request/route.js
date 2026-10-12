@@ -25,10 +25,13 @@ const PHONE_RE = /^09\d{9}$/;
  * per-IP rate limits and a 60s resend cooldown, then issues a 6-digit code
  * (only its SHA-256 digest is stored) and hands it to the SMS adapter.
  *
- * Anti-enumeration: for the `login` purpose an UNKNOWN phone receives the
- * exact same 200 `{ sent: true }` as an existing one — no code is created or
- * sent, so the response can never leak account existence (verify() then fails
- * uniformly for both cases).
+ * Account-existence gate (login): for the `login` purpose a phone with no
+ * account receives 404 `{ reason: "not_registered" }` — no OtpCode row,
+ * no SMS, no success response — so the UI can offer registration instead of
+ * waiting for an SMS that never arrives. Rate limits (per-phone + per-IP)
+ * run before the lookup, capping the existence oracle at the same rate as
+ * the pre-existing register-purpose 409. `verify()` still fails uniformly
+ * for unknown phones.
  */
 export async function POST(req) {
   try {
@@ -110,20 +113,27 @@ export async function POST(req) {
         );
       }
     } else if (purpose === "login") {
-      // login — anti-enumeration (see header): unknown phones get the same
-      // success response and nothing is created or sent.
-      // ACCEPTED trade-off (documented in AUTHENTICATION.md): the 60s resend
-      // cooldown above can only fire for EXISTING phones (no row is created
-      // for unknown ones), so rapid re-requests reveal existence through a
-      // 200-vs-429 difference. The register purpose already exposes the same
-      // information via its standard 409, so this adds no new oracle.
+      // login — account-existence gate (product decision: the login UX
+      // guides unregistered visitors to registration instead of silently
+      // pretending an SMS was sent).
+      //
+      // Threat model: response-shape changes are rate-limit-equivalent to the
+      // PRE-EXISTING register-purpose 409 oracle — per-phone + per-IP limits
+      // run BEFORE this lookup and cap enumeration at the same rate. No row
+      // is created for unknown phones and no code is issued: nothing is
+      // verifiable, so `verify()` would 400 uniformly anyway.
       const user = await User.findOne({ phone });
       if (!user) {
-        return NextResponse.json({
-          sent: true,
-          purpose,
-          expiresInSeconds: OTP_TTL_MS / 1000,
-        });
+        // Unknown phone — guide to registration. Never reveals more than
+        // existence (normalized lookup, server-side; page preserves the
+        // number as a query param and re-validates at the register API).
+        return NextResponse.json(
+          {
+            error: "حسابی با این شماره موبایل پیدا نشد. لطفاً ثبت‌نام کنید.",
+            reason: "not_registered",
+          },
+          { status: 404 }
+        );
       }
     } else {
       // password_reset — anti-enumeration CLOSED (Session 84 decision): an
