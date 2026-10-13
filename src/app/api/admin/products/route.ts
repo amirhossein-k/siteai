@@ -14,6 +14,7 @@ import {
   escapeRegex,
 } from "@/lib/pagination";
 import { sanitizePlainText } from "@/lib/sanitize";
+import { slugify } from "@/lib/utils";
 import { prepareVariantsForSave } from "@/lib/product-variants";
 import { prepareRichDescription } from "@/lib/product-description";
 import { createWithUniqueSlug } from "@/lib/product-slug";
@@ -148,9 +149,26 @@ export async function POST(req: NextRequest) {
     // name) that collides gets a deterministic suffix (base-2, base-3, …) via
     // the DB unique index retry; a manually-entered slug is authoritative and
     // keeps the existing 409 behavior (maxTries=1 → conflict = {ok:false}).
+    // Bug fix — slug auto-generation (server-authoritative): an empty or
+    // whitespace-only slug is generated from the product NAME (the same
+    // slugify used by the client form). A blank name cannot generate a slug —
+    // it is rejected as the missing field it is (field-specific error, no
+    // generic "slug required").
+    const sanitizedName = sanitizePlainText(body.name);
+    if (!sanitizedName || sanitizedName.trim() === "") {
+      return NextResponse.json(
+        { error: "نام محصول الزامی است", field: "name" },
+        { status: 400 }
+      );
+    }
+    const normalizedSlug =
+      typeof body.slug === "string" ? body.slug.trim() : "";
+    const effectiveSlug =
+      normalizedSlug !== "" ? normalizedSlug : slugify(sanitizedName);
+
     const productFields = {
-      name: sanitizePlainText(body.name),
-      slug: body.slug,
+      name: sanitizedName,
+      slug: effectiveSlug,
       description:
         rich.description !== undefined
           ? rich.description
@@ -172,7 +190,7 @@ export async function POST(req: NextRequest) {
       discount: discountResult.value,
     };
     const slugResult = await createWithUniqueSlug(
-      body.slug,
+      effectiveSlug,
       (candidate) => Product.create({ ...productFields, slug: candidate }),
       body.autoSlug === true ? 20 : 1
     );
@@ -260,9 +278,26 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: stockGuard.error }, { status: 400 });
     }
 
+    // Bug fix — slug handling on EDIT (mirror of POST): a blank name is a
+    // field-specific error; an empty/whitespace slug is regenerated from the
+    // NEW name (the edit form leaves it untouched); a manually-entered slug
+    // stays authoritative. The stored slug is never silently overwritten by
+    // unrelated field edits (only save() rewrites what the user submitted).
+    const updateName = sanitizePlainText(body.name);
+    if (!updateName || updateName.trim() === "") {
+      return NextResponse.json(
+        { error: "نام محصول الزامی است", field: "name" },
+        { status: 400 }
+      );
+    }
+    const normalizedSlug =
+      typeof body.slug === "string" ? body.slug.trim() : "";
+    const effectiveSlug =
+      normalizedSlug !== "" ? normalizedSlug : slugify(updateName);
+
     const update: Record<string, unknown> = {
-      name: sanitizePlainText(body.name),
-      slug: body.slug,
+      name: updateName,
+      slug: effectiveSlug,
       description:
         rich.description !== undefined
           ? rich.description
@@ -292,7 +327,7 @@ export async function PUT(req: NextRequest) {
     // Same auto-slug collision handling as POST: auto-generated slugs get a
     // deterministic suffix; user-entered slugs keep the 409 behavior.
     const slugResult = await createWithUniqueSlug(
-      body.slug,
+      effectiveSlug,
       (candidate) =>
         Product.findByIdAndUpdate(
           id,

@@ -136,12 +136,22 @@ export function ProductForm({
       const d = new Date(v);
       return Number.isNaN(d.getTime()) ? null : d.toISOString();
     };
+    // Coerce the variant drafts for the PAYLOAD only: "" (mid-typing state)
+    // becomes 0 so the zod/server validation reports the real positive-price
+    // error instead of a NaN/cast error. The on-screen draft keeps "".
+    const coercedVariants = variants.map((v) => ({
+      ...v,
+      price: typeof v.price === "number" ? v.price : 0,
+      supplierPrice: typeof v.supplierPrice === "number" ? v.supplierPrice : 0,
+      stock: typeof v.stock === "number" ? v.stock : 0,
+    }));
+
     await onSubmit({
       ...data,
       images: productImages,
       tags: selectedTags,
       hasVariants,
-      variants,
+      variants: coercedVariants,
       descriptionRich,
       discount: discount
         ? {
@@ -524,7 +534,12 @@ export function ProductForm({
                         type="number"
                         min={0}
                         placeholder="مثال: ۸۵۰۰۰۰"
-                        onChange={(e) => field.onChange(e.target.valueAsNumber || 0)}
+                        // Keep the RAW string while typing — valueAsNumber is
+                        // NaN for malformed/partial input and the `|| 0`
+                        // fallback used to clobber it to `0` mid-typing.
+                        // z.coerce.number() in the schema does the numeric
+                        // conversion at validation time.
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormMessage />
@@ -544,7 +559,7 @@ export function ProductForm({
                         type="number"
                         min={0}
                         placeholder="مثال: ۶۵۰۰۰۰"
-                        onChange={(e) => field.onChange(e.target.valueAsNumber || 0)}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormMessage />
@@ -564,7 +579,7 @@ export function ProductForm({
                         type="number"
                         min={0}
                         placeholder="مثال: ۱۰"
-                        onChange={(e) => field.onChange(e.target.valueAsNumber || 0)}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormMessage />
