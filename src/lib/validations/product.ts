@@ -45,17 +45,22 @@ const productBaseSchema = z.object({
     .string()
     .min(1, "نام محصول الزامی است")
     .max(200, "نام محصول حداکثر ۲۰۰ کاراکتر"),
+  // Empty is ALLOWED client-side: when the slug field was left untouched the
+  // form auto-generates it from the name (handleNameChange → slugify) and the
+  // SERVER re-generates/conflicts-checks (Session 70 autoSlug contract).
+  // A non-empty value must still match the pattern (manual slugs are
+  // authoritative server-side; uppercase Latin is rejected because the model
+  // stores `lowercase: true` → URL mismatch → 404).
   slug: z
     .string()
-    .min(1, "اسلاگ الزامی است")
+    .trim()
     .max(200, "اسلاگ حداکثر ۲۰۰ کاراکتر")
     // Session 70 — SEO-first Unicode slugs: Persian/Arabic letters, lowercase
     // Latin and digits are allowed («هدفون-بیسیم-بلوتوثی»). Uppercase Latin is
     // rejected (the model stores `lowercase: true` → URL mismatch → 404).
-    .regex(
-      SLUG_PATTERN,
-      "اسلاگ فقط شامل حروف فارسی، حروف لاتین کوچک، اعداد و خط تیره است"
-    ),
+    .refine((v) => v === "" || SLUG_PATTERN.test(v), {
+      message: "اسلاگ فقط شامل حروف فارسی، حروف لاتین کوچک، اعداد و خط تیره است",
+    }),
   description: z
     .string()
     .max(2000, "توضیحات حداکثر ۲۰۰۰ کاراکتر")
@@ -107,7 +112,20 @@ export type ProductFormData = z.infer<typeof productSchema> & {
   images?: string[];
   tags?: string[];
   hasVariants?: boolean;
-  variants?: z.infer<typeof productVariantSchema>[];
+  // Mirrors VariantDraft (variant-builder) so the form draft (which may hold
+  // "" while the admin is typing) round-trips through the form props without a
+  // lossy cast; z.coerce + the SERVER-side prepareVariantsForSave remain
+  // authoritative for numeric/business validation.
+  variants?: Array<{
+    key: string;
+    sku: string;
+    attributes: Array<{ attributeId: string; name: string; value: string }>;
+    price: number | "";
+    supplierPrice: number | "";
+    stock: number | "";
+    images?: string[];
+    isActive?: boolean;
+  }>;
   /** Session 70 — true when the slug was derived from the name (NOT manually
    * edited): a server-side collision then gets a deterministic -2/-3 suffix
    * instead of the manual-slug 409. */
@@ -129,7 +147,17 @@ export type SupplierProductFormData = z.infer<typeof supplierProductSchema> & {
   images?: string[];
   tags?: string[];
   hasVariants?: boolean;
-  variants?: z.infer<typeof productVariantSchema>[];
+  // Mirrors ProductFormData.variants (see above).
+  variants?: Array<{
+    key: string;
+    sku: string;
+    attributes: Array<{ attributeId: string; name: string; value: string }>;
+    price: number | "";
+    supplierPrice: number | "";
+    stock: number | "";
+    images?: string[];
+    isActive?: boolean;
+  }>;
   /** Session 70 — same autoSlug marker as the admin form. */
   autoSlug?: boolean;
 };

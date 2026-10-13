@@ -26,9 +26,11 @@ export interface VariantDraft {
   key: string; // local unique key for React lists (not sent to server)
   sku: string;
   attributes: VariantDraftAttribute[];
-  price: number;
-  supplierPrice: number;
-  stock: number;
+  // "" while the field is being typed/erased (numeric parse happens at
+  // validation via z.coerce.number()) — never forces `0` mid-typing.
+  price: number | "";
+  supplierPrice: number | "";
+  stock: number | "";
   images: string[];
   isActive: boolean;
 }
@@ -581,10 +583,10 @@ export function VariantBuilder({
                         <Input
                           type="number"
                           min={0}
-                          value={variant.price || ""}
+                          value={variant.price === 0 ? 0 : variant.price || ""}
                           onChange={(e) =>
                             updateVariant(variant.key, {
-                              price: e.target.valueAsNumber || 0,
+                              price: e.target.valueAsNumber || "",
                             })
                           }
                           className="h-8 text-xs"
@@ -595,10 +597,10 @@ export function VariantBuilder({
                         <Input
                           type="number"
                           min={0}
-                          value={variant.supplierPrice || ""}
+                          value={variant.supplierPrice === 0 ? 0 : variant.supplierPrice || ""}
                           onChange={(e) =>
                             updateVariant(variant.key, {
-                              supplierPrice: e.target.valueAsNumber || 0,
+                              supplierPrice: e.target.valueAsNumber || "",
                             })
                           }
                           className="h-8 text-xs"
@@ -609,10 +611,10 @@ export function VariantBuilder({
                         <Input
                           type="number"
                           min={0}
-                          value={variant.stock || ""}
+                          value={variant.stock === 0 ? 0 : variant.stock || ""}
                           onChange={(e) =>
                             updateVariant(variant.key, {
-                              stock: e.target.valueAsNumber || 0,
+                              stock: e.target.valueAsNumber || "",
                             })
                           }
                           className="h-8 text-xs"
