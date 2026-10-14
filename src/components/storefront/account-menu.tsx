@@ -103,7 +103,7 @@ export function AccountMenu() {
         title="حساب کاربری"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "sf-icon-btn h-10 w-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
+          "sf-icon-btn h-11 w-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
           open && "bg-sf-chip text-sf-strong"
         )}
       >
@@ -127,7 +127,7 @@ export function AccountMenu() {
                 href={item.href}
                 role="menuitem"
                 className={cn(
-                  "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
+                  "flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 sf-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
                   isActive
                     ? "bg-primary/10 text-primary"
                     : "text-sf-dim hover:bg-sf-chip hover:text-sf-strong"
@@ -145,7 +145,7 @@ export function AccountMenu() {
             type="button"
             role="menuitem"
             onClick={() => signOut({ callbackUrl: "/" })}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60"
+            className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 sf-label font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60"
           >
             <LogOut className="h-4 w-4" />
             <span>خروج</span>

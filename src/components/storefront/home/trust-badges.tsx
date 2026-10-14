@@ -45,7 +45,7 @@ export function TrustBadges({ section }: HomepageSectionRendererProps) {
   if (badges.length === 0) return null;
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 sm:pt-12 lg:px-8 lg:pt-14">
       <SectionHeader
         title={section.title || "چرا فروشگاه من؟"}
         subtitle={
@@ -61,13 +61,15 @@ export function TrustBadges({ section }: HomepageSectionRendererProps) {
                and the whitelisted-icon mapping unchanged. */
             <div
               key={badge._id}
-              className="glass-card group rounded-2xl p-5"
+              className="glass-card group rounded-3xl p-6"
             >
-              <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors duration-300 group-hover:bg-primary group-hover:text-primary-foreground">
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15 transition-colors duration-300 group-hover:bg-primary group-hover:text-primary-foreground">
                 <Icon className="h-6 w-6" />
               </div>
-              <h3 className="mb-1.5 text-base font-semibold">{badge.title}</h3>
-              <p className="text-sm leading-6 text-muted-foreground">
+              <h3 className="mb-1.5 text-lg font-semibold tracking-tight">
+                {badge.title}
+              </h3>
+              <p className="sf-prose text-sf-dim">
                 {badge.description}
               </p>
             </div>

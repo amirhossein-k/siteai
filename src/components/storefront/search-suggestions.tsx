@@ -82,11 +82,11 @@ export function SearchSuggestions({
           <Skeleton className="h-5 w-2/3" />
         </div>
       ) : isError ? (
-        <div className="p-3 text-center text-xs text-muted-foreground">
+        <div className="p-3 text-center sf-meta text-sf-dim">
           خطا در دریافت پیشنهادات
         </div>
       ) : suggestions.length === 0 ? (
-        <div className="p-3 text-center text-xs text-muted-foreground">
+        <div className="p-3 text-center sf-meta text-sf-dim">
           موردی یافت نشد
         </div>
       ) : (

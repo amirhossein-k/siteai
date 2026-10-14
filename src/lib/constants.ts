@@ -2,8 +2,19 @@
  * Application-wide constants
  */
 
-export const APP_NAME = "فروشگاه من";
-export const APP_DESCRIPTION = "فروشگاه آنلاین با بهترین قیمت‌ها";
+export const APP_NAME = "مارلو شاپ";
+export const APP_DESCRIPTION =
+  "مارلو شاپ | خرید آنلاین با بهترین قیمت، ضمانت اصالت کالا، ارسال سریع و مشاور خرید هوشمند";
+export const APP_TAGLINE = "تجربه خرید هوشمند، سریع و مطمئن";
+export const APP_KEYWORDS = [
+  "مارلو شاپ",
+  "فروشگاه اینترنتی",
+  "خرید آنلاین",
+  "بهترین قیمت",
+  "تخفیف ویژه",
+  "مشاور خرید هوشمند",
+  "marloo shop",
+];
 
 /**
  * The public origin — the SINGLE source of truth for canonical URLs, the

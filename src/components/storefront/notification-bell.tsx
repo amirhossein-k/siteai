@@ -30,11 +30,11 @@ export function NotificationBell({ href, className = "" }: NotificationBellProps
     <Link
       href={href}
       title="اعلان‌ها"
-      className={`relative flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground ${className}`}
+      className={`relative flex h-11 w-11 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground ${className}`}
     >
       <Bell className="h-5 w-5" />
       {count > 0 && (
-        <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-sky-700 px-1 text-[9px] font-bold text-white">
+        <span className="absolute -top-0.5 -right-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-sky-700 px-1 text-[11px] font-bold text-white">
           {count > 99 ? "99+" : count}
         </span>
       )}

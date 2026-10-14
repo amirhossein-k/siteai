@@ -3,7 +3,7 @@ import { Geist, Geist_Mono, Vazirmatn } from "next/font/google";
 import "./globals.css";
 import Providers from "@/app/Providers";
 import { OrganizationJsonLd, WebsiteJsonLd } from "@/components/seo/json-ld-script";
-import { APP_NAME, APP_DESCRIPTION, APP_URL } from "@/lib/constants";
+import { APP_NAME, APP_DESCRIPTION, APP_URL, APP_KEYWORDS } from "@/lib/constants";
 import { STOREFRONT_THEME_INIT_SCRIPT } from "@/lib/storefront-theme";
 
 const geistSans = Geist({
@@ -24,26 +24,32 @@ const vazirmatn = Vazirmatn({
 
 export const metadata: Metadata = {
   title: {
-    default: `${APP_NAME} | ${APP_DESCRIPTION}`,
+    default: `${APP_NAME} | خرید آنلاین با بهترین قیمت و دستیار هوشمند`,
     template: `%s | ${APP_NAME}`,
   },
   description: APP_DESCRIPTION,
+  keywords: APP_KEYWORDS,
 
   // Session 71 — one source of truth for the public origin (the production
   // guard in constants.ts guarantees APP_URL is a valid absolute URL).
   metadataBase: new URL(APP_URL),
 
+  alternates: {
+    canonical: "/",
+  },
+
   openGraph: {
     type: "website",
     locale: "fa_IR",
+    url: APP_URL,
     siteName: APP_NAME,
-    title: APP_NAME,
+    title: `${APP_NAME} | خرید آنلاین با بهترین قیمت`,
     description: APP_DESCRIPTION,
   },
 
   twitter: {
     card: "summary_large_image",
-    title: APP_NAME,
+    title: `${APP_NAME} | خرید آنلاین با بهترین قیمت`,
     description: APP_DESCRIPTION,
   },
 
@@ -70,25 +76,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="fa"
-      dir="rtl"
-      className={`${geistSans.variable} ${geistMono.variable} ${vazirmatn.variable} antialiased`}
-      suppressHydrationWarning
-    >
+    <html lang="fa" dir="rtl" suppressHydrationWarning>
       <head>
         {/* Session 93 — storefront theme initializer. Render-blocking and
             first in <head>: the `data-sf-theme` attribute is on <html> before
             the body paints, so the selected theme (dark by default) applies
-            without a flash of the wrong theme. `suppressHydrationWarning` on
-            <html> covers the attribute this script adds. */}
+            without a flash of the wrong theme. */}
         <script
           dangerouslySetInnerHTML={{ __html: STOREFRONT_THEME_INIT_SCRIPT }}
         />
         <OrganizationJsonLd />
         <WebsiteJsonLd />
       </head>
-      <body className="min-h-screen bg-white font-sans dark:bg-zinc-950">
+      <body
+        className={`${vazirmatn.variable} ${geistSans.variable} ${geistMono.variable} font-sans antialiased`}
+      >
         <Providers>{children}</Providers>
       </body>
     </html>

@@ -39,6 +39,27 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "monthly" as const,
       priority: 0.3,
     },
+    {
+      // Public FAQ page (linked from the storefront footer).
+      url: `${baseUrl}/faq`,
+      lastModified: new Date(),
+      changeFrequency: "monthly" as const,
+      priority: 0.5,
+    },
+    {
+      // Public Terms & Conditions page (linked from the storefront footer).
+      url: `${baseUrl}/terms`,
+      lastModified: new Date(),
+      changeFrequency: "monthly" as const,
+      priority: 0.4,
+    },
+    {
+      // Public About page (linked from the storefront footer).
+      url: `${baseUrl}/about`,
+      lastModified: new Date(),
+      changeFrequency: "monthly" as const,
+      priority: 0.4,
+    },
   ];
 
   // Dynamic supplier storefront pages (Session 42) — fail-silent so a DB

@@ -18,7 +18,7 @@ export function GiftCollections({ section }: HomepageSectionRendererProps) {
   const isGradient = (theme: string) => theme.startsWith("from-");
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 sm:pt-12 lg:px-8 lg:pt-14">
       <SectionHeader
         title={section.title || "کالکشن‌های هدیه"}
         subtitle={section.subtitle || "هدیه‌ای متفاوت برای عزیزانتان"}
@@ -44,7 +44,7 @@ export function GiftCollections({ section }: HomepageSectionRendererProps) {
               className={cn(
                 /* Session 85 — container polish only (radius/shadow); the
                    gradient theme, artwork and links unchanged. */
-                "group relative overflow-hidden rounded-3xl bg-gradient-to-br p-6 text-white shadow-2xl shadow-black/40 transition-all duration-300 hover:-translate-y-1 hover:shadow-black/60 sm:p-8",
+                "group relative overflow-hidden rounded-3xl bg-gradient-to-br p-6 text-white shadow-2xl shadow-black/40 ring-1 ring-inset ring-white/10 transition-all duration-300 hover:-translate-y-1 hover:shadow-black/60 sm:p-8",
                 isGradient(collection.themeColor)
                   ? collection.themeColor
                   : "from-slate-800 via-slate-700 to-zinc-600"
@@ -100,12 +100,12 @@ export function GiftCollections({ section }: HomepageSectionRendererProps) {
                   {collection.title}
                 </h3>
                 {collection.description && (
-                  <p className="mt-2 text-sm leading-6 text-white/85">
+                  <p className="mt-3 sf-prose text-white">
                     {collection.description}
                   </p>
                 )}
                 {collection.ctaLabel && (
-                  <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold underline-offset-4 transition-colors group-hover:underline">
+                  <span className="mt-4 inline-flex items-center gap-1.5 sf-meta font-semibold underline-offset-4 transition-colors group-hover:underline">
                     {collection.ctaLabel}
                     <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
                   </span>

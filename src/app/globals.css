@@ -72,7 +72,9 @@
   --sf-card: hsl(0 0% 100%);
   --sf-elevated: hsl(0 0% 100%);
   --sf-strong: hsl(224 32% 11%);
-  --sf-dim: hsl(220 12% 44%);
+  /* Readability pass — lightened/darkened so secondary text clears AA with
+     margin (was hsl(220 12% 44%) ≈ 5.3:1; now ≈ 6.9:1 on the card surface). */
+  --sf-dim: hsl(220 14% 38%);
   --sf-line: hsl(220 16% 90%);
   --sf-line-strong: hsl(220 14% 81%);
   --sf-price: hsl(224 32% 11%);
@@ -100,8 +102,11 @@
   --sf-cta-to: hsl(224 76% 40%);
   --sf-cta-shadow: hsl(224 76% 30% / 0.35);
   --sf-on-strong: hsl(0 0% 100%);
-  --sf-success: hsl(158 84% 30%);
-  --sf-warning: hsl(32 95% 36%);
+  /* Deepened from 30% so success text clears 4.5:1 (was ≈4.2:1). */
+  --sf-success: hsl(158 84% 25%);
+  /* Deepened from 36% (≈4.5:1 on a warning/10 tint) to 31% (≈5.7:1) so
+     warning-tinted badge text clears AA. */
+  --sf-warning: hsl(30 95% 31%);
 
   /* Toast surface — the shared <Toaster> is mounted once at the root, OUTSIDE
      the `.storefront` wrapper, so it cannot use the sf-* tokens directly.
@@ -140,19 +145,22 @@ html[data-sf-theme="light"] .storefront {
   --card-foreground: hsl(224 32% 11%);
   --popover: hsl(0 0% 100%);
   --popover-foreground: hsl(224 32% 11%);
-  --primary: hsl(221 83% 53%);
+  /* Readability pass — deepened from 53% so `text-primary` links/badges clear
+     4.5:1 on the light chip/page surfaces (was ≈4.45:1 on chips), while white
+     labels on `bg-primary` buttons get MORE contrast (≈6.4:1). */
+  --primary: hsl(221 83% 46%);
   --primary-foreground: hsl(0 0% 100%);
   --secondary: hsl(220 22% 96%);
   --secondary-foreground: hsl(224 32% 14%);
   --muted: hsl(220 22% 96%);
-  --muted-foreground: hsl(220 12% 42%);
+  --muted-foreground: hsl(220 14% 38%);
   --accent: hsl(220 22% 95%);
   --accent-foreground: hsl(224 32% 14%);
   --destructive: hsl(0 72% 45%);
   --destructive-foreground: hsl(0 0% 100%);
   --border: hsl(220 16% 90%);
   --input: hsl(220 16% 88%);
-  --ring: hsl(221 83% 53%);
+  --ring: hsl(221 83% 46%);
 }
 
 .dark {
@@ -214,7 +222,9 @@ html:not([data-sf-theme="light"]) .storefront {
   --secondary: hsl(228 14% 12%);
   --secondary-foreground: hsl(0 0% 97%);
   --muted: hsl(228 14% 11%);
-  --muted-foreground: hsl(228 10% 68%);
+  /* Readability pass — lightened from hsl(228 10% 68%) (≈7.9:1) to ≈9.6:1 so
+     secondary text on the dark glass reads comfortably. */
+  --muted-foreground: hsl(228 12% 74%);
   --accent: hsl(228 14% 13%);
   --accent-foreground: hsl(0 0% 97%);
   --destructive: hsl(0 72% 56%);
@@ -231,12 +241,14 @@ html:not([data-sf-theme="light"]) .storefront {
   --sf-card: hsl(228 18% 8%);
   --sf-elevated: hsl(228 17% 11%);
   --sf-strong: hsl(0 0% 99%);
-  --sf-dim: hsl(228 10% 68%);
+  --sf-dim: hsl(228 12% 74%);
   --sf-line: hsl(228 14% 18%);
   --sf-line-strong: hsl(228 14% 26%);
   --sf-price: hsl(0 0% 100%);
   --sf-accent: hsl(217 91% 65%);
-  --sf-chip: hsl(228 15% 14%);
+  /* Slightly darker than before (14%) so `text-primary` badge text on a chip
+     clears 4.5:1 (was ≈4.45:1). */
+  --sf-chip: hsl(228 16% 12%);
   --sf-image: hsl(228 18% 9%);
   --sf-skeleton: hsl(228 14% 14%);
   --sf-overlay: hsl(0 0% 100%);
@@ -264,7 +276,11 @@ html:not([data-sf-theme="light"]) .storefront {
   --sf-header-bg: hsl(228 30% 5% / 0.75);
   --sf-header-border: hsl(0 0% 100% / 0.08);
   --sf-dot: hsl(0 0% 100% / 0.05);
-  --sf-cta-from: hsl(217 91% 60%);
+  /* Readability pass — was hsl(217 91% 60%) (#3b82f6), where WHITE text only
+     reached 3.6:1 and failed AA everywhere `blue-grad` carries a label (logo
+     mark, FAQ support box, Terms number badges, About bands, CTAs). 53% keeps
+     the brand hue and lifts white labels to 5.20:1. */
+  --sf-cta-from: hsl(221 83% 53%);
   --sf-cta-to: hsl(224 76% 42%);
   --sf-cta-shadow: hsl(228 60% 6% / 0.6);
   --sf-on-strong: hsl(228 45% 8%);
@@ -474,6 +490,63 @@ html:has(.storefront)[data-sf-theme="light"] {
     background-color: var(--sf-chip);
     color: var(--sf-strong);
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   STOREFRONT READING SCALE (readability pass)
+
+   Persian body text needs a larger size and looser leading than the Latin
+   defaults Tailwind's utilities assume. This is the SINGLE place the
+   storefront reading sizes are tuned; components compose these with the
+   existing colour tokens (`sf-dim` / `sf-strong` / `foreground`) so the
+   hierarchy stays consistent and theme-agnostic.
+
+     sf-prose   17px / 1.95  (16px / 1.90 on phones) — long-form body copy
+     sf-lead    18px / 1.90  (17px on phones)          — hero & intro leads
+     sf-meta    16px / 1.80  (15px / 1.75 on phones)    — secondary text, meta
+     sf-label   15px / 1.50                            — labels, chips, nav
+
+   Replaces the previous `text-sm` (14px) / `text-xs` (12px) body copy, which
+   was too small for comfortable Persian reading.
+   ═══════════════════════════════════════════════════════════════════════ */
+@utility sf-prose {
+  font-size: 1rem;
+  line-height: 1.9;
+  @media (min-width: 40rem) {
+    font-size: 1.0625rem;
+    line-height: 1.95;
+  }
+}
+
+@utility sf-lead {
+  font-size: 1.0625rem;
+  line-height: 1.9;
+  @media (min-width: 40rem) {
+    font-size: 1.125rem;
+  }
+}
+
+@utility sf-meta {
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  @media (min-width: 40rem) {
+    font-size: 1rem;
+    line-height: 1.8;
+  }
+}
+
+@utility sf-label {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+/* Readability pass — guarantee a clearly visible keyboard focus indicator on
+   every storefront link/button. Components keep their own rings; this adds an
+   outline so nothing relies on a colour change alone, and nothing loses its
+   focus cue when a ring is clipped by an overflow container. */
+.storefront :where(a, button, [role="button"], summary):focus-visible {
+  outline: 2px solid var(--sf-accent);
+  outline-offset: 2px;
 }
 
 /* Session 93 — respect prefers-reduced-motion app-wide. */
