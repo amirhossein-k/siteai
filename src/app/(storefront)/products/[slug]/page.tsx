@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Package } from "lucide-react";
 import { ProductDetailView } from "@/components/storefront/product-detail-view";
+import { RelatedProducts } from "@/components/storefront/related-products";
 import { Breadcrumbs } from "@/components/storefront/breadcrumbs";
 import { BreadcrumbJsonLd, ProductJsonLd } from "@/components/seo/json-ld-script";
 import { getPublicProductBySlug, type PublicProduct } from "@/lib/public-products";
@@ -169,6 +170,7 @@ export default async function ProductDetailPage({
       {/* Visible breadcrumb — in the INITIAL HTML (Server Component). */}
       <Breadcrumbs items={breadcrumbItems} />
       <ProductDetailView product={product} />
+      <RelatedProducts product={product} />
       {/* SEO: BreadcrumbList structured data — mirrors the visible trail;
           positions 1..n, `item` omitted on the final (current) element per
           Google's guidance. Separate block — Product schema untouched. */}

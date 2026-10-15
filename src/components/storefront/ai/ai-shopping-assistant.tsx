@@ -44,6 +44,8 @@ interface ChatMessage {
   relatedRoutes?: RelatedRoute[];
 }
 
+const ASSISTANT_INTRO_STORAGE_KEY = "marloo-ai-assistant-intro-seen";
+
 const QUICK_PROMPTS = [
   {
     label: "پرفروش‌ترین‌ها",
@@ -114,6 +116,7 @@ function AssistantRichText({ text }: { text: string }) {
 
 export function AiShoppingAssistant() {
   const [open, setOpen] = useState(false);
+  const [showFirstVisitNotice, setShowFirstVisitNotice] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [budget, setBudget] = useState<number | undefined>();
@@ -130,6 +133,31 @@ export function AiShoppingAssistant() {
   // rejects calling it while rendering (it could not prove `askAssistant` is
   // only ever invoked from an event); a ref counter is stable and unique.
   const messageIdRef = useRef(0);
+
+  useEffect(() => {
+    try {
+      if (!window.localStorage.getItem(ASSISTANT_INTRO_STORAGE_KEY)) {
+        const timer = window.setTimeout(() => setShowFirstVisitNotice(true), 900);
+        return () => window.clearTimeout(timer);
+      }
+    } catch {
+      // If storage is unavailable, keep the assistant unobtrusive.
+    }
+  }, []);
+
+  const dismissFirstVisitNotice = () => {
+    setShowFirstVisitNotice(false);
+    try {
+      window.localStorage.setItem(ASSISTANT_INTRO_STORAGE_KEY, "1");
+    } catch {
+      // The notice is still dismissed for this render.
+    }
+  };
+
+  const openAssistantFromNotice = () => {
+    dismissFirstVisitNotice();
+    setOpen(true);
+  };
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -208,10 +236,49 @@ export function AiShoppingAssistant() {
 
   return (
     <>
+      {showFirstVisitNotice && !open && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-[4.75rem] left-4 z-50 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-indigo-400/25 bg-sf-card p-4 text-right shadow-2xl ring-1 ring-inset ring-white/10"
+        >
+          <button
+            type="button"
+            onClick={dismissFirstVisitNotice}
+            aria-label="بستن معرفی دستیار هوشمند"
+            className="absolute left-2 top-2 rounded-full p-1.5 text-sf-dim hover:bg-sf-chip hover:text-sf-strong"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <div className="flex items-start gap-3 pl-5">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-600 to-fuchsia-600 text-white">
+              <Sparkles className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="font-bold text-sf-strong">برای انتخاب محصول کمک می‌خواهید؟</p>
+              <p className="mt-1 sf-meta leading-6 text-sf-dim">
+                از دستیار هوشمند بپرسید؛ بر اساس بودجه و نیازتان پیشنهاد می‌دهد.
+              </p>
+              <button
+                type="button"
+                onClick={openAssistantFromNotice}
+                className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-primary px-3.5 sf-label font-semibold text-primary-foreground hover:bg-primary/90"
+              >
+                شروع گفتگو
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Floating Trigger Button */}
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          if (showFirstVisitNotice) dismissFirstVisitNotice();
+          setOpen((v) => !v);
+        }}
         aria-label="دستیار هوشمند خرید مارلو"
         className={cn(
           /* Readability pass — sf-label (15px) keeps the trigger on the shared

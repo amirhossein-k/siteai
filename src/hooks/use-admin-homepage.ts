@@ -14,6 +14,35 @@ export type HomepageContentType =
   | "gift-collection"
   | "trust-badge";
 
+export interface EnamadSettings {
+  enabled: boolean;
+  code: string;
+  altText: string;
+}
+
+export function useAdminEnamadSettings() {
+  return useQuery({
+    queryKey: ["admin", "homepage", "enamad"],
+    queryFn: async (): Promise<EnamadSettings> => {
+      const { data } = await axios.get("/api/admin/homepage/enamad");
+      return data.settings;
+    },
+  });
+}
+
+export function useUpdateAdminEnamadSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (settings: EnamadSettings): Promise<EnamadSettings> => {
+      const { data } = await axios.put("/api/admin/homepage/enamad", settings);
+      return data.settings;
+    },
+    onSuccess: (settings) => {
+      qc.setQueryData(["admin", "homepage", "enamad"], settings);
+    },
+  });
+}
+
 const PLURAL: Record<HomepageContentType, string> = {
   "hero-slide": "hero-slides",
   "campaign-banner": "campaign-banners",
