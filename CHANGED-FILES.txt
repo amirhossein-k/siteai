@@ -1,0 +1,5 @@
+src/lib/ai-assistant-routing.ts
+src/app/api/ai-assistant/route.ts
+tests/unit/ai-assistant-routing.test.ts
+README-FIX-FA.md
+CHANGED-FILES.txt

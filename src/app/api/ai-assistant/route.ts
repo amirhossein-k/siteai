@@ -12,7 +12,11 @@ import { getServerToken } from "@/lib/auth-utils";
 import Order from "@/models/Order";
 import { FAQ_ITEMS } from "@/lib/faq-content";
 import { TERMS_SECTIONS } from "@/lib/terms-content";
-import { routeAssistantQuestion, linksForRoute, type AssistantRoute } from "@/lib/ai-assistant-routing";
+import {
+  routeAssistantQuestion,
+  linksForRoute,
+  type AssistantRoute,
+} from "@/lib/ai-assistant-routing";
 
 const SEMANTIC_CACHE_TTL_MS = Math.max(5 * 60_000, Number(process.env.AI_SEMANTIC_CACHE_TTL_MS || 60 * 60_000));
 
@@ -133,6 +137,8 @@ const MARLOO_DOMAIN_KNOWLEDGE = `
 - روش‌های پرداخت: پرداخت آنلاین از طریق درگاه امن زرین‌پال (تمام کارت‌های عضو شتاب) و پرداخت در محل (نقدی یا کارت بانکی هنگام تحویل).
 - ورود و ثبت‌نام با شماره موبایل و رمز عبور یا کد یک‌بارمصرف (OTP) انجام می‌شود.
 - مشتری می‌تواند پروفایل (/profile)، سفارش‌ها (/orders)، علاقه‌مندی‌ها (/wishlist)، کدهای تخفیف (/coupons)، اعلان‌ها (/notifications) و پشتیبانی سفارش‌محور (/support) را مدیریت کند.
+- ظاهر فروشگاه دو حالت روشن و تاریک دارد. حالت پیش‌فرض تاریک است و کاربر می‌تواند با دکمه ماه/خورشید در هدر بین آن‌ها جابه‌جا شود؛ انتخاب در مرورگر ذخیره می‌شود.
+- ظاهر فروشگاه دو حالت روشن و تاریک دارد. حالت پیش‌فرض تاریک است و کاربر می‌تواند با دکمه ماه/خورشید در هدر بین آن‌ها جابه‌جا شود؛ انتخاب در مرورگر ذخیره می‌شود.
 \n${buildOfficialStorePolicyText()}
 `;
 
@@ -384,9 +390,27 @@ export async function POST(req: NextRequest) {
         intent,
         recommendations: [],
         history,
-        liveStoreKnowledge: "قوانین رسمی فروشگاه از ماژول‌های faq-content و terms-content بارگذاری شده است.",
+        liveStoreKnowledge:
+          "قوانین رسمی فروشگاه از ماژول‌های faq-content و terms-content بارگذاری شده است. درباره هر سیاستی که در منابع رسمی نیامده، صریحاً اعلام کن که اطلاعات تأییدشده‌ای در دسترس نیست و کاربر را به checkout یا پشتیبانی هدایت کن؛ حدس نزن.",
         route,
       });
+      if (!modelReply && route === "navigation") {
+        return NextResponse.json(
+          {
+            reply:
+              "در حال حاضر سرویس پاسخ‌گویی هوشمند در دسترس نیست. لطفاً چند لحظه بعد دوباره تلاش کنید.",
+            recommendations: [],
+            relatedRoutes,
+            meta: {
+              route,
+              source: "model-required",
+              provider: "model-unavailable",
+              cache: "bypass",
+            },
+          },
+          { status: 503 }
+        );
+      }
       return NextResponse.json({
         reply: modelReply || baseReply,
         recommendations: [],
