@@ -35,6 +35,10 @@ describe("AI assistant question routing", () => {
     expect(routeAssistantQuestion(query)).toBe("out_of_scope");
   });
 
+  it("does not treat the conversational suffix چطوره as navigation", () => {
+    expect(routeAssistantQuestion("هوا امروز چطوره؟")).toBe("out_of_scope");
+  });
+
   it.each([
     "آدرس پستی باید به اسم خودم باشه؟",
     "میشه سفارشم رو به آدرس محل کارم بفرستید؟",
