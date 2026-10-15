@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { Gift, ArrowLeft } from "lucide-react";
+import { Gift, ArrowLeft, Sparkles, Search } from "lucide-react";
 import { cn, isAllowedImageSrc } from "@/lib/utils";
 import { SectionHeader } from "@/components/storefront/home/section-header";
 import type { HomepageSectionRendererProps } from "@/types";
@@ -20,10 +20,24 @@ export function GiftCollections({ section }: HomepageSectionRendererProps) {
   return (
     <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 sm:pt-12 lg:px-8 lg:pt-14">
       <SectionHeader
-        title={section.title || "کالکشن‌های هدیه"}
-        subtitle={section.subtitle || "هدیه‌ای متفاوت برای عزیزانتان"}
+        title={section.title || "برای هر مناسبت، یک هدیه ماندگار"}
+        subtitle={section.subtitle || "اگر نمی‌دانید چه بخرید، از اینجا شروع کنید"}
         icon={<Gift className="h-4.5 w-4.5" />}
       />
+
+      <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl border border-primary/15 bg-primary/5 px-4 py-3">
+        <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
+        <span className="sf-meta text-sf-strong">
+          انتخاب هدیه را ساده کرده‌ایم؛ مناسبت یا حال‌وهوای هدیه را انتخاب کنید.
+        </span>
+        <Link
+          href="/products"
+          className="ms-auto inline-flex min-h-9 items-center gap-1 rounded-lg bg-primary px-3 sf-label font-semibold text-primary-foreground hover:bg-primary/90"
+        >
+          جست‌وجوی هوشمند
+          <Search className="h-4 w-4" aria-hidden="true" />
+        </Link>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         {collections.map((collection) => {

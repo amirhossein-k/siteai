@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { APP_NAME } from "@/lib/constants";
+import { getPublicEnamadSettings } from "@/lib/enamad-settings";
 
 /**
  * Shared storefront footer (Session 50).
@@ -11,7 +12,8 @@ import { APP_NAME } from "@/lib/constants";
  * both the dark-glass and light themes, and the bottom bar is restructured.
  * Every link, href and the copyright line are unchanged.
  */
-export function StorefrontFooter() {
+export async function StorefrontFooter() {
+  const enamad = await getPublicEnamadSettings();
   return (
     /* Session 85 — footer surface restyle: translucent border on the dark
        storefront (the scoped tokens already darken the text/links). */
@@ -33,6 +35,13 @@ export function StorefrontFooter() {
             <p className="sf-meta leading-7 text-sf-dim">
               بهترین مقصد برای خرید آنلاین با کیفیت و قیمت مناسب
             </p>
+            {enamad?.code && (
+              <div
+                className="mt-5 inline-flex rounded-xl border border-sf-line bg-sf-chip p-2"
+                aria-label={enamad.altText}
+                dangerouslySetInnerHTML={{ __html: enamad.code }}
+              />
+            )}
           </div>
           <div>
             <h4 className="mb-4 sf-meta font-semibold tracking-tight text-sf-strong">

@@ -97,7 +97,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "quick-categories",
-    sortOrder: 1,
+    sortOrder: 3,
     component: "quick-categories",
     title: "",
     subtitle: "",
@@ -108,7 +108,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "campaign-banner",
-    sortOrder: 2,
+    sortOrder: 5,
     component: "campaign-banner",
     title: "",
     subtitle: "",
@@ -119,7 +119,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "special-picks",
-    sortOrder: 3,
+    sortOrder: 1,
     component: "special-picks",
     title: "",
     subtitle: "",
@@ -136,7 +136,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "best-sellers",
-    sortOrder: 4,
+    sortOrder: 2,
     component: "best-sellers",
     title: "",
     subtitle: "",
@@ -156,7 +156,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   // section or disturbing admin reordering. Fresh DBs render the same order.
   {
     slug: "discounted-products",
-    sortOrder: 4.5,
+    sortOrder: 6,
     component: "discounted-products",
     title: "",
     subtitle: "",
@@ -171,7 +171,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "newest-products",
-    sortOrder: 5,
+    sortOrder: 7,
     component: "newest-products",
     title: "",
     subtitle: "",
@@ -186,7 +186,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "premium-collection",
-    sortOrder: 6,
+    sortOrder: 8,
     component: "premium-collection",
     title: "",
     subtitle: "",
@@ -201,7 +201,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "popular-brands",
-    sortOrder: 7,
+    sortOrder: 9,
     component: "popular-brands",
     title: "",
     subtitle: "",
@@ -212,7 +212,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "gift-collections",
-    sortOrder: 8,
+    sortOrder: 4,
     component: "gift-collections",
     title: "",
     subtitle: "",
@@ -223,7 +223,7 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
   },
   {
     slug: "trust-badges",
-    sortOrder: 9,
+    sortOrder: 10,
     component: "trust-badges",
     title: "",
     subtitle: "",
@@ -534,6 +534,33 @@ export async function seedHomepageContent(): Promise<void> {
   // NEVER resurrected.
   const existing = await HomepageSection.find({}).select("slug").lean();
   const existingSlugs = new Set(existing.map((s) => s.slug));
+  const legacyDefaultOrder: Record<string, number> = {
+    hero: 0,
+    "quick-categories": 1,
+    "campaign-banner": 2,
+    "special-picks": 3,
+    "best-sellers": 4,
+    "discounted-products": 4.5,
+    "newest-products": 5,
+    "premium-collection": 6,
+    "popular-brands": 7,
+    "gift-collections": 8,
+    "trust-badges": 9,
+  };
+  const existingBySlug = new Map(existing.map((s) => [s.slug, s]));
+  const isUntouchedLegacyOrder = Object.entries(legacyDefaultOrder).every(
+    ([slug, sortOrder]) => existingBySlug.get(slug)?.sortOrder === sortOrder
+  );
+  if (isUntouchedLegacyOrder) {
+    await HomepageSection.bulkWrite(
+      DEFAULT_SECTIONS.map((section) => ({
+        updateOne: {
+          filter: { slug: section.slug },
+          update: { $set: { sortOrder: section.sortOrder } },
+        },
+      }))
+    );
+  }
   const missing = DEFAULT_SECTIONS.filter((s) => !existingSlugs.has(s.slug));
   if (missing.length > 0) {
     try {
@@ -574,7 +601,9 @@ export async function seedHomepageContent(): Promise<void> {
 
 /** Build the PUBLIC composition from the static config (empty-DB fallback). */
 function buildStaticFallback(): PublicHomepageComposition {
-  const sections: PublicHomepageSection[] = DEFAULT_SECTIONS.map((s) => {
+  const sections: PublicHomepageSection[] = [...DEFAULT_SECTIONS]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((s) => {
     const rows = mapStaticContent(s.component, s.slug);
     return {
       slug: s.slug,
@@ -596,7 +625,7 @@ function buildStaticFallback(): PublicHomepageComposition {
         icon: r.icon ?? "",
       })),
     };
-  });
+    });
   return { sections };
 }
 

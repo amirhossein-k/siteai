@@ -1,16 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { LayoutTemplate, Image as ImageIcon, Megaphone, Gift, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { LayoutTemplate, Image as ImageIcon, Megaphone, Gift, ShieldCheck, BadgeCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { SectionsEditor } from "@/components/admin/homepage/sections-editor";
 import {
   ContentEditor,
   type HomepageContentType,
 } from "@/components/admin/homepage/content-editor";
-import { useAdminHomepageSections } from "@/hooks/use-admin-homepage";
+import { useAdminHomepageSections, useAdminEnamadSettings, useUpdateAdminEnamadSettings } from "@/hooks/use-admin-homepage";
 
-type Tab = "sections" | HomepageContentType;
+type Tab = "sections" | HomepageContentType | "enamad";
 
 /** Renderer component used by each content type (to find its default section). */
 const TYPE_COMPONENT: Record<HomepageContentType, string> = {
@@ -33,6 +34,7 @@ const TABS: { id: Tab; label: string; icon: typeof LayoutTemplate }[] = [
   { id: "campaign-banner", label: "بنر کمپین", icon: Megaphone },
   { id: "gift-collection", label: "کالکشن هدیه", icon: Gift },
   { id: "trust-badge", label: "نشان‌های اعتماد", icon: ShieldCheck },
+  { id: "enamad", label: "اینماد فوتر", icon: BadgeCheck },
 ];
 
 /**
@@ -45,8 +47,10 @@ const TABS: { id: Tab; label: string; icon: typeof LayoutTemplate }[] = [
 export default function AdminHomepage() {
   const [tab, setTab] = useState<Tab>("sections");
   const { data: sections } = useAdminHomepageSections();
+  const { data: enamad } = useAdminEnamadSettings();
+  const updateEnamad = useUpdateAdminEnamadSettings();
 
-  const contentType = tab === "sections" ? null : tab;
+  const contentType = tab === "sections" || tab === "enamad" ? null : tab;
 
   // The selected section slug for the current content tab. Defaults to the
   // first section using the type's renderer component; falls back to the
@@ -106,6 +110,8 @@ export default function AdminHomepage() {
 
       {tab === "sections" ? (
         <SectionsEditor />
+      ) : tab === "enamad" ? (
+        <EnamadEditor settings={enamad} saving={updateEnamad.isPending} onSave={(value) => updateEnamad.mutate(value)} />
       ) : (
         <div className="space-y-4">
           {/* Section scope picker */}
@@ -134,6 +140,51 @@ export default function AdminHomepage() {
           <ContentEditor type={contentType!} sectionSlug={selectedSlug} />
         </div>
       )}
+    </div>
+  );
+}
+
+function EnamadEditor({
+  settings,
+  saving,
+  onSave,
+}: {
+  settings?: { enabled: boolean; code: string; altText: string };
+  saving: boolean;
+  onSave: (value: { enabled: boolean; code: string; altText: string }) => void;
+}) {
+  const [enabled, setEnabled] = useState(settings?.enabled ?? false);
+  const [code, setCode] = useState(settings?.code ?? "");
+  const [altText, setAltText] = useState(settings?.altText ?? "نماد اعتماد الکترونیکی");
+  useEffect(() => {
+    if (!settings) return;
+    setEnabled(settings.enabled);
+    setCode(settings.code);
+    setAltText(settings.altText);
+  }, [settings]);
+  return (
+    <div className="max-w-3xl space-y-5 rounded-xl border bg-card p-5">
+      <div>
+        <h2 className="text-lg font-bold">مدیریت اینماد در فوتر</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          کد رسمی اینماد را وارد کنید؛ سیستم فقط لینک و تصویر HTTPS از دامنه رسمی اینماد را نگه می‌دارد.
+        </p>
+      </div>
+      <label className="flex items-center gap-3 text-sm font-medium">
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        نمایش اینماد در فوتر
+      </label>
+      <label className="block space-y-2 text-sm font-medium">
+        متن جایگزین
+        <input className="h-10 w-full rounded-md border bg-background px-3" value={altText} onChange={(e) => setAltText(e.target.value)} />
+      </label>
+      <label className="block space-y-2 text-sm font-medium">
+        کد رسمی اینماد
+        <textarea className="min-h-36 w-full rounded-md border bg-background p-3 font-mono text-xs" dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} placeholder="<a href=&quot;https://trustseal.enamad.ir/...&quot;><img src=&quot;https://trustseal.enamad.ir/...&quot; /></a>" />
+      </label>
+      <Button disabled={saving} onClick={() => onSave({ enabled, code, altText })}>
+        {saving ? "در حال ذخیره..." : "ذخیره تنظیمات اینماد"}
+      </Button>
     </div>
   );
 }

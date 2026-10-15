@@ -1,5 +1,5 @@
-src/lib/ai-assistant-routing.ts
-src/app/api/ai-assistant/route.ts
-tests/unit/ai-assistant-routing.test.ts
-README-FIX-FA.md
+src/app/api/products/[id]/related/route.ts
+src/components/storefront/related-products.tsx
+src/app/(storefront)/products/[slug]/page.tsx
+README-RELATED-PRODUCTS-FA.md
 CHANGED-FILES.txt
