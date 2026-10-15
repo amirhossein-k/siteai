@@ -8,6 +8,9 @@ import Brand from "@/models/Brand";
 import { sanitizePlainText } from "@/lib/sanitize";
 import { getEffectivePrice, toPublicDiscount } from "@/lib/product-pricing";
 import { rateLimit } from "@/lib/rate-limiter";
+import { getServerToken } from "@/lib/auth-utils";
+import Order from "@/models/Order";
+import { routeAssistantQuestion, linksForRoute } from "@/lib/ai-assistant-routing";
 
 const SEMANTIC_CACHE_TTL_MS = Math.max(5 * 60_000, Number(process.env.AI_SEMANTIC_CACHE_TTL_MS || 60 * 60_000));
 
@@ -223,6 +226,7 @@ async function generateModelReply(input: {
   }>;
   history: Array<{ role?: "user" | "assistant"; content?: string }>;
   liveStoreKnowledge: string;
+  route?: string;
 }): Promise<string | null> {
   const baseUrl = process.env.ANTHROPIC_BASE_URL;
   const token = process.env.ANTHROPIC_AUTH_TOKEN;
@@ -265,7 +269,7 @@ ${input.liveStoreKnowledge}
           ...conversation,
           {
             role: "user",
-            content: `${input.liveStoreKnowledge}\nمسیرهای مرتبط احتمالی: ${getRelatedRoutes(input.query).map((r) => `${r.label} (${r.href})`).join("، ") || "ندارد"}\nدرخواست: ${input.query}\nهدف: ${input.intent}\nسقف بودجه: ${input.maxPrice ? `${input.maxPrice.toLocaleString("fa-IR")} تومان` : "تعیین نشده"}\nکاتالوگ پیشنهادی:\n${catalog || "گزینه‌ای پیدا نشد"}`,
+            content: `${input.liveStoreKnowledge}\nمسیرهای مرتبط احتمالی: ${linksForRoute((input.route || "product") as any).map((r) => `${r.label} (${r.href})`).join("، ") || "ندارد"}\nدرخواست: ${input.query}\nمسیر پرسش: ${input.route || "product"}\nهدف: ${input.intent}\nسقف بودجه: ${input.maxPrice ? `${input.maxPrice.toLocaleString("fa-IR")} تومان` : "تعیین نشده"}\nکاتالوگ پیشنهادی:\n${catalog || "گزینه‌ای پیدا نشد"}`,
           },
         ],
       }),
@@ -319,8 +323,9 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) as AssistantRequestBody;
     const rawQuery = typeof body.query === "string" ? body.query : "";
     const cleanQuery = sanitizePlainText(rawQuery).trim().slice(0, 200);
-    const domainClass = classifyDomainQuery(cleanQuery);
-    const relatedRoutes = getRelatedRoutes(cleanQuery);
+    const route = routeAssistantQuestion(cleanQuery);
+    const relatedRoutes = linksForRoute(route);
+    const domainClass = route === "greeting" ? "greeting" : route === "policy" ? "policy" : route === "out_of_scope" ? "out_of_scope" : "domain";
     const intent = body.intent || "search";
     const history = Array.isArray(body.history)
       ? body.history.slice(-4).filter((item) => typeof item?.content === "string")
@@ -370,11 +375,43 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (route === "shipping") {
+      return NextResponse.json({ reply: "در کد فعلی اطلاعات قابل اتکایی درباره مدت ارسال، هزینه ارسال، پوشش جغرافیایی یا ارسال رایگان ثبت نشده است؛ نمی‌خواهم حدس بزنم. برای وضعیت ارسال یک سفارش مشخص، سفارش را از بخش سفارش‌ها باز کنید یا از پشتیبانی سفارش‌محور کمک بگیرید.", recommendations: [], relatedRoutes, meta: { route, source: "verified-application-data", provider: "scope-guard", cache: "bypass" } });
+    }
+    if (route === "policy") {
+      return NextResponse.json({ reply: "شرایط دقیق مرجوعی و تعویض در داده‌های قابل تأیید فروشگاه ثبت نشده است. برای پاسخ دقیق، از بخش پشتیبانی درباره همان سفارش سؤال کنید؛ من درباره مهلت، هزینه یا استثناها حدس نمی‌زنم.", recommendations: [], relatedRoutes, meta: { route, source: "verified-application-data", provider: "scope-guard", cache: "bypass" } });
+    }
+    if (route === "navigation" || route === "account") {
+      return NextResponse.json({ reply: "این مسیرها در سایت فعال‌اند: " + relatedRoutes.map((r) => `${r.label} (${r.href})`).join("، ") + ". اگر بگویی دقیقاً دنبال کدام کار هستی، مسیر مناسب‌تر را می‌گویم.", recommendations: [], relatedRoutes, meta: { route, source: "verified-routes", provider: "scope-guard", cache: "bypass" } });
+    }
+    if (route === "order" || route === "payment") {
+      const token = await getServerToken(req);
+      if (!token) return NextResponse.json({ reply: "برای بررسی سفارش یا پرداخت باید ابتدا وارد حساب کاربری شوید.", recommendations: [], relatedRoutes, meta: { route, source: "auth-required", provider: "scope-guard", cache: "bypass" } }, { status: 401 });
+      await dbConnect();
+      const latest = (await Order.findOne({ customer: token.id })
+        .select("_id status totalAmount payment.status payment.method shipping.provider shipping.trackingCode shippedAt deliveredAt createdAt")
+        .sort({ createdAt: -1 })
+        .lean()) as {
+        _id: unknown;
+        status?: string;
+        totalAmount?: number;
+        payment?: { status?: string; method?: string };
+      } | null;
+      if (!latest) return NextResponse.json({ reply: "برای این حساب سفارشی پیدا نشد.", recommendations: [], relatedRoutes, meta: { route, source: "mongodb", provider: "database-grounded", cache: "bypass" } });
+      const paymentStatus = latest.payment?.status || "نامشخص";
+      const status = latest.status || "نامشخص";
+      const orderShortId = String(latest._id).slice(-8);
+      const reply = route === "payment"
+        ? `آخرین سفارش شما #${orderShortId} وضعیت پرداخت «${paymentStatus}» دارد. مبلغ ثبت‌شده ${Number(latest.totalAmount || 0).toLocaleString("fa-IR")} تومان است. برای جزئیات کامل سفارش وارد بخش سفارش‌ها شوید.`
+        : `آخرین سفارش شما #${orderShortId} در وضعیت «${status}» است. برای جزئیات ارسال، رهگیری و تاریخچه وضعیت، صفحه سفارش را باز کنید.`;
+      return NextResponse.json({ reply, recommendations: [], relatedRoutes, meta: { route, source: "mongodb", provider: "database-grounded", cache: "bypass", personalized: true } });
+    }
+
     await dbConnect();
     const storeKnowledge = await loadStoreKnowledgeFromDatabase();
     const liveStoreKnowledge = formatStoreKnowledge(storeKnowledge);
     const cacheModel = getAssistantCacheModel();
-    const cacheKey = semanticCacheKey(cleanQuery, intent, maxPrice, category);
+    const cacheKey = semanticCacheKey(`${route}:${cleanQuery}`, intent, maxPrice, category);
     const cached = await cacheModel.findById(cacheKey).lean();
     if (cached && cached.expiresAt > new Date()) {
       const cachedPayload = cached.payload as Record<string, unknown>;
@@ -584,6 +621,7 @@ export async function POST(req: NextRequest) {
       recommendations,
       history,
       liveStoreKnowledge,
+      route,
     });
 
     const responsePayload = {
@@ -592,6 +630,7 @@ export async function POST(req: NextRequest) {
       relatedRoutes,
       meta: {
         intent,
+        route,
         maxPrice: maxPrice ?? null,
         category: category || null,
         compared: isCompareQuery,
