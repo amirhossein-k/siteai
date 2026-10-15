@@ -10,7 +10,9 @@ import { getEffectivePrice, toPublicDiscount } from "@/lib/product-pricing";
 import { rateLimit } from "@/lib/rate-limiter";
 import { getServerToken } from "@/lib/auth-utils";
 import Order from "@/models/Order";
-import { routeAssistantQuestion, linksForRoute } from "@/lib/ai-assistant-routing";
+import { FAQ_ITEMS } from "@/lib/faq-content";
+import { TERMS_SECTIONS } from "@/lib/terms-content";
+import { routeAssistantQuestion, linksForRoute, type AssistantRoute } from "@/lib/ai-assistant-routing";
 
 const SEMANTIC_CACHE_TTL_MS = Math.max(5 * 60_000, Number(process.env.AI_SEMANTIC_CACHE_TTL_MS || 60 * 60_000));
 
@@ -49,6 +51,7 @@ function semanticNormalize(value: string) {
     "پرفروشترین": "پرفروش",
     "پرفروش‌ترین": "پرفروش",
     "کالا": "محصول",
+    "محوصل": "محصول",
     "اجناس": "محصول",
   };
   const stopWords = new Set(["را", "رو", "یک", "یه", "به", "برای", "لطفا", "من", "از", "در", "با", "میخواهم"]);
@@ -74,7 +77,6 @@ const AI_ASSISTANT_LIMIT = {
   windowMs: 15 * 60 * 1000,
 };
 
-// Keep responses fast and affordable. Override only when needed in production.
 const AI_MODEL_TIMEOUT_MS = Math.max(8000, Number(process.env.ANTHROPIC_TIMEOUT_MS || 14000));
 const AI_MAX_OUTPUT_TOKENS = Math.min(600, Math.max(160, Number(process.env.ANTHROPIC_MAX_TOKENS || 320)));
 const KNOWLEDGE_CACHE_MS = 30_000;
@@ -101,43 +103,60 @@ function normalizedDigitsPlaceholder(query: string): { maxPrice?: number } {
   return { maxPrice: Math.floor(value * multiplier) };
 }
 
+function buildOfficialStorePolicyText(): string {
+  const shippingSection = TERMS_SECTIONS.find((s) => s.id === "shipping");
+  const returnsSection = TERMS_SECTIONS.find((s) => s.id === "returns");
+  const paymentSection = TERMS_SECTIONS.find((s) => s.id === "payment");
+  const faqHighlights = FAQ_ITEMS.filter((f) =>
+    ["delivery-time", "track-order", "return-policy", "return-process", "defective-product", "payment-methods", "how-to-login", "how-to-use-coupon"].includes(f.id)
+  )
+    .map((f) => `- ${f.question}: ${f.answer.replace(/\n/g, " ")}`)
+    .join("\n");
+
+  return [
+    "قوانین رسمی و مصوب مارلو شاپ (از faq-content و terms-content):",
+    shippingSection?.items ? `ارسال و تحویل:\n- ${shippingSection.items.join("\n- ")}` : "",
+    returnsSection?.items ? `مرجوعی و بازگشت کالا:\n- ${returnsSection.items.join("\n- ")}` : "",
+    paymentSection?.items ? `روش‌های پرداخت:\n- ${paymentSection.items.join("\n- ")}` : "",
+    `پرسش‌های پرتکرار مصوب:\n${faqHighlights}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 const MARLOO_DOMAIN_KNOWLEDGE = `
 اطلاعات قطعی مارلو شاپ:
 - مارلو شاپ یک فروشگاه اینترنتی فارسی و راست‌به‌چپ است.
-- صفحه اصلی: / ، کاتالوگ محصولات: /products ، سبد خرید: /cart ، ورود: /login ، ثبت‌نام: /register.
-- کاربران می‌توانند محصولات و دسته‌بندی‌ها را جست‌وجو کنند، محصول را به سبد خرید اضافه کنند و سفارش ثبت کنند.
-- پرداخت آنلاین با درگاه زرین‌پال انجام می‌شود؛ وضعیت سفارش در حساب کاربری قابل پیگیری است.
-- ورود و ثبت‌نام با شماره موبایل، رمز عبور یا کد یک‌بارمصرف انجام می‌شود.
-- مشتری می‌تواند پروفایل، آدرس، سفارش‌ها (/orders)، علاقه‌مندی‌ها (/wishlist)، کدهای تخفیف (/coupons)، اعلان‌ها (/notifications) و پشتیبانی سفارش‌محور (/support) را مدیریت کند.
-- پشتیبانی برای سفارش‌های پرداخت‌شده یا بازپرداخت‌شده از مسیر گفت‌وگوی مرتبط با سفارش انجام می‌شود.
-- فروشندگان پنل جداگانه برای محصولات، سفارش‌ها، کیف پول و پشتیبانی دارند.
-- دستیار باید برای راهنمایی مسیر داخل سایت، نام فارسی بخش و لینک داخلی مرتبط را پیشنهاد دهد.
-- دستیار نباید درباره موجودی، قیمت، تخفیف یا ویژگی محصول چیزی بسازد؛ این موارد فقط از کاتالوگ ارسالی معتبرند.
-- شرایط دقیق مرجوعی، هزینه ارسال و استثناها در دانش قطعی فعلی ثبت نشده؛ درباره آن‌ها حدس نزن و کاربر را به پشتیبانی سفارش‌محور هدایت کن.
-- اگر سؤال خارج از خرید، محصولات، سفارش، حساب کاربری، پرداخت، تخفیف، ارسال یا پشتیبانی است، کوتاه بگو در حوزه تخصصی مارلو شاپ نیستی.
+- صفحه اصلی: / ، کاتالوگ محصولات: /products ، سبد خرید: /cart ، ورود: /login ، ثبت‌نام: /register ، سوالات متداول: /faq ، قوانین و مقررات: /terms.
+- ارسال و تحویل: سفارش‌ها معمولاً ظرف ۱ روز کاری پس از تأیید پرداخت آماده و ارسال می‌شوند و زمان تحویل بسته به مقصد، بین ۱ تا ۷ روز کاری به سراسر ایران است. کد رهگیری از طریق پیامک ارسال شده و در بخش سفارش‌ها (/orders) هم نمایش داده می‌شود. هزینه ارسال بر اساس شرایط سفارش و مقصد هنگام تکمیل سفارش محاسبه می‌شود.
+- مرجوعی کالا: مشتری تا ۲ روز پس از دریافت کالا (در صورت عدم استفاده و حفظ بسته‌بندی اصلی) حق ثبت درخواست مرجوعی از طریق حساب کاربری دارد. اگر کالا معیوب یا اشتباه ارسال شده باشد، هزینه ارسال مرجوعی بر عهده مارلو شاپ است. کالاهای بهداشتی و آرایشی بازشده، دیجیتال، شخصی‌سازی‌شده و فاسدشدنی قابل مرجوع نیستند.
+- روش‌های پرداخت: پرداخت آنلاین از طریق درگاه امن زرین‌پال (تمام کارت‌های عضو شتاب) و پرداخت در محل (نقدی یا کارت بانکی هنگام تحویل).
+- ورود و ثبت‌نام با شماره موبایل و رمز عبور یا کد یک‌بارمصرف (OTP) انجام می‌شود.
+- مشتری می‌تواند پروفایل (/profile)، سفارش‌ها (/orders)، علاقه‌مندی‌ها (/wishlist)، کدهای تخفیف (/coupons)، اعلان‌ها (/notifications) و پشتیبانی سفارش‌محور (/support) را مدیریت کند.
+\n${buildOfficialStorePolicyText()}
 `;
 
-const SITE_ROUTES = [
-  { keywords: /محصول|کالا|خرید|دسته|برند|جستجو/i, label: "محصولات", href: "/products" },
-  { keywords: /سبد|کارت خرید/i, label: "سبد خرید", href: "/cart" },
-  { keywords: /سفارش|پیگیری|وضعیت سفارش/i, label: "سفارش‌های من", href: "/orders" },
-  { keywords: /ورود|ثبت.?نام|رمز|حساب|پروفایل|آدرس/i, label: "حساب کاربری", href: "/profile" },
-  { keywords: /علاقه|پسندیده/i, label: "علاقه‌مندی‌ها", href: "/wishlist" },
-  { keywords: /کد تخفیف|کوپن/i, label: "کدهای تخفیف", href: "/coupons" },
-  { keywords: /اعلان|نوتیفیکیشن/i, label: "اعلان‌ها", href: "/notifications" },
-  { keywords: /پشتیبان|مرجوع|بازگشت|تعویض|مشکل سفارش/i, label: "پشتیبانی سفارش", href: "/support" },
-];
+function buildProfessionalRouteReply(route: AssistantRoute, query: string): string {
+  const q = query.trim();
+  if (route === "shipping") {
+    if (/هزینه|رایگان|چقدر/.test(q)) {
+      return "📦 **هزینه و شرایط ارسال در مارلو شاپ:**\n• هزینه ارسال بر اساس شرایط سفارش و شهر مقصد، در مرحله **تکمیل سفارش (صفحه پرداخت)** به‌صورت دقیق محاسبه و نمایش داده می‌شود.\n• سفارش‌ها معمولاً ظرف **۱ روز کاری** پس از تأیید پرداخت آماده و ارسال می‌شوند و تحویل آن‌ها بسته به مقصد بین **۱ تا ۷ روز کاری** زمان می‌برد.\n• پس از ارسال، **کد رهگیری مرسوله** از طریق پیامک برایتان ارسال می‌شود و در بخش «سفارش‌ها» نیز قابل مشاهده است.";
+    }
+    return "🚚 **زمان و نحوه ارسال سفارش در مارلو شاپ:**\n• **زمان آماده‌سازی:** سفارش‌ها معمولاً ظرف **۱ روز کاری** پس از تأیید پرداخت آماده و تحویل شرکت‌های پستی و حمل‌ونقل معتبر می‌شوند.\n• **مدت زمان تحویل:** بسته به شهر مقصد، تحویل سفارش به سراسر ایران معمولاً بین **۱ تا ۷ روز کاری** زمان می‌برد.\n• **رهگیری مرسوله:** بلافاصله پس از ارسال، **کد رهگیری** از طریق پیامک برای شما ارسال می‌شود و از بخش «سفارش‌ها» در حساب کاربری هم قابل پیگیری است.";
+  }
 
-function getRelatedRoutes(query: string) {
-  return SITE_ROUTES.filter((route) => route.keywords.test(query)).slice(0, 3);
-}
+  if (route === "policy") {
+    return "🔄 **شرایط بازگشت و مرجوعی کالا در مارلو شاپ:**\n• **مهلت مرجوعی:** تا **۲ روز پس از دریافت کالا** (در صورت عدم استفاده و حفظ بسته‌بندی اصلی) می‌توانید درخواست مرجوعی ثبت کنید.\n• **کالای معیوب یا ارسال اشتباه:** در صورتی که کالا معیوب یا مغایر با سفارش باشد، **هزینه ارسال مرجوعی کاملاً بر عهده مارلو شاپ** است و محصول جایگزین یا وجه شما بازگردانده می‌شود.\n• **نحوه ثبت درخواست:** از طریق حساب کاربری و بخش پشتیبانی سفارش، دلیل مرجوعی و تصویر کالا را ارسال کنید تا آدرس مرجوعی برایتان پیامک شود.\n• **استثناها:** کالاهای آرایشی و بهداشتی بازشده، محصولات دیجیتال، کالاهای شخصی‌سازی‌شده و فاسدشدنی قابل مرجوع نیستند.";
+  }
 
+  if (route === "account") {
+    if (/ورود|وارد|لاگین|ثبت.?نام|رمز/.test(q)) {
+      return "🔐 **ورود و حساب کاربری در مارلو شاپ:**\n• برای ورود یا ثبت‌نام، کافی است با **شماره موبایل و رمز عبور** یا **کد تأیید یک‌بارمصرف (پیامکی)** اقدام کنید.\n• اگر رمز عبورتان را فراموش کرده‌اید، در صفحه ورود گزینه **«رمز عبور را فراموش کرده‌اید؟»** را بزنید تا با شماره موبایل بازیابی شود.\n• پس از ورود، از بخش **پروفایل** می‌توانید اطلاعات حساب، آدرس‌ها و سفارش‌های خود را مدیریت کنید.";
+    }
+    return "👤 **مدیریت حساب کاربری و خدمات مارلو شاپ:**\n• از بخش **پروفایل و حساب کاربری** می‌توانید اطلاعات شخصی و آدرس‌های خود را ویرایش کنید.\n• برای مشاهده وضعیت خریدها به **سفارش‌ها**، برای کالاهای ذخیره‌شده به **علاقه‌مندی‌ها** و برای گفتگو با کارشناسان به **پشتیبانی** مراجعه کنید.";
+  }
 
-function classifyDomainQuery(query: string): "greeting" | "policy" | "domain" | "out_of_scope" {
-  if (/^(سلام|درود|hi|hello|hey|وقت بخیر|خوبی)[!！؟? .]*$/i.test(query.trim())) return "greeting";
-  if (/(مرجوع|مرجوعی|بازگشت کالا|تعویض|شرایط بازگشت|ضمانت بازگشت|refund|return)/i.test(query)) return "policy";
-  if (/(محصول|خرید|قیمت|تخفیف|پرفروش|دسته|برند|موجود|سفارش|پرداخت|زرین|ارسال|حساب|ورود|ثبت.?نام|رمز|علاقه|سبد|پشتیبان|فروشنده|کیف پول|کد تخفیف|اعلان|آدرس|مارلو|فروشگاه)/.test(query)) return "domain";
-  return "out_of_scope";
+  return "🧭 **راهنمای بخش‌های اصلی مارلو شاپ:**\n• برای مشاهده و فیلتر کالاها به بخش **محصولات** (`/products`) بروید.\n• برای پیگیری خریدهای قبلی وارد **سفارش‌ها** (`/orders`) شوید و برای مدیریت اطلاعات حساب به **پروفایل** (`/profile`) سر بزنید.";
 }
 
 let knowledgeCache: { expiresAt: number; value: { activeProducts: number | null; discountedProducts: number | null; categories: Array<{ name: string; slug: string }>; brands: Array<{ name: string; slug: string }>; source: string } } | null = null;
@@ -260,16 +279,18 @@ async function generateModelReply(input: {
       body: JSON.stringify({
         model,
         max_tokens: AI_MAX_OUTPUT_TOKENS,
-        temperature: 0.35,
+        temperature: 0.3,
         system:
-          `تو مشاور رسمی و فارسی مارلو شاپ هستی. فقط درباره حوزه مارلو شاپ پاسخ بده. ${MARLOO_DOMAIN_KNOWLEDGE}
+          `تو مشاور رسمی، خوش‌برخورد و حرفه‌ای فروشگاه مارلو شاپ هستی. فقط درباره حوزه مارلو شاپ پاسخ بده. ${MARLOO_DOMAIN_KNOWLEDGE}
 ${input.liveStoreKnowledge}
-قوانین: برای قیمت، موجودی، تخفیف و ویژگی محصول فقط از کاتالوگ استفاده کن. اگر اطلاعاتی در کاتالوگ یا دانش قطعی بالا نیست، صادقانه بگو «اطلاعات کافی ندارم» و حدس نزن. پاسخ را کوتاه، کاربردی و فارسی بنویس. اگر کاربر سؤال عمومی یا نامرتبط پرسید، وارد آن موضوع نشو.`,
+قوانین مهم:
+۱. برای قوانین ارسال (آماده‌سازی ۱ روز کاری، تحویل ۱ تا ۷ روز کاری به سراسر ایران، کد رهگیری پیامکی) و قوانین مرجوعی (مهلت ۲ روز پس از دریافت در صورت عدم استفاده) دقیقاً از اطلاعات رسمی بالا استفاده کن و پاسخ را ساختاریافته، شفاف و محترمانه بنویس.
+۲. برای قیمت، موجودی، تخفیف و ویژگی محصول فقط از کاتالوگ ارسالی استفاده کن و چیزی از خودت نساز.`,
         messages: [
           ...conversation,
           {
             role: "user",
-            content: `${input.liveStoreKnowledge}\nمسیرهای مرتبط احتمالی: ${linksForRoute((input.route || "product") as any).map((r) => `${r.label} (${r.href})`).join("، ") || "ندارد"}\nدرخواست: ${input.query}\nمسیر پرسش: ${input.route || "product"}\nهدف: ${input.intent}\nسقف بودجه: ${input.maxPrice ? `${input.maxPrice.toLocaleString("fa-IR")} تومان` : "تعیین نشده"}\nکاتالوگ پیشنهادی:\n${catalog || "گزینه‌ای پیدا نشد"}`,
+            content: `${input.liveStoreKnowledge}\nمسیرهای مرتبط: ${linksForRoute((input.route || "product") as AssistantRoute).map((r) => `${r.label} (${r.href})`).join("، ") || "ندارد"}\nدرخواست کاربر: ${input.query}\nدسته پرسش: ${input.route || "product"}\nهدف: ${input.intent}\nسقف بودجه: ${input.maxPrice ? `${input.maxPrice.toLocaleString("fa-IR")} تومان` : "تعیین نشده"}\nکاتالوگ پیشنهادی:\n${catalog || "ندارد (سوال اطلاعاتی/راهنمایی)"}`,
           },
         ],
       }),
@@ -293,15 +314,6 @@ ${input.liveStoreKnowledge}
   }
 }
 
-/**
- * POST /api/ai-assistant
- *
- * Smart AI Shopping Advisor & Product Recommendation Engine.
- * Evaluates user natural-language queries in Persian, applies budget/intent
- * filters, scores active in-stock products using effective pricing, discounts,
- * sales velocity (`soldCount`), and text relevance, and returns tailored
- * Persian shopping advice + product cards.
- */
 export async function POST(req: NextRequest) {
   try {
     const ip =
@@ -325,7 +337,6 @@ export async function POST(req: NextRequest) {
     const cleanQuery = sanitizePlainText(rawQuery).trim().slice(0, 200);
     const route = routeAssistantQuestion(cleanQuery);
     const relatedRoutes = linksForRoute(route);
-    const domainClass = route === "greeting" ? "greeting" : route === "policy" ? "policy" : route === "out_of_scope" ? "out_of_scope" : "domain";
     const intent = body.intent || "search";
     const history = Array.isArray(body.history)
       ? body.history.slice(-4).filter((item) => typeof item?.content === "string")
@@ -341,52 +352,71 @@ export async function POST(req: NextRequest) {
 
     if (!cleanQuery) {
       return NextResponse.json({
-        reply: "سؤال یا نام محصولت را بنویس تا درباره خرید در مارلو شاپ راهنمایی‌ات کنم.",
+        reply: "سؤال یا نام محصول مورد نظرتان را بنویسید تا درباره خرید، ارسال، قوانین یا محصولات مارلو شاپ راهنمایی‌تان کنم.",
         recommendations: [],
         relatedRoutes,
         meta: { intent: "search", compared: false, confidence: "high", provider: "scope-guard" },
       });
     }
 
-    if (domainClass === "greeting") {
+    if (route === "greeting") {
       return NextResponse.json({
-        reply: "سلام! من مشاور خرید مارلو شاپ هستم. می‌توانم درباره محصولات، قیمت، تخفیف، سفارش، پرداخت، ارسال و حساب کاربری راهنمایی‌ات کنم. دنبال چه چیزی هستی؟",
+        reply: "سلام! 👋 من دستیار هوشمند مارلو شاپ هستم.\nمی‌توانم درباره **پیشنهاد و مقایسه محصولات**، **زمان و شرایط ارسال**، **قوانین مرجوعی (تا ۲ روز)**، **پیگیری سفارش** و **حساب کاربری** راهنمایی‌تان کنم. دنبال چه چیزی هستید؟",
         recommendations: [],
         relatedRoutes,
-        meta: { intent: "greeting", compared: false, confidence: "high", provider: "scope-guard" },
+        meta: { intent: "greeting", route, compared: false, confidence: "high", provider: "official-store-knowledge" },
       });
     }
 
-    if (domainClass === "policy") {
+    if (route === "out_of_scope") {
       return NextResponse.json({
-        reply: "شرایط دقیق مرجوعی در اطلاعات فعلی دستیار ثبت نشده و نمی‌خواهم درباره مهلت یا هزینه ارسال حدس بزنم. برای بررسی مورد شما، وارد حساب کاربری > سفارش‌ها شوید و گفت‌وگوی مرتبط با همان سفارش را باز کنید؛ پشتیبانی سفارش‌محور برای سفارش‌های پرداخت‌شده یا بازپرداخت‌شده از همان مسیر پاسخ می‌دهد.",
+        reply: "من دستیار تخصصی فروشگاه **مارلو شاپ** هستم و فقط درباره محصولات، قیمت و تخفیف‌ها، زمان ارسال، شرایط مرجوعی، وضعیت سفارش و حساب کاربری پاسخ می‌دهم. چطور می‌توانم در خرید کمکتان کنم؟",
         recommendations: [],
         relatedRoutes,
-        meta: { intent: "return_policy", compared: false, confidence: "high", provider: "scope-guard" },
+        meta: { intent: "out_of_scope", route, compared: false, confidence: "high", provider: "scope-guard" },
       });
     }
 
-    if (domainClass === "out_of_scope") {
+    if (route === "shipping" || route === "policy" || route === "navigation" || route === "account") {
+      const baseReply = buildProfessionalRouteReply(route, cleanQuery);
+      const modelReply = await generateModelReply({
+        query: cleanQuery,
+        intent,
+        recommendations: [],
+        history,
+        liveStoreKnowledge: "قوانین رسمی فروشگاه از ماژول‌های faq-content و terms-content بارگذاری شده است.",
+        route,
+      });
       return NextResponse.json({
-        reply: "من برای راهنمایی خرید در مارلو شاپ ساخته شده‌ام و درباره این موضوع اطلاعات قابل اتکایی ندارم. درباره محصول، قیمت، تخفیف، سفارش، پرداخت، ارسال یا حساب کاربری بپرس.",
+        reply: modelReply || baseReply,
         recommendations: [],
         relatedRoutes,
-        meta: { intent: "out_of_scope", compared: false, confidence: "high", provider: "scope-guard" },
+        meta: {
+          route,
+          source: "verified-store-policy",
+          provider: modelReply ? "anthropic-compatible" : "official-store-knowledge",
+          cache: "bypass",
+        },
       });
     }
 
-    if (route === "shipping") {
-      return NextResponse.json({ reply: "در کد فعلی اطلاعات قابل اتکایی درباره مدت ارسال، هزینه ارسال، پوشش جغرافیایی یا ارسال رایگان ثبت نشده است؛ نمی‌خواهم حدس بزنم. برای وضعیت ارسال یک سفارش مشخص، سفارش را از بخش سفارش‌ها باز کنید یا از پشتیبانی سفارش‌محور کمک بگیرید.", recommendations: [], relatedRoutes, meta: { route, source: "verified-application-data", provider: "scope-guard", cache: "bypass" } });
-    }
-    if (route === "policy") {
-      return NextResponse.json({ reply: "شرایط دقیق مرجوعی و تعویض در داده‌های قابل تأیید فروشگاه ثبت نشده است. برای پاسخ دقیق، از بخش پشتیبانی درباره همان سفارش سؤال کنید؛ من درباره مهلت، هزینه یا استثناها حدس نمی‌زنم.", recommendations: [], relatedRoutes, meta: { route, source: "verified-application-data", provider: "scope-guard", cache: "bypass" } });
-    }
-    if (route === "navigation" || route === "account") {
-      return NextResponse.json({ reply: "این مسیرها در سایت فعال‌اند: " + relatedRoutes.map((r) => `${r.label} (${r.href})`).join("، ") + ". اگر بگویی دقیقاً دنبال کدام کار هستی، مسیر مناسب‌تر را می‌گویم.", recommendations: [], relatedRoutes, meta: { route, source: "verified-routes", provider: "scope-guard", cache: "bypass" } });
-    }
     if (route === "order" || route === "payment") {
       const token = await getServerToken(req);
-      if (!token) return NextResponse.json({ reply: "برای بررسی سفارش یا پرداخت باید ابتدا وارد حساب کاربری شوید.", recommendations: [], relatedRoutes, meta: { route, source: "auth-required", provider: "scope-guard", cache: "bypass" } }, { status: 401 });
+      if (!token) {
+        const guestReply =
+          route === "payment"
+            ? "💳 **روش‌ها و پیگیری پرداخت در مارلو شاپ:**\n• پرداخت سفارش‌ها به دو صورت **آنلاین (درگاه امن زرین‌پال)** و **پرداخت در محل** انجام می‌شود.\n• در صورت ناموفق بودن پرداخت آنلاین، سفارش تکمیل نمی‌شود و می‌توانید مجدداً پرداخت را انجام دهید.\n• برای بررسی وضعیت پرداخت سفارش خودتان، لطفاً ابتدا **وارد حساب کاربری** شوید."
+            : "📦 **پیگیری وضعیت سفارش:**\n• پس از ارسال هر سفارش، **کد رهگیری** از طریق پیامک برایتان ارسال می‌شود.\n• برای اینکه وضعیت دقیق آخرین سفارش شما را همین‌جا بررسی کنم، لطفاً ابتدا **وارد حساب کاربری** خود شوید.";
+        return NextResponse.json(
+          {
+            reply: guestReply,
+            recommendations: [],
+            relatedRoutes,
+            meta: { route, source: "auth-required", provider: "official-store-knowledge", cache: "bypass" },
+          },
+          { status: 401 }
+        );
+      }
       await dbConnect();
       const latest = (await Order.findOne({ customer: token.id })
         .select("_id status totalAmount payment.status payment.method shipping.provider shipping.trackingCode shippedAt deliveredAt createdAt")
@@ -396,15 +426,32 @@ export async function POST(req: NextRequest) {
         status?: string;
         totalAmount?: number;
         payment?: { status?: string; method?: string };
+        shipping?: { provider?: string; trackingCode?: string };
       } | null;
-      if (!latest) return NextResponse.json({ reply: "برای این حساب سفارشی پیدا نشد.", recommendations: [], relatedRoutes, meta: { route, source: "mongodb", provider: "database-grounded", cache: "bypass" } });
+      if (!latest) {
+        return NextResponse.json({
+          reply: "در حال حاضر هیچ سفارشی در حساب کاربری شما ثبت نشده است. پس از ثبت اولین خرید، می‌توانید وضعیت آماده‌سازی و کد رهگیری مرسوله را از این بخش پیگیری کنید.",
+          recommendations: [],
+          relatedRoutes,
+          meta: { route, source: "mongodb", provider: "database-grounded", cache: "bypass" },
+        });
+      }
       const paymentStatus = latest.payment?.status || "نامشخص";
       const status = latest.status || "نامشخص";
       const orderShortId = String(latest._id).slice(-8);
-      const reply = route === "payment"
-        ? `آخرین سفارش شما #${orderShortId} وضعیت پرداخت «${paymentStatus}» دارد. مبلغ ثبت‌شده ${Number(latest.totalAmount || 0).toLocaleString("fa-IR")} تومان است. برای جزئیات کامل سفارش وارد بخش سفارش‌ها شوید.`
-        : `آخرین سفارش شما #${orderShortId} در وضعیت «${status}» است. برای جزئیات ارسال، رهگیری و تاریخچه وضعیت، صفحه سفارش را باز کنید.`;
-      return NextResponse.json({ reply, recommendations: [], relatedRoutes, meta: { route, source: "mongodb", provider: "database-grounded", cache: "bypass", personalized: true } });
+      const trackingInfo = latest.shipping?.trackingCode
+        ? `\n• **کد رهگیری مرسوله:** \`${latest.shipping.trackingCode}\``
+        : "";
+      const reply =
+        route === "payment"
+          ? `💳 **وضعیت پرداخت آخرین سفارش شما (#${orderShortId}):**\n• **وضعیت پرداخت:** «${paymentStatus}»\n• **مبلغ کل سفارش:** ${Number(latest.totalAmount || 0).toLocaleString("fa-IR")} تومان\nبرای مشاهده فاکتور و جزئیات کامل تراکنش، به صفحه «سفارش‌ها» مراجعه کنید.`
+          : `📦 **وضعیت آخرین سفارش شما (#${orderShortId}):**\n• **مرحله فعلی:** «${status}»${trackingInfo}\n• سفارش‌ها معمولاً ظرف ۱ روز کاری پس از تأیید پرداخت ارسال شده و طی ۱ تا ۷ روز کاری تحویل می‌شوند. برای مشاهده جزئیات کامل، صفحه سفارش را باز کنید.`;
+      return NextResponse.json({
+        reply,
+        recommendations: [],
+        relatedRoutes,
+        meta: { route, source: "mongodb", provider: "database-grounded", cache: "bypass", personalized: true },
+      });
     }
 
     await dbConnect();
@@ -426,7 +473,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Extract budget numbers from Persian/English query if user typed e.g. "زیر ۵۰۰ هزار تومان"
     const normalizedDigits = cleanQuery.replace(/[۰-۹]/g, (d) =>
       String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))
     );
@@ -442,7 +488,6 @@ export async function POST(req: NextRequest) {
     const isCompareQuery =
       intent === "compare" || /مقایسه|فرق|تفاوت|بین/.test(cleanQuery);
 
-    // Tokenize search keywords (exclude common Persian stop words)
     const stopWords = new Set([
       "من",
       "یک",
@@ -453,6 +498,7 @@ export async function POST(req: NextRequest) {
       "لطفا",
       "بهترین",
       "محصول",
+      "محوصل",
       "محصولات",
       "خرید",
       "چیه",
@@ -471,7 +517,6 @@ export async function POST(req: NextRequest) {
       .map((w) => w.trim())
       .filter((w) => w.length >= 2 && !stopWords.has(w));
 
-    // Fetch active, in-stock products
     const mongoFilter: Record<string, unknown> = {
       isActive: true,
       stock: { $gt: 0 },
@@ -498,7 +543,6 @@ export async function POST(req: NextRequest) {
       .limit(30)
       .lean();
 
-    // Fallback: if keyword query had no exact match, recommend top catalog items
     let usedFallback = false;
     if (rawProducts.length === 0) {
       usedFallback = true;
@@ -522,7 +566,6 @@ export async function POST(req: NextRequest) {
         );
         const pubDiscount = toPublicDiscount(eff);
 
-        // Compute smart score
         let score = 0;
         const nameStr = String(p.name || "");
         const descStr = String(p.description || "");
@@ -544,12 +587,10 @@ export async function POST(req: NextRequest) {
         if (isCompareQuery && eff.active) {
           score += 12;
         }
-        // A short conversation memory boost keeps follow-up questions useful.
         if (history.some((item) => String(item.content || "").includes(nameStr))) {
           score += 8;
         }
 
-        // Value bonus for active discounts
         if (eff.active) {
           score += eff.discountPercent * 0.5;
         }
@@ -591,7 +632,6 @@ export async function POST(req: NextRequest) {
 
     const recommendations = scoredProducts.slice(0, 4);
 
-    // Build conversational Persian response
     let reply = "";
     if (recommendations.length === 0) {
       reply =
