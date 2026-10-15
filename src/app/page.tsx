@@ -1,22 +1,13 @@
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
 import { LazySection } from "@/components/storefront/home/lazy-section";
+import { AiShoppingAssistant } from "@/components/storefront/ai/ai-shopping-assistant";
 import { getHomepageComposition } from "@/lib/homepage-content";
 import { getHomepageBlock } from "@/lib/homepage-sections/registry";
 
 /**
- * Homepage (Session 50 — UX redesign; Session 53 — CMS data-driven).
- *
- * Thin server component: fetches the PUBLIC homepage composition once
- * server-side (`getHomepageComposition` — enabled, non-deleted sections in
- * sortOrder, each with its published content rows), then renders every
- * section through the block registry. Unknown components are skipped
- * fail-safe (a bad `component` id never crashes the homepage). Below-the-fold
- * sections still lazy-mount on scroll.
- *
- * The homepage is force-dynamic so CMS edits always render live in
- * production (`next start`); without this, Next prerenders `/` statically at
- * build time and the served HTML is stale until a rebuild. See H1.
+ * Homepage (Session 50 — UX redesign; Session 53 — CMS data-driven;
+ * Upgraded with SEO Pre-render & AI Shopping Assistant).
  */
 export const dynamic = "force-dynamic";
 
@@ -24,13 +15,10 @@ export default async function HomePage() {
   const composition = await getHomepageComposition();
 
   return (
-    /* Session 85 — `.storefront dot-grid` scopes the dark-glass theme to the
-       storefront (admin/supplier/auth stay light). The homepage lives outside
-       the (storefront) route group, so it carries its own scope here. */
-    <div className="storefront dot-grid flex min-h-screen flex-col">
+    <div className="storefront dot-grid flex min-h-screen flex-col bg-sf-bg text-sf-body">
       <StorefrontHeader />
 
-      <main className="flex-1 pb-14">
+      <main className="flex-1">
         {composition.sections.map((section) => {
           const block = getHomepageBlock(section.component);
           if (!block) return null;
@@ -41,6 +29,7 @@ export default async function HomePage() {
               <LazySection
                 key={section.slug}
                 minHeight={block.minHeight}
+                seoPreRender={true}
               >
                 <Renderer section={section} />
               </LazySection>
@@ -50,6 +39,7 @@ export default async function HomePage() {
         })}
       </main>
 
+      <AiShoppingAssistant />
       <StorefrontFooter />
     </div>
   );

@@ -32,9 +32,13 @@ interface ProductRailProps {
 const SKELETON_COUNT = 6;
 
 /** Fixed card widths shared by the track and the skeleton placeholders so the
- *  loading state mirrors the real carousel layout (Session 85 Phase B). */
+ *  loading state mirrors the real carousel layout (Session 85 Phase B).
+ *  Mobile (<640px) shows ONE full-width card at a time — a single larger card
+ *  whose details stay readable instead of two cramped 44% cards. The
+ *  multi-card rail returns from `sm` up (tablet/desktop), and swiping
+ *  still pans the rail between cards. */
 const CARD_WIDTH =
-  "w-[44%] sm:w-[30%] md:w-[280px] xl:w-[300px] shrink-0 snap-start";
+  "w-full sm:w-[30%] md:w-[280px] xl:w-[300px] shrink-0 snap-start";
 
 /**
  * Horizontal scroll-snap product rail (Session 50; Session 85 Phase B —
@@ -84,7 +88,7 @@ export function ProductRail({
     "flex h-11 w-11 items-center justify-center rounded-full border border-sf-line bg-sf-chip text-sf-dim backdrop-blur transition-all duration-200 hover:border-primary/40 hover:bg-sf-chip/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60";
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 sm:pt-12 lg:px-8 lg:pt-14">
       <SectionHeader
         title={title}
         subtitle={subtitle}
@@ -95,7 +99,7 @@ export function ProductRail({
       />
 
       {error ? (
-        <div className="rounded-2xl border border-sf-line bg-sf-card/40 p-6 text-center text-sm text-sf-dim">
+        <div className="rounded-3xl border border-sf-line bg-sf-card/40 p-6 text-center sf-meta text-sf-dim">
           خطا در دریافت محصولات — لطفاً بعداً دوباره تلاش کنید
         </div>
       ) : loading ? (
@@ -118,9 +122,9 @@ export function ProductRail({
           ))}
         </div>
       ) : showEmpty ? (
-        <div className="flex flex-col items-center gap-2 rounded-2xl border border-sf-line bg-sf-card/40 p-8 text-center">
-          <PackageOpen className="h-8 w-8 text-sf-dim/50" />
-          <p className="text-sm text-sf-dim">
+        <div className="flex flex-col items-center gap-2 rounded-3xl border border-sf-line bg-sf-card/40 p-8 text-center">
+          <PackageOpen className="h-8 w-8 text-sf-dim" />
+          <p className="sf-meta text-sf-dim">
             هنوز محصولی برای نمایش وجود ندارد
           </p>
         </div>
@@ -133,7 +137,7 @@ export function ProductRail({
                 type="button"
                 aria-label="اسکرول به راست"
                 onClick={() => scrollByCard(1)}
-                className="absolute -right-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-sf-line bg-sf-card/90 text-sf-dim shadow-md backdrop-blur transition-all hover:scale-105 hover:text-sf-strong md:hidden"
+                className="absolute -right-2 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-sf-line bg-sf-card/90 text-sf-dim shadow-md backdrop-blur transition-all hover:scale-105 hover:text-sf-strong md:hidden"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -141,7 +145,7 @@ export function ProductRail({
                 type="button"
                 aria-label="اسکرول به چپ"
                 onClick={() => scrollByCard(-1)}
-                className="absolute -left-2 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-sf-line bg-sf-card/90 text-sf-dim shadow-md backdrop-blur transition-all hover:scale-105 hover:text-sf-strong md:hidden"
+                className="absolute -left-2 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-sf-line bg-sf-card/90 text-sf-dim shadow-md backdrop-blur transition-all hover:scale-105 hover:text-sf-strong md:hidden"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>

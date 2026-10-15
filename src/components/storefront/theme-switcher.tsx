@@ -69,7 +69,7 @@ export function ThemeSwitcher({
         // token-driven hover (chip bg + strong text) and 40px target. The
         // primary-tinted hover border adds an unmistakable affordance without
         // extra visual weight.
-        "sf-icon-btn group h-10 gap-2 border border-sf-line bg-sf-chip/80 px-2.5 text-sm font-medium hover:border-primary/50",
+        "sf-icon-btn group h-11 gap-2 border border-sf-line bg-sf-chip/80 px-3 sf-label font-medium hover:border-primary/50",
         variant === "full" && "px-3",
         // Visible focus treatment for both themes (ring token = brand blue).
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background",

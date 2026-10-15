@@ -9,25 +9,34 @@ interface LazySectionProps {
   /** Minimum placeholder height while the section is off-screen */
   minHeight?: number;
   className?: string;
+  /**
+   * SEO Upgrade: When true (default), children stay mounted in the initial
+   * SSR HTML so Googlebot indexes all homepage product rails and internal
+   * links without needing scroll events. Uses CSS content-visibility for
+   * rendering performance instead of unmounting DOM nodes.
+   */
+  seoPreRender?: boolean;
 }
 
 /**
- * Session 50 — below-the-fold lazy mount.
+ * Below-the-fold section wrapper (SEO-friendly upgrade).
  *
- * Children stay unmounted until the wrapper approaches the viewport, which
- * defers the section's React Query fetch until the user actually scrolls
- * near it (queries only fire when a component mounts). Falls back to a
- * skeleton placeholder meanwhile. Once in view it stays mounted.
+ * Previously, `inView` defaulted to `false` and omitted `children` from the
+ * initial HTML, causing search engine crawlers to see an almost empty homepage.
+ * Now `seoPreRender = true` keeps children in the DOM with `content-visibility: auto`
+ * so crawlers index all sections while browsers still defer off-screen layout/paint.
  */
 export function LazySection({
   children,
   minHeight = 320,
   className = "",
+  seoPreRender = true,
 }: LazySectionProps) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [inView, setInView] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [inView, setInView] = useState(seoPreRender);
 
   useEffect(() => {
+    if (seoPreRender) return;
     const el = ref.current;
     if (!el) return;
 
@@ -45,29 +54,36 @@ export function LazySection({
           }
         }
       },
-      { rootMargin: "250px 0px" }
+      { rootMargin: "300px 0px" }
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [seoPreRender]);
 
   return (
-    <div ref={ref} className={className} style={{ minHeight: inView ? undefined : minHeight }}>
+    <div
+      ref={ref}
+      className={className}
+      style={{
+        minHeight,
+        contentVisibility: "auto",
+        containIntrinsicSize: `0 ${minHeight}px`,
+      }}
+    >
       {inView ? (
         children
       ) : (
-        <div className="space-y-3" aria-hidden="true">
-          <Skeleton className="h-7 w-48" />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          <Skeleton className="mb-6 h-7 w-48 rounded-lg bg-sf-chip" />
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
             {Array.from({ length: 6 }).map((_, i) => (
-              /* Session 85 — glass skeleton surface (dark reference). */
-              <div key={i} className="overflow-hidden rounded-2xl border border-sf-line bg-sf-card/40">
-                <Skeleton className="aspect-square w-full rounded-none" />
-                <div className="space-y-2 p-3">
-                  <Skeleton className="h-3 w-16" />
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-5 w-20" />
-                </div>
+              <div
+                key={i}
+                className="glass rounded-2xl border border-sf-line p-3"
+              >
+                <Skeleton className="mb-3 aspect-square w-full rounded-xl bg-sf-chip" />
+                <Skeleton className="mb-2 h-4 w-3/4 rounded bg-sf-chip" />
+                <Skeleton className="h-4 w-1/2 rounded bg-sf-chip" />
               </div>
             ))}
           </div>

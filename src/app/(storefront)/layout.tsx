@@ -1,10 +1,10 @@
 import { StorefrontHeader } from "@/components/storefront/storefront-header";
 import { StorefrontFooter } from "@/components/storefront/storefront-footer";
+import { AiShoppingAssistant } from "@/components/storefront/ai/ai-shopping-assistant";
 
 /**
- * Storefront layout — now a thin server component composing the shared
- * StorefrontHeader (with search) and StorefrontFooter (Session 50 refactor).
- * Behavior unchanged; header/footer extracted for reuse on the homepage.
+ * Storefront layout — composes the shared StorefrontHeader, StorefrontFooter,
+ * and the floating AiShoppingAssistant across all storefront pages.
  */
 export default function StorefrontLayout({
   children,
@@ -12,14 +12,13 @@ export default function StorefrontLayout({
   children: React.ReactNode;
 }) {
   return (
-    /* Session 85 — `.storefront dot-grid` scopes the dark-glass theme to the
-       storefront group (admin/supplier/auth stay light). */
-    <div className="storefront dot-grid flex min-h-screen flex-col">
+    <div className="storefront dot-grid flex min-h-screen flex-col bg-sf-bg text-sf-body">
       <StorefrontHeader />
 
       {/* Main Content */}
       <main className="flex-1">{children}</main>
 
+      <AiShoppingAssistant />
       <StorefrontFooter />
     </div>
   );

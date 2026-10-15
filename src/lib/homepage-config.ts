@@ -1,11 +1,9 @@
 /**
- * Session 50 — Static homepage configuration.
+ * Session 50 — Static homepage configuration (Upgraded for SEO & Conversion).
  *
  * All homepage copy/art lives here so the homepage itself stays a thin
- * composition of sections. NO backend, NO schema, NO fake data:
- * every link points to a real route and every price shown comes from the
- * existing products API. Slides/banners use gradient art (no external
- * images) so the design never depends on image hosting.
+ * composition of sections. Every link points to a real route and every price
+ * shown comes from the existing products API.
  */
 import { APP_NAME } from "@/lib/constants";
 
@@ -40,64 +38,64 @@ export const homepageConfig = {
   heroSlides: [
     {
       id: "welcome",
-      tagline: `${APP_NAME} — خرید آسان، سریع و مطمئن`,
-      title: "به فروشگاه من خوش آمدید",
+      tagline: `${APP_NAME} — خرید هوشمند، سریع و مطمئن`,
+      title: "بهترین انتخاب‌ها با قیمت واقعی و ضمانت اصالت",
       subtitle:
-        "بهترین محصولات با کیفیت عالی و قیمت‌های واقعی. تجربه خریدی مدرن و لذت‌بخش را با ما داشته باشید.",
-      cta: { label: "خرید کنید", href: "/products" },
-      gradient: "from-zinc-900 via-zinc-800 to-zinc-700",
+        "هزاران کالای منتخب از فروشندگان تاییدشده با ارسال سریع به سراسر کشور و پشتیبانی ۲۴ ساعته. با دستیار هوشمند مارلو، دقیقاً همان چیزی را بخرید که نیاز دارید.",
+      cta: { label: "مشاهده و خرید محصولات", href: "/products" },
+      gradient: "from-zinc-900 via-slate-800 to-indigo-950",
     },
     {
       id: "newest",
-      tagline: "تازه‌های فروشگاه",
-      title: "جدیدترین محصولات",
+      tagline: "تازه‌های مارلو شاپ",
+      title: "کالکشن جدیدترین محصولات فصل",
       subtitle:
-        "هر روز محصولات جدید از فروشندگان معتبر. اولین نفری باشید که کالکشن تازه را می‌بینید.",
+        "هر روز محصولات تازه از برندهای معتبر اضافه می‌شوند. اولین نفری باشید که جدیدترین ترندها را با قیمت استثنایی بررسی می‌کنید.",
       cta: { label: "مشاهده جدیدترین‌ها", href: "/products?sort=newest" },
-      gradient: "from-emerald-800 via-emerald-700 to-teal-600",
+      gradient: "from-emerald-900 via-emerald-800 to-teal-700",
     },
     {
       id: "coupons",
-      tagline: "خرید هوشمندانه",
-      title: "کدهای تخفیف عمومی",
+      tagline: "جشنواره تخفیف‌های هوشمند",
+      title: "کدهای تخفیف ویژه برای خرید اقتصادی‌تر",
       subtitle:
-        "کدهای تخفیف عمومی را ببینید و هنگام پرداخت استفاده کنید. بدون هیچ هزینه اضافه.",
-      cta: { label: "مشاهده کدهای تخفیف", href: "/coupons" },
-      gradient: "from-rose-800 via-rose-700 to-pink-600",
+        "کدهای تخفیف فعال فروشگاه را یکجا ببینید و در مرحله تسویه‌حساب، بدون هیچ کارمزد اضافی روی سبد خریدتان اعمال کنید.",
+      cta: { label: "دریافت کد تخفیف", href: "/coupons" },
+      gradient: "from-rose-900 via-rose-800 to-pink-700",
     },
   ] satisfies HomepageHeroSlide[],
 
   campaignBanner: {
-    title: "پیشنهادهای ویژه فروشگاه",
+    title: "پیشنهادهای شگفت‌انگیز و پرفروش هفته",
     subtitle:
-      "محصولات باکیفیت، قیمت‌های واقعی و ارسال سریع به سراسر کشور. همین حالا کالکشن ویژه را ببینید.",
-    cta: { label: "مشاهده کالکشن ویژه", href: "/products?sort=price_desc" },
+      "منتخبی از محبوب‌ترین کالاهای مارلو شاپ با بیشترین رضایت خریداران و ارسال فوری.",
+    cta: { label: "مشاهده پرفروش‌ترین‌ها", href: "/products?sort=best_selling" },
     gradient: "from-indigo-900 via-indigo-800 to-violet-700",
   } satisfies HomepageCampaignBanner,
 
   giftCollections: [
     {
       id: "gift-loved-ones",
-      title: "هدیه برای عزیزان",
+      title: "کالکشن هدیه برای عزیزان",
       description:
-        "انتخاب‌های ویژه برای کسانی که دوستشان دارید — از وسایل خانه تا کالکشن‌های خاص.",
-      cta: { label: "مشاهده هدیه‌ها", href: "/products" },
+        "بهترین ایده‌های هدیه با بسته‌بندی شیک و ارسال سریع برای غافلگیر کردن کسانی که دوستشان دارید.",
+      cta: { label: "انتخاب هدیه", href: "/products" },
       gradient: "from-rose-900 via-rose-800 to-red-700",
     },
     {
       id: "gift-home",
-      title: "هدیه برای خانه",
+      title: "زیبایی و آرامش برای خانه",
       description:
-        "هر آنچه خانه شما را زیباتر و راحت‌تر می‌کند، در یک جا جمع شده است.",
-      cta: { label: "خرید برای خانه", href: "/products" },
+        "مجموعه‌ای از کاربردی‌ترین و شیک‌ترین لوازم خانه با کیفیت تضمینی.",
+      cta: { label: "خرید لوازم خانه", href: "/products" },
       gradient: "from-amber-800 via-amber-700 to-yellow-600",
     },
     {
       id: "gift-yourself",
-      title: "هدیه برای خودتان",
+      title: "کالکشن پریمیوم و خاص",
       description:
-        "چون لایق بهترین‌ها هستید. کالکشن پریمیوم را برای خودتان انتخاب کنید.",
-      cta: { label: "خرید پریمیوم", href: "/products?sort=price_desc" },
+        "چون لایق بهترین کیفیت هستید؛ گلچینی از محصولات رده‌بالا و اورجینال فروشگاه.",
+      cta: { label: "مشاهده کالکشن پریمیوم", href: "/products?sort=price_desc" },
       gradient: "from-slate-800 via-slate-700 to-zinc-600",
     },
   ] satisfies HomepageGiftCollection[],

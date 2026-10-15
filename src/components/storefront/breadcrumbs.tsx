@@ -18,7 +18,10 @@ import type { BreadcrumbItem } from "@/lib/breadcrumbs";
 export function Breadcrumbs({ items }: { items: BreadcrumbItem[] }) {
   return (
     <nav aria-label="مسیر دسترسی" className="mb-6">
-      <ol className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+      {/* Readability pass — sf-label (15px) replaces text-sm (14px), and each
+          link is a ≥24px-tall hit target (WCAG 2.2 SC 2.5.8) instead of the
+          20px text box. */}
+      <ol className="flex flex-wrap items-center gap-1.5 sf-label text-muted-foreground">
         {items.map((item, index) => {
           const isLast = index === items.length - 1;
           return (
@@ -32,7 +35,7 @@ export function Breadcrumbs({ items }: { items: BreadcrumbItem[] }) {
               {item.url && !isLast ? (
                 <Link
                   href={item.url}
-                  className="transition-colors hover:text-foreground"
+                  className="inline-flex min-h-6 items-center transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                 >
                   {item.name}
                 </Link>

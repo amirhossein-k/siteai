@@ -19,7 +19,7 @@ export function PopularBrands({ section }: HomepageSectionRendererProps) {
   const list = brands ?? [];
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 sm:pt-12 lg:px-8 lg:pt-14">
       <SectionHeader
         title={section.title || "برندهای محبوب"}
         subtitle={section.subtitle || "فروشندگان و برندهای معتبر فروشگاه"}
@@ -45,10 +45,10 @@ export function PopularBrands({ section }: HomepageSectionRendererProps) {
             >
               {/* Session 85 — glass brand tile (dark reference); brand data
                  and the real /products?brand=<id> link unchanged. */}
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-sf-chip text-lg font-bold text-sf-dim shadow-sm ring-1 ring-sf-line transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-md group-hover:ring-sf-line-strong">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-sf-chip to-sf-elevated text-lg font-bold text-sf-dim shadow-sm ring-1 ring-sf-line transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:shadow-primary/10 group-hover:ring-primary/50">
                 {brand.name[0]}
               </span>
-              <span className="max-w-full truncate text-center text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+              <span className="max-w-full truncate text-center sf-label font-medium text-sf-dim transition-colors group-hover:text-foreground">
                 {brand.name}
               </span>
             </Link>

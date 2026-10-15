@@ -7,6 +7,7 @@ import {
   resolveCategoryPageParam,
 } from "@/lib/category-pages";
 import { itemListSchema } from "@/lib/schemas/json-ld";
+import { APP_NAME } from "@/lib/constants";
 import { buildCategoryUrl } from "@/lib/category-url";
 
 /**
@@ -166,7 +167,7 @@ describe("buildCategoryMetadata", () => {
       { ...category, description: "", metaDescription: "" },
       BASE
     );
-    expect(meta.description).toBe("محصولات دسته‌بندی هدفون بیسیم در فروشگاه من");
+    expect(meta.description).toBe(`محصولات دسته‌بندی هدفون بیسیم در ${APP_NAME}`);
   });
 
   it("canonical = /categories/<slug> via APP_URL-style base (single origin)", () => {

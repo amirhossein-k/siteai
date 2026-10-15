@@ -24,7 +24,7 @@ export function QuickCategories({ section }: HomepageSectionRendererProps) {
   const count = categories?.length ?? 0;
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 sm:pt-12 lg:px-8 lg:pt-14">
       <SectionHeader
         title={section.title || "دسته‌بندی‌های محبوب"}
         subtitle={section.subtitle || "از میان دسته‌بندی‌های فروشگاه انتخاب کنید"}
@@ -41,7 +41,7 @@ export function QuickCategories({ section }: HomepageSectionRendererProps) {
           ))}
         </div>
       ) : isError || count === 0 ? (
-        <p className="rounded-xl border border-sf-line bg-sf-card/40 p-5 text-center text-sm text-sf-dim">
+        <p className="rounded-2xl border border-sf-line bg-sf-card/40 p-5 text-center sf-meta text-sf-dim">
           دسته‌بندی‌ها در دسترس نیستند
         </p>
       ) : (
@@ -63,7 +63,7 @@ export function QuickCategories({ section }: HomepageSectionRendererProps) {
               >
                 {/* Session 85 — glass tile surface (dark reference); category
                    data, links and the image/letter fallback unchanged. */}
-                <span className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-sf-chip text-lg font-bold text-sf-dim shadow-sm ring-1 ring-sf-line transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-md group-hover:ring-primary/40 sm:h-20 sm:w-20 sm:rounded-3xl">
+                <span className="relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-sf-chip to-sf-elevated text-lg font-bold text-sf-dim shadow-sm ring-1 ring-sf-line transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:shadow-primary/10 group-hover:ring-primary/50 sm:h-20 sm:w-20 sm:rounded-3xl">
                   {categoryImage ? (
                     <Image
                       src={categoryImage}
@@ -77,7 +77,7 @@ export function QuickCategories({ section }: HomepageSectionRendererProps) {
                     <span>{category.name[0]}</span>
                   )}
                 </span>
-                <span className="max-w-full truncate text-center text-xs font-medium text-sf-dim transition-colors group-hover:text-primary">
+                <span className="max-w-full truncate text-center sf-label font-medium text-sf-dim transition-colors group-hover:text-primary">
                   {category.name}
                 </span>
               </Link>

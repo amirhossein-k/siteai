@@ -29,7 +29,7 @@ export function CampaignBanner({ section }: HomepageSectionRendererProps) {
   const hasImage = Boolean(imageDesktop || imageMobile);
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 lg:px-8">
+    <section className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-6 sm:pt-12 lg:px-8 lg:pt-14">
       <div
         className={cn(
           /* Session 85 — container polish only (radius/shadow); banner data
@@ -83,21 +83,21 @@ export function CampaignBanner({ section }: HomepageSectionRendererProps) {
 
         <div className="relative flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="max-w-xl">
-            <span className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[11px] font-medium backdrop-blur">
+            <span className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3.5 py-1.5 sf-label font-medium backdrop-blur">
               <Megaphone className="h-3.5 w-3.5" />
               {banner.tagline || "کمپین ویژه"}
             </span>
             <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
               {banner.title}
             </h2>
-            <p className="mt-2 text-sm leading-7 text-white/85 sm:text-base">
+            <p className="mt-3 sf-prose text-white">
               {banner.subtitle}
             </p>
           </div>
           {banner.ctaLabel && banner.ctaHref && (
             <Link
               href={banner.ctaHref}
-              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-zinc-900 shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl"
+              className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-white px-5 py-3 sf-meta font-semibold text-zinc-900 shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl"
             >
               {banner.ctaLabel}
               <ArrowLeft className="h-4 w-4" />

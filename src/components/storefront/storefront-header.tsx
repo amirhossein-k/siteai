@@ -90,15 +90,24 @@ export function StorefrontHeader() {
        theme and a frosted white bar in the light theme. */
     <header className="glass-strong sticky top-0 z-50">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 items-center gap-3">
+        {/* Readability pass (WCAG 1.4.4 text resize): the bar is allowed to
+            wrap onto extra lines when the reader enlarges text only. Every
+            control here is rem-sized, so at 200% text size the action cluster
+            needs roughly twice the width — without wrapping it pushed the
+            whole page into horizontal scroll. `min-h-16` keeps the normal look
+            at default text size. */}
+        <div className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-1.5 py-2">
           <Link
             href="/"
             className="flex shrink-0 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            <span className="blue-grad flex h-9 w-9 items-center justify-center rounded-xl text-sm font-bold text-white shadow-lg shadow-primary/25">
+            <span            className="blue-grad flex h-11 w-11 items-center justify-center rounded-xl sf-label font-bold text-white shadow-lg shadow-primary/25">
               S
             </span>
-            <span className="text-xl font-bold tracking-tight text-foreground">
+            {/* Readability pass (WCAG 1.4.10 reflow): below 360px the wordmark
+                is hidden so the brand mark + the enlarged action cluster fit
+                inside a 320px viewport without horizontal scrolling. */}
+            <span className="hidden text-xl font-bold tracking-tight text-foreground min-[360px]:inline">
               {APP_NAME}
             </span>
           </Link>
@@ -115,7 +124,8 @@ export function StorefrontHeader() {
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "rounded-xl px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
+                    /* Readability pass — sf-label (14px) + ~45px hit target. */
+                    "rounded-xl px-3.5 py-3 sf-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
                     active
                       ? "bg-primary/10 text-primary"
                       : "text-sf-dim hover:bg-sf-chip hover:text-sf-strong"
@@ -132,14 +142,14 @@ export function StorefrontHeader() {
             <HeaderSearchBox />
           </div>
 
-          <div className="ms-auto flex items-center gap-1 sm:gap-1.5">
+          <div className="ms-auto flex flex-wrap items-center justify-end gap-1 sm:gap-1.5">
             {/* Mobile search toggle */}
             <button
               type="button"
               aria-label={mobileSearchOpen ? "بستن جستجو" : "جستجو"}
               aria-expanded={mobileSearchOpen}
               onClick={() => setMobileSearchOpen((v) => !v)}
-              className="sf-icon-btn h-10 w-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 lg:hidden"
+              className="sf-icon-btn h-11 w-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 lg:hidden"
             >
               {mobileSearchOpen ? (
                 <X className="h-5 w-5" />
@@ -160,11 +170,11 @@ export function StorefrontHeader() {
                     ? `علاقه‌مندی‌ها، ${wishlistCount} مورد`
                     : "علاقه‌مندی‌ها"
                 }
-                className="sf-icon-btn relative h-10 w-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
+                className="sf-icon-btn relative h-11 w-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
               >
                 <Heart className="h-5 w-5" />
                 {wishlistCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-bold text-white">
+                  <span className="absolute -top-0.5 -right-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-600 px-1 text-[11px] font-bold text-white">
                     {wishlistCount > 99 ? "99+" : wishlistCount}
                   </span>
                 )}
@@ -176,11 +186,11 @@ export function StorefrontHeader() {
               aria-label={
                 itemCount > 0 ? `سبد خرید، ${itemCount} کالا` : "سبد خرید"
               }
-              className="sf-icon-btn relative h-10 w-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
+              className="sf-icon-btn relative h-11 w-11 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
             >
               <ShoppingCart className="h-5 w-5" />
               {itemCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-emerald-700 px-1 text-[9px] font-bold text-white">
+                <span className="absolute -top-0.5 -right-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-700 px-1 text-[11px] font-bold text-white">
                   {itemCount > 99 ? "99+" : itemCount}
                 </span>
               )}
@@ -192,13 +202,13 @@ export function StorefrontHeader() {
               <>
                 <Link
                   href="/login"
-                  className="rounded-xl px-2.5 py-2 text-sm font-medium text-sf-dim transition-colors hover:bg-sf-chip hover:text-sf-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 sm:px-3"
+                  className="rounded-xl px-3 py-3 sf-label font-medium text-sf-dim transition-colors hover:bg-sf-chip hover:text-sf-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
                 >
                   ورود
                 </Link>
                 <Link
                   href="/register"
-                  className="rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  className="rounded-xl bg-primary px-4 py-3 sf-label font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 >
                   ثبت‌نام
                 </Link>
@@ -235,13 +245,15 @@ export function StorefrontHeader() {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
+                  /* Readability pass — text-xs/12px → sf-label (14px) with a
+                     ~45px pill so the mobile nav is comfortable to tap. */
+                  "flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-2.5 sf-label font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70",
                   active
                     ? "border-primary/40 bg-primary/10 text-primary"
                     : "border-sf-line bg-sf-chip text-sf-dim hover:text-sf-strong"
                 )}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <Icon className="h-4 w-4" />
                 {item.label}
               </Link>
             );
@@ -298,7 +310,9 @@ function HeaderSearchBox({ autoFocus, onNavigated }: HeaderSearchBoxProps) {
         }}
         /* Theme-agnostic search pill: chip surface + line border in both
            themes, brand-blue focus border and ring. */
-        className="h-10 w-full rounded-full border border-sf-line bg-sf-chip pr-4 pl-9 text-sm text-sf-strong outline-none transition-all placeholder:text-sf-dim focus:border-primary/60 focus:ring-2 focus:ring-primary/25"
+        /* Readability pass — taller field, sf-label (14px) text so the query is
+           legible without squinting. */
+        className="h-11 w-full rounded-full border border-sf-line bg-sf-chip pr-4 pl-9 sf-label text-sf-strong outline-none transition-all placeholder:text-sf-dim focus:border-primary/60 focus:ring-2 focus:ring-primary/25"
       />
       <SearchSuggestions
         query={query}

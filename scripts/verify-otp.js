@@ -11,11 +11,20 @@
  *   6.  loginToken exchange via the NextAuth credentials callback → session
  *   7.  replay of the SAME loginToken → no session (atomic consume)
  *   8.  OTP login for an existing PASSWORD user → works (backward compatible)
- *   9.  anti-enumeration: unknown phone → same 200 sent:true, nothing stored,
- *       verify fails uniformly
+ *   9.  account-existence contract (both purposes):
+ *         login + unknown phone → 404 { reason: "not_registered" } — the
+ *         deliberate presence gate (no OtpCode row, no SMS; the login UI
+ *         offers registration instead). register + existing phone → 409.
+ *         password_reset + unknown phone → 200 { sent: true } PLUS a dummy
+ *         row (closed oracle: nothing is ever delivered and verify() fails
+ *         uniformly).  Limiter keys run BEFORE every lookup, so both oracles
+ *         are capped at the same rate.
  *  10.  resend cooldown → 429 with Retry-After
  *  11.  OTP-created account cannot password-login (no hash); password user can
- *  12.  per-IP request cap → 429 (SMS-bombing guard)
+ *  12.  per-IP request cap (15/15min) → 429 (SMS-bombing guard): with a
+ *       dedicated x-forwarded-for IP, 15 requests are admitted (counter == 15,
+ *       15-min window), the 16th is 429 with Retry-After, and a DIFFERENT IP
+ *       is unaffected (the cap is keyed per IP, never global)
  *  13.  CONCURRENT verify of the SAME valid code → the code is consumed and
  *       AT MOST ONE of the issued tokens can ever authenticate (real HTTP,
  *       real MongoDB — no mocks; pins the end-to-end single-session invariant:
@@ -112,18 +121,27 @@ async function login(phone, secret) {
   return { jar, session };
 }
 
-async function http(method, urlPath, body) {
+async function http(method, urlPath, body, extraHeaders) {
   const headers = {};
   let requestBody = body;
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
     requestBody = JSON.stringify(body);
   }
+  // The OTP routes key their per-IP budget on x-forwarded-for / x-real-ip
+  // (falling back to "unknown"), so tests that need an ISOLATED per-IP key
+  // pass one explicitly here instead of sharing the suite-wide "unknown" key.
+  Object.assign(headers, extraHeaders || {});
   const res = await fetch(BASE + urlPath, { method, headers, body: requestBody, redirect: "manual" });
   let data = null;
   const text = await res.text();
   if (text) { try { data = JSON.parse(text); } catch { data = text; } }
-  return { status: res.status, data, retryAfter: res.headers.get("retry-after") };
+  return {
+    status: res.status,
+    data,
+    retryAfter: res.headers.get("retry-after"),
+    rateLimitRemaining: res.headers.get("x-ratelimit-remaining"),
+  };
 }
 
 // Counter suffix instead of random: two calls within the same 10-second
@@ -168,7 +186,9 @@ async function run() {
   const phones = {
     register: uniquePhone(),
     passwordUser: uniquePhone(), // also reused by the resend-cooldown test
-    unknown: uniquePhone(),
+    unknown: uniquePhone(), // #9 rejected login presence gate
+    resetUnknown: uniquePhone(), // #9 password_reset closed-oracle dummy row
+    cap: uniquePhone(), // #12 registered account for the per-IP cap fixture
     concurrent: uniquePhone(), // #13 same-code concurrent verify
     lockout: uniquePhone(), // #14 wrong-code lockout boundary
     // + up to 16 unique phones for the per-IP cap test
@@ -282,23 +302,76 @@ async function run() {
     assert(session && session.user, "no session for password-user OTP login");
   });
 
-  await testAsync("Anti-enumeration: unknown phone -> 200 sent:true, nothing stored, verify 400", async () => {
-    const req = await http("POST", "/api/auth/otp/request", {
+  // --- #9 Account-existence contract ------------------------------------
+  // The login purpose is a DELIBERATE presence gate (product decision,
+  // documented in the route and pinned end-to-end by
+  // tests/e2e/otp-login.spec.ts): an unknown phone gets 404
+  // { reason: "not_registered" } so the login UI can offer registration
+  // instead of waiting for an SMS that never arrives. No OtpCode row is
+  // created, no code is issued, and verify() still fails uniformly. The
+  // per-phone + per-IP limiters run BEFORE the lookup, so the oracle is
+  // capped at exactly the same rate as the pre-existing register-purpose 409.
+  //
+  // The password_reset purpose CLOSES the oracle instead (Session 84
+  // decision): an unknown phone receives the SAME 200 { sent: true } a known
+  // one does, plus a dummy row whose hash was never delivered — so neither
+  // the response nor the 60s resend cooldown reveals existence.
+  await testAsync("Account-existence contract: login unknown -> 404 not_registered; register existing -> 409; password_reset unknown -> 200 + dummy row", async () => {
+    // (a) login + unknown phone — the presence gate.
+    const login = await http("POST", "/api/auth/otp/request", {
       phone: phones.unknown,
       purpose: "login",
     });
-    assert(req.status === 200, "expected 200 sent:true (must NOT reveal account existence), got " + req.status);
-    assert(req.data.sent === true, "sent must be true");
+    assert(login.status === 404, "login for an unknown phone must be 404 not_registered, got " + login.status + " " + JSON.stringify(login.data).slice(0, 140));
+    assert(login.data && login.data.reason === "not_registered", "reason must be not_registered, got " + JSON.stringify(login.data).slice(0, 140));
+    assert(login.data.sent === undefined, "the gate must never report sent:true");
+    const rows = await db.collection("otpcodes").countDocuments({ phone: phones.unknown });
+    assert(rows === 0, "the rejected login phone must have NO OtpCode row, got " + rows);
 
     const dev = await http("GET", "/api/auth/otp/dev-last?phone=" + phones.unknown);
-    assert(dev.status === 404, "no code must exist for the unknown phone, got " + dev.status);
+    assert(dev.status === 404, "no code must exist for the rejected phone, got " + dev.status);
 
     const verify = await http("POST", "/api/auth/otp/verify", {
       phone: phones.unknown,
       code: "000000",
       purpose: "login",
     });
-    assert(verify.status === 400, "verify for unknown phone must fail uniformly, got " + verify.status);
+    assert(verify.status === 400, "verify for an unknown phone must fail uniformly, got " + verify.status);
+    assert(/صحیح نیست/.test(verify.data.error || ""), "expected the uniform rejection message, got " + JSON.stringify(verify.data));
+    assert(!(verify.data && verify.data.loginToken), "an unknown phone must never mint a loginToken");
+
+    // (b) register + EXISTING phone — the pre-existing 409 oracle, unchanged.
+    const dup = await http("POST", "/api/auth/otp/request", {
+      phone: phones.passwordUser,
+      purpose: "register",
+    });
+    assert(dup.status === 409, "register for an existing phone must stay 409, got " + dup.status);
+
+    // (c) password_reset + unknown phone — same 200 as a known number, plus
+    // the dummy row that keeps the cooldown indistinguishable.
+    const reset = await http("POST", "/api/auth/otp/request", {
+      phone: phones.resetUnknown,
+      purpose: "password_reset",
+    });
+    assert(reset.status === 200, "password_reset for an unknown phone must be 200 (closed oracle), got " + reset.status + " " + JSON.stringify(reset.data).slice(0, 140));
+    assert(reset.data.sent === true, "sent must be true");
+    const dummy = await db.collection("otpcodes").findOne({ phone: phones.resetUnknown, purpose: "password_reset" });
+    assert(!!dummy, "the dummy row must exist so the 60s cooldown behaves identically");
+    assert(!dummy.devPlaintextCode, "the dummy row must carry NO plaintext code");
+
+    const resetDev = await http("GET", "/api/auth/otp/dev-last?phone=" + phones.resetUnknown);
+    assert(resetDev.status === 404, "no code was ever delivered — dev-last must 404, got " + resetDev.status);
+
+    const resetVerify = await http("POST", "/api/auth/otp/verify", {
+      phone: phones.resetUnknown,
+      code: "000000",
+      purpose: "password_reset",
+    });
+    assert(resetVerify.status === 400, "verify against the dummy row must fail uniformly, got " + resetVerify.status);
+    assert(
+      !(resetVerify.data && (resetVerify.data.loginToken || resetVerify.data.resetToken)),
+      "the dummy row must never mint a token, got " + JSON.stringify(resetVerify.data).slice(0, 140)
+    );
   });
 
   await testAsync("Resend cooldown: immediate re-request -> 429 with Retry-After", async () => {
@@ -463,19 +536,70 @@ async function run() {
     assert(/صحیح نیست/.test(correct.data.error || ""), "expected the uniform rejection message, got " + JSON.stringify(correct.data));
   });
 
-  await testAsync("Per-IP request cap (15/15min) -> 429 (SMS-bombing guard)", async () => {
-    let saw429 = false;
-    let attempts = 0;
-    while (attempts < 16) {
-      attempts++;
-      const res = await http("POST", "/api/auth/otp/request", {
-        phone: uniquePhone(),
-        purpose: "login",
-      });
-      if (res.status === 429) { saw429 = true; break; }
-      assert(res.status === 200, "unexpected status " + res.status + " before the cap");
+  // --- #12 Per-IP request cap (OTP_REQUEST_IP_LIMIT = 15 / 15 min) --------
+  // Requirements pinned here: the count (exactly 15 admitted, the 16th 429),
+  // the window (the limiter doc's expiresAt), the header (Retry-After), the
+  // KEY (an isolated x-forwarded-for IP — every other suite request shares the
+  // "unknown" key, which is why the fixture must not use it), and the
+  // per-IP-ness (a different IP is unaffected). Slots are consumed with a
+  // REGISTERED account first (the login gate must not reject it) and then with
+  // distinct phones in the register purpose — one phone per request, so the
+  // separate 5/phone budget can never mask the per-IP boundary.
+  await testAsync("Per-IP request cap (15/15min, isolated x-forwarded-for key) -> 16th is 429 + Retry-After; another IP unaffected", async () => {
+    const testIp = "198.51.100." + (10 + (Date.now() % 80));
+    const otherIp = "198.51.100." + (200 + (Date.now() % 40));
+    const capPhones = [];
+
+    // Slot 1 — a registered account must be served (not gated) from this IP.
+    const reg = await http("POST", "/api/register", {
+      name: "OTP Cap " + PREFIX,
+      phone: phones.cap,
+      password: "otp-cap-123",
+    });
+    assert(reg.status === 201, "cap fixture register failed " + reg.status + " " + JSON.stringify(reg.data).slice(0, 140));
+    createdUserIds.push(reg.data.id);
+    const first = await http("POST", "/api/auth/otp/request", { phone: phones.cap, purpose: "login" }, { "x-forwarded-for": testIp });
+    assert(first.status === 200, "registered account from a fresh IP expected 200, got " + first.status + " " + JSON.stringify(first.data).slice(0, 140));
+
+    // Slots 2..15 — 14 more requests from the SAME IP, each a different phone.
+    for (let i = 2; i <= 15; i++) {
+      const phone = uniquePhone();
+      capPhones.push(phone);
+      const res = await http("POST", "/api/auth/otp/request", { phone, purpose: "register" }, { "x-forwarded-for": testIp });
+      assert(res.status === 200, "request " + i + "/15 from one IP expected 200, got " + res.status + " " + JSON.stringify(res.data).slice(0, 140));
     }
-    assert(saw429, "per-IP OTP cap never tripped within 16 requests");
+
+    // Count + window, read straight from the limiter document.
+    const rlDoc = await db.collection("ratelimits").findOne({ _id: "rl:otp_request_ip:" + testIp });
+    assert(!!rlDoc, "the per-IP limiter doc must exist for the dedicated test IP");
+    assert(rlDoc.count === 15, "the per-IP counter must be exactly 15 after 15 admitted requests, got " + rlDoc.count);
+    const windowLeftMs = new Date(rlDoc.expiresAt).getTime() - Date.now();
+    assert(
+      windowLeftMs > 13 * 60 * 1000 && windowLeftMs <= 15 * 60 * 1000,
+      "the window must be the 15-minute config, got " + Math.round(windowLeftMs / 1000) + "s left"
+    );
+
+    // Slot 16 — the cap trips, with Retry-After inside the window.
+    const phone16 = uniquePhone();
+    capPhones.push(phone16);
+    const capped = await http("POST", "/api/auth/otp/request", { phone: phone16, purpose: "register" }, { "x-forwarded-for": testIp });
+    assert(capped.status === 429, "the 16th request from one IP must be 429, got " + capped.status + " " + JSON.stringify(capped.data).slice(0, 140));
+    assert(
+      capped.retryAfter && Number(capped.retryAfter) > 0 && Number(capped.retryAfter) <= 900,
+      "Retry-After must be present and inside the 15-minute window, got " + capped.retryAfter
+    );
+    const afterCap = await db.collection("ratelimits").findOne({ _id: "rl:otp_request_ip:" + testIp });
+    assert(afterCap.count === 16, "the capped request must still be recorded, got " + afterCap.count);
+
+    // The cap is keyed PER IP: the same kind of request from another IP passes.
+    const otherPhone = uniquePhone();
+    capPhones.push(otherPhone);
+    const other = await http("POST", "/api/auth/otp/request", { phone: otherPhone, purpose: "register" }, { "x-forwarded-for": otherIp });
+    assert(other.status === 200, "a different IP must not inherit the cap, got " + other.status + " " + JSON.stringify(other.data).slice(0, 140));
+
+    // Fixture cleanup (the production limiter config is untouched).
+    await db.collection("otpcodes").deleteMany({ phone: { $in: capPhones } });
+    await db.collection("ratelimits").deleteMany({ _id: { $regex: "^rl:otp_request(_ip)?:" } });
   });
 
   // --- Cleanup fixtures ---

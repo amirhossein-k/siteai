@@ -57,7 +57,7 @@ export function SpecialPicks({ section }: HomepageSectionRendererProps) {
         showCountdown ? (
           <span
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-xs font-semibold tabular-nums",
+              "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 font-mono sf-label font-semibold tabular-nums",
               countdown.expired
                 ? "border-muted text-muted-foreground"
                 : "border-primary/20 bg-primary/5 text-primary"
