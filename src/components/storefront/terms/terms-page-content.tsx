@@ -117,8 +117,13 @@ export function TermsPageContent() {
             className="pointer-events-none absolute -top-24 right-1/2 h-64 w-64 translate-x-1/2 rounded-full bg-primary/20 blur-3xl"
           />
           <div className="relative">
-            <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-2 sf-label font-medium text-primary">
-              <ScrollText className="h-3.5 w-3.5" />
+            {/* Readability pass — a translucent `bg-primary/10` over the hero's
+                decorative glow tinted the surface and left this label at
+                3.6:1 (dark) / 4.1:1 (light), measured from rendered pixels.
+                An opaque card surface gives the same primary text a solid
+                5.1:1 / 6.5:1 (identical to the /faq hero pill). */}
+            <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-sf-card px-3.5 py-2 sf-label font-semibold text-primary">
+              <ScrollText className="h-3.5 w-3.5" aria-hidden="true" />
               آخرین بازنگری: {TERMS_LAST_UPDATED}
             </span>
             <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-foreground sm:text-4xl">
@@ -159,20 +164,23 @@ export function TermsPageContent() {
 
       {/* ── TOC + sections ────────────────────────────────────────────── */}
       <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 pt-10 sm:px-6 lg:grid-cols-[280px_1fr] lg:px-8">
-        {/* Table of contents */}
-        <aside className="lg:sticky lg:top-24 lg:self-start">
+        {/* Table of contents. `min-w-0` lets the column shrink instead of
+            forcing the grid track wider than the viewport when the reader
+            enlarges text only (WCAG 1.4.4 — the previous `truncate` labels
+            kept the track at their full un-wrapped width). */}
+        <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-3xl border border-sf-line bg-sf-card/50 p-4">
             <p              className="mb-3 flex items-center gap-2 border-b border-sf-line pb-3 sf-meta font-bold text-primary">
               <List className="h-4 w-4" aria-hidden="true" />
               فهرست مطالب
             </p>
             <nav aria-label="فهرست مطالب">
-              <ul className="flex flex-wrap gap-2 lg:flex-col lg:flex-nowrap lg:gap-1">
+              <ul className="flex min-w-0 flex-wrap gap-2 lg:flex-col lg:flex-nowrap lg:gap-1">
                 {TERMS_SECTIONS.map((section) => {
                   const Icon = SECTION_ICON[section.icon];
                   const isActive = activeId === section.id;
                   return (
-                    <li key={section.id} className="lg:w-full">
+                    <li key={section.id} className="min-w-0 lg:w-full">
                       <button
                         type="button"
                         aria-current={isActive ? "true" : undefined}
@@ -185,7 +193,9 @@ export function TermsPageContent() {
                         )}
                       >
                         <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                        <span className="truncate">{section.title}</span>
+                        {/* Readability pass — title wraps instead of being
+                            ellipsised, so no TOC entry is ever cut off. */}
+                        <span className="min-w-0 leading-snug">{section.title}</span>
                       </button>
                     </li>
                   );
@@ -206,7 +216,7 @@ export function TermsPageContent() {
         </aside>
 
         {/* Sections */}
-        <main ref={contentRef}>
+        <main ref={contentRef} className="min-w-0">
           {TERMS_SECTIONS.map((section, index) => {
             const Icon = SECTION_ICON[section.icon];
             return (
@@ -216,11 +226,16 @@ export function TermsPageContent() {
                 aria-labelledby={`terms-h-${section.id}`}
                 className="glass-card mb-4 scroll-mt-24 rounded-3xl p-5 sm:p-7"
               >
-                <div className="mb-5 flex items-center gap-3 border-b border-sf-line pb-4">
+                {/* `flex-wrap` keeps the number + heading readable when text is
+                    enlarged: at 200% text size the section icon drops to its own
+                    line instead of squeezing the heading out of the viewport. */}
+                <div className="mb-5 flex min-w-0 flex-wrap items-center gap-3 border-b border-sf-line pb-4">
                   <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                     <Icon className="h-6 w-6" aria-hidden="true" />
                   </span>
-                  <div className="flex items-center gap-3">
+                  {/* `min-w-0` lets long Persian headings wrap instead of
+                      widening the section past the viewport at large text. */}
+                  <div className="flex min-w-0 items-center gap-3">
                     <span
                       className="blue-grad flex h-7 w-7 shrink-0 items-center justify-center rounded-lg sf-label font-bold text-white"
                       aria-hidden="true"

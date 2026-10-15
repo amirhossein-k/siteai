@@ -512,6 +512,10 @@ html:has(.storefront)[data-sf-theme="light"] {
 @utility sf-prose {
   font-size: 1rem;
   line-height: 1.9;
+  /* Readability pass (WCAG 1.4.4): long unbreakable tokens in the Persian
+     copy (email addresses, order IDs, URLs) used to force horizontal
+     scrolling; they now wrap instead of overflowing the page. */
+  overflow-wrap: break-word;
   @media (min-width: 40rem) {
     font-size: 1.0625rem;
     line-height: 1.95;
@@ -529,6 +533,7 @@ html:has(.storefront)[data-sf-theme="light"] {
 @utility sf-meta {
   font-size: 0.9375rem;
   line-height: 1.75;
+  overflow-wrap: break-word;
   @media (min-width: 40rem) {
     font-size: 1rem;
     line-height: 1.8;

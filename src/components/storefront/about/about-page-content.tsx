@@ -75,7 +75,13 @@ export function AboutPageContent() {
             aria-hidden="true"
             className="pointer-events-none absolute -top-24 right-1/2 h-64 w-64 translate-x-1/2 rounded-full bg-primary/20 blur-3xl"
           />
-          <div className="relative">              <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-2 sf-label font-medium text-primary">
+          <div className="relative">
+            {/* Readability pass — a translucent `bg-primary/10` over the hero's
+                decorative glow tinted the surface and left this label at
+                3.6:1 (dark) / 4.1:1 (light), measured from rendered pixels.
+                An opaque card surface gives the same primary text a solid
+                5.1:1 / 6.5:1 (identical to the /faq and /terms hero pills). */}
+            <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-sf-card px-3.5 py-2 sf-label font-semibold text-primary">
               <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
               {ABOUT_HERO.badge}
             </span>

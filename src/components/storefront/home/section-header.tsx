@@ -37,7 +37,15 @@ export function SectionHeader({
        (href/linkLabel/icon/aside) and semantic h2 are unchanged.
        Redesign pass — refined icon chip (inset ring), a short brand-gradient
        accent underline anchoring the title, and a cleaner side cluster. */
-    <div className={cn("mb-6 flex items-end justify-between gap-3", className)}>
+    /* Readability pass (WCAG 1.4.4 text resize): the header row wraps so the
+       «مشاهده همه» / countdown cluster drops to its own line instead of pushing
+       the page into horizontal scroll when text is enlarged. */
+    <div
+      className={cn(
+        "mb-6 flex flex-wrap items-end justify-between gap-x-3 gap-y-2",
+        className
+      )}
+    >
       <div className="flex min-w-0 items-center gap-3">
         {icon && (
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
@@ -58,7 +66,7 @@ export function SectionHeader({
           )}
         </div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {aside}
         {href && (
           <Link

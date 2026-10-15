@@ -90,7 +90,13 @@ export function StorefrontHeader() {
        theme and a frosted white bar in the light theme. */
     <header className="glass-strong sticky top-0 z-50">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 items-center gap-3">
+        {/* Readability pass (WCAG 1.4.4 text resize): the bar is allowed to
+            wrap onto extra lines when the reader enlarges text only. Every
+            control here is rem-sized, so at 200% text size the action cluster
+            needs roughly twice the width — without wrapping it pushed the
+            whole page into horizontal scroll. `min-h-16` keeps the normal look
+            at default text size. */}
+        <div className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-1.5 py-2">
           <Link
             href="/"
             className="flex shrink-0 items-center gap-2.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -136,7 +142,7 @@ export function StorefrontHeader() {
             <HeaderSearchBox />
           </div>
 
-          <div className="ms-auto flex items-center gap-1 sm:gap-1.5">
+          <div className="ms-auto flex flex-wrap items-center justify-end gap-1 sm:gap-1.5">
             {/* Mobile search toggle */}
             <button
               type="button"

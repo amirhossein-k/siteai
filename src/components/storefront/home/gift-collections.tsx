@@ -82,6 +82,15 @@ export function GiftCollections({ section }: HomepageSectionRendererProps) {
                 />
               )}
 
+              {/* Legibility scrim — `themeColor` is CMS data and may end in a
+                  light stop (e.g. the amber `to-yellow-600` collection). A
+                  top-weighted fade left the bottom rows (title / copy / CTA)
+                  at ~3.7:1 there, so the scrim is uniform instead: measured
+                  glyph-masked, the worst text run on the lightest shipped
+                  gradient is ≥4.5:1 in both themes while the gradient and the
+                  CMS artwork stay visible. */}
+              <div className="absolute inset-0 bg-black/45" aria-hidden="true" />
+
               {/* Decorative circle */}
               {!hasImage && (
                 <div

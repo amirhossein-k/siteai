@@ -1,0 +1,310 @@
+
+> site@0.1.0 dev
+> next dev
+
+▲ Next.js 16.3.7 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://10.1.19.2:3000
+- Environments: .env.local
+✓ Ready in 682ms
+✓ Running next.config.ts took 126ms
+
+ GET /api/auth/csrf 200 in 3.0s
+ GET /api/auth/csrf 200 in 38ms (next.js: 16ms, application-code: 22ms)
+ GET /api/auth/csrf 200 in 28ms (next.js: 14ms, application-code: 14ms)
+ POST /api/register 201 in 8.1s (next.js: 60ms, application-code: 8.0s)
+[SMS-MOCK] OTP code for 09641100001: 916080 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.7s (next.js: 64ms, application-code: 2.6s)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 4ms, application-code: 2.6s)
+ GET /api/auth/otp/dev-last?phone=09641100002 404 in 429ms (next.js: 65ms, application-code: 364ms)
+ POST /api/auth/otp/verify 400 in 1565ms (next.js: 61ms, application-code: 1505ms)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 5ms, application-code: 2.6s)
+ POST /api/auth/otp/request 429 in 1829ms (next.js: 4ms, application-code: 1825ms)
+ POST /api/register 201 in 1495ms (next.js: 4ms, application-code: 1492ms)
+[SMS-MOCK] OTP code for 09641100004: 291635 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 4ms, application-code: 2.6s)
+ POST /api/auth/otp/request 429 in 1801ms (next.js: 3ms, application-code: 1798ms)
+ POST /api/auth/otp/verify 400 in 1439ms (next.js: 3ms, application-code: 1436ms)
+ POST /api/register 201 in 1519ms (next.js: 3ms, application-code: 1516ms)
+[SMS-MOCK] OTP code for 09641100005: 067629 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ GET /api/auth/otp/dev-last?phone=09641100005 200 in 363ms (next.js: 4ms, application-code: 360ms)
+ POST /api/auth/otp/verify 400 in 1079ms (next.js: 4ms, application-code: 1076ms)
+ POST /api/register 201 in 1499ms (next.js: 3ms, application-code: 1497ms)
+[SMS-MOCK] OTP code for 09641100006: 843363 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 4ms, application-code: 2.6s)
+ GET /api/auth/otp/dev-last?phone=09641100006 200 in 365ms (next.js: 4ms, application-code: 361ms)
+ POST /api/auth/otp/verify 400 in 1106ms (next.js: 3ms, application-code: 1102ms)
+ POST /api/register 201 in 1497ms (next.js: 3ms, application-code: 1493ms)
+[SMS-MOCK] OTP code for 09641100008: 634968 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ GET /api/auth/otp/dev-last?phone=09641100008 200 in 379ms (next.js: 4ms, application-code: 376ms)
+ POST /api/auth/otp/verify 200 in 1836ms (next.js: 3ms, application-code: 1833ms)
+ POST /api/register 201 in 1554ms (next.js: 3ms, application-code: 1551ms)
+[SMS-MOCK] OTP code for 09641100007: 377901 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ GET /api/auth/otp/dev-last?phone=09641100007 200 in 418ms (next.js: 3ms, application-code: 415ms)
+ POST /api/auth/otp/verify 200 in 1803ms (next.js: 3ms, application-code: 1800ms)
+ GET /api/auth/session 200 in 37ms (next.js: 14ms, application-code: 23ms)
+ POST /api/auth/password-reset/complete 200 in 2.9s (next.js: 78ms, application-code: 2.8s)
+ GET /api/auth/csrf 200 in 25ms (next.js: 11ms, application-code: 14ms)
+ POST /api/auth/callback/credentials 401 in 1916ms (next.js: 5ms, application-code: 1911ms)
+ GET /api/auth/session 200 in 42ms (next.js: 12ms, application-code: 29ms)
+ GET /api/auth/csrf 200 in 43ms (next.js: 4ms, application-code: 39ms)
+ POST /api/auth/callback/credentials 200 in 1943ms (next.js: 3ms, application-code: 1940ms)
+ GET /api/auth/session 200 in 31ms (next.js: 10ms, application-code: 21ms)
+ POST /api/register 201 in 1493ms (next.js: 3ms, application-code: 1490ms)
+ GET /api/auth/csrf 200 in 28ms (next.js: 12ms, application-code: 16ms)
+ POST /api/auth/callback/credentials 200 in 1931ms (next.js: 3ms, application-code: 1928ms)
+ GET /api/auth/session 200 in 54ms (next.js: 13ms, application-code: 41ms)
+ GET /api/profile 200 in 809ms (next.js: 78ms, application-code: 730ms)
+[SMS-MOCK] OTP code for 09154100022: 958477 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 5ms, application-code: 2.5s)
+ GET /api/auth/otp/dev-last?phone=09154100022 200 in 375ms (next.js: 4ms, application-code: 371ms)
+ POST /api/auth/otp/verify 200 in 1809ms (next.js: 3ms, application-code: 1806ms)
+ POST /api/auth/password-reset/complete 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ GET /api/profile 401 in 356ms (next.js: 3ms, application-code: 353ms)
+[SMS-MOCK] OTP code for 09641100008: 283697 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ GET /api/auth/otp/dev-last?phone=09641100008 200 in 398ms (next.js: 3ms, application-code: 396ms)
+ POST /api/auth/otp/verify 200 in 1818ms (next.js: 3ms, application-code: 1815ms)
+ POST /api/auth/password-reset/complete 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ POST /api/auth/password-reset/complete 400 in 1156ms (next.js: 3ms, application-code: 1153ms)
+ POST /api/register 201 in 2.1s (next.js: 3ms, application-code: 2.1s)
+[SMS-MOCK] OTP code for 09641100009: 381097 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.5s (next.js: 3ms, application-code: 2.5s)
+ GET /api/auth/otp/dev-last?phone=09641100009 200 in 361ms (next.js: 3ms, application-code: 358ms)
+ POST /api/auth/otp/verify 200 in 1804ms (next.js: 3ms, application-code: 1801ms)
+ POST /api/auth/password-reset/complete 400 in 1809ms (next.js: 4ms, application-code: 1805ms)
+ POST /api/auth/password-reset/complete 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ POST /api/register 201 in 1536ms (next.js: 3ms, application-code: 1533ms)
+ POST /api/register 201 in 1497ms (next.js: 3ms, application-code: 1494ms)
+[SMS-MOCK] OTP code for 09641100010: 534167 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.5s (next.js: 4ms, application-code: 2.5s)
+ GET /api/auth/otp/dev-last?phone=09641100010 200 in 384ms (next.js: 3ms, application-code: 381ms)
+ POST /api/auth/otp/verify 200 in 1813ms (next.js: 3ms, application-code: 1810ms)
+ POST /api/auth/password-reset/complete 400 in 1140ms (next.js: 3ms, application-code: 1137ms)
+ GET /api/auth/csrf 200 in 35ms (next.js: 11ms, application-code: 23ms)
+ POST /api/auth/callback/credentials 200 in 1877ms (next.js: 3ms, application-code: 1874ms)
+ GET /api/auth/session 200 in 47ms (next.js: 10ms, application-code: 37ms)
+[SMS-MOCK] OTP code for 09641100012: 203908 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ GET /api/auth/otp/dev-last?phone=09641100012 200 in 412ms (next.js: 3ms, application-code: 409ms)
+ POST /api/auth/otp/verify 200 in 1947ms (next.js: 2ms, application-code: 1944ms)
+ POST /api/auth/password-reset/complete 200 in 2.8s (next.js: 3ms, application-code: 2.8s)
+ GET /api/auth/csrf 200 in 39ms (next.js: 12ms, application-code: 27ms)
+ POST /api/auth/callback/credentials 200 in 2.0s (next.js: 4ms, application-code: 2.0s)
+ GET /api/auth/session 200 in 20ms (next.js: 11ms, application-code: 9ms)
+ POST /api/register 201 in 1581ms (next.js: 3ms, application-code: 1578ms)
+[SMS-MOCK] OTP code for 09641100013: 537914 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ GET /api/auth/otp/dev-last?phone=09641100013 200 in 371ms (next.js: 4ms, application-code: 367ms)
+ POST /api/auth/otp/verify 400 in 1134ms (next.js: 3ms, application-code: 1131ms)
+ POST /api/register 201 in 1506ms (next.js: 3ms, application-code: 1503ms)
+[SMS-MOCK] OTP code for 09641100014: 980392 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.5s (next.js: 3ms, application-code: 2.5s)
+ GET /api/auth/otp/dev-last?phone=09641100014 200 in 375ms (next.js: 3ms, application-code: 372ms)
+ POST /api/auth/otp/verify 200 in 1833ms (next.js: 3ms, application-code: 1830ms)
+ POST /api/auth/password-reset/complete 400 in 1154ms (next.js: 3ms, application-code: 1152ms)
+ POST /api/register 201 in 1506ms (next.js: 2ms, application-code: 1503ms)
+[SMS-MOCK] OTP code for 09641100015: 378044 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ POST /api/auth/otp/verify 400 in 1437ms (next.js: 3ms, application-code: 1435ms)
+ POST /api/auth/otp/verify 400 in 1450ms (next.js: 3ms, application-code: 1447ms)
+ POST /api/auth/otp/verify 400 in 1647ms (next.js: 4ms, application-code: 1643ms)
+ POST /api/auth/otp/verify 400 in 1454ms (next.js: 4ms, application-code: 1450ms)
+ POST /api/auth/otp/verify 400 in 1449ms (next.js: 4ms, application-code: 1445ms)
+ POST /api/register 201 in 1498ms (next.js: 3ms, application-code: 1495ms)
+[SMS-MOCK] OTP code for 09641100016: 724792 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 4ms, application-code: 2.6s)
+ GET /api/auth/otp/dev-last?phone=09641100016 200 in 361ms (next.js: 3ms, application-code: 358ms)
+ POST /api/auth/otp/verify 200 in 1868ms (next.js: 3ms, application-code: 1865ms)
+ POST /api/auth/password-reset/complete 400 in 9ms (next.js: 3ms, application-code: 6ms)
+ POST /api/register 201 in 1525ms (next.js: 4ms, application-code: 1522ms)
+[SMS-MOCK] OTP code for 09641100018: 579157 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ POST /api/auth/otp/verify 400 in 1492ms (next.js: 3ms, application-code: 1489ms)
+ POST /api/auth/otp/verify 400 in 1493ms (next.js: 3ms, application-code: 1490ms)
+ POST /api/auth/otp/verify 400 in 1462ms (next.js: 3ms, application-code: 1459ms)
+ POST /api/auth/otp/verify 400 in 1459ms (next.js: 4ms, application-code: 1455ms)
+ POST /api/auth/otp/verify 400 in 1538ms (next.js: 3ms, application-code: 1534ms)
+ POST /api/auth/otp/verify 429 in 729ms (next.js: 3ms, application-code: 727ms)
+ POST /api/register 201 in 1499ms (next.js: 3ms, application-code: 1496ms)
+ POST /api/auth/password-reset/complete 400 in 1099ms (next.js: 3ms, application-code: 1095ms)
+ POST /api/auth/password-reset/complete 400 in 1092ms (next.js: 3ms, application-code: 1089ms)
+ POST /api/auth/password-reset/complete 400 in 1154ms (next.js: 4ms, application-code: 1151ms)
+ POST /api/auth/password-reset/complete 400 in 1101ms (next.js: 3ms, application-code: 1098ms)
+ POST /api/auth/password-reset/complete 400 in 1143ms (next.js: 4ms, application-code: 1140ms)
+ POST /api/auth/password-reset/complete 429 in 893ms (next.js: 3ms, application-code: 890ms)
+ POST /api/register 201 in 1508ms (next.js: 3ms, application-code: 1506ms)
+[SMS-MOCK] OTP code for 09641100020: 325922 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.6s (next.js: 4ms, application-code: 2.6s)
+ GET /api/auth/otp/dev-last?phone=09641100020 200 in 361ms (next.js: 3ms, application-code: 358ms)
+ POST /api/auth/otp/verify 200 in 1845ms (next.js: 3ms, application-code: 1842ms)
+[SMS-MOCK] OTP code for 09641100020: 335792 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.5s (next.js: 3ms, application-code: 2.5s)
+ GET /api/auth/otp/dev-last?phone=09641100020 200 in 377ms (next.js: 3ms, application-code: 373ms)
+ POST /api/auth/otp/verify 200 in 1870ms (next.js: 3ms, application-code: 1866ms)
+ POST /api/auth/password-reset/complete 200 in 2.5s (next.js: 3ms, application-code: 2.5s)
+ GET /api/auth/csrf 200 in 37ms (next.js: 11ms, application-code: 26ms)
+ POST /api/auth/callback/credentials 401 in 1902ms (next.js: 3ms, application-code: 1899ms)
+ GET /api/auth/session 200 in 47ms (next.js: 11ms, application-code: 36ms)
+ POST /api/register 201 in 1557ms (next.js: 3ms, application-code: 1554ms)
+[SMS-MOCK] OTP code for 09641100021: 050597 (valid 2 min)
+ POST /api/auth/otp/request 200 in 2.7s (next.js: 3ms, application-code: 2.7s)
+ GET /api/auth/otp/dev-last?phone=09641100021 200 in 366ms (next.js: 3ms, application-code: 363ms)
+ POST /api/auth/otp/verify 200 in 1859ms (next.js: 3ms, application-code: 1856ms)
+ GET /api/auth/csrf 200 in 44ms (next.js: 12ms, application-code: 32ms)
+ POST /api/auth/callback/credentials 200 in 2.6s (next.js: 3ms, application-code: 2.6s)
+ GET /api/auth/session 200 in 50ms (next.js: 13ms, application-code: 37ms)
+ GET /api/auth/csrf 200 in 42ms (next.js: 18ms, application-code: 24ms)
+⨯ Failed to generate static paths for /api/auth/[...nextauth]:
+Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError'
+}
+[SMS-MOCK] OTP code for 09423919610: 720945 (valid 2 min)
+ POST /api/auth/otp/request 200 in 812ms (next.js: 6ms, application-code: 806ms)
+ GET /api/auth/otp/dev-last?phone=09423919610 200 in 44ms (next.js: 6ms, application-code: 38ms)
+ POST /api/auth/otp/verify 400 in 668ms (next.js: 6ms, application-code: 662ms)
+ GET /api/auth/otp/dev-last?phone=09423919610 200 in 46ms (next.js: 3ms, application-code: 43ms)
+ POST /api/auth/otp/verify 200 in 354ms (next.js: 3ms, application-code: 351ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/csrf'
+}
+ GET /api/auth/csrf 500 in 1503ms (next.js: 1363ms, application-code: 141ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/csrf'
+}
+ GET /api/auth/csrf 500 in 73ms (next.js: 58ms, application-code: 15ms)
+ POST /api/register 201 in 189ms (next.js: 9ms, application-code: 180ms)
+[SMS-MOCK] OTP code for 09423919620: 117717 (valid 2 min)
+ POST /api/auth/otp/request 200 in 192ms (next.js: 9ms, application-code: 183ms)
+ GET /api/auth/otp/dev-last?phone=09423919620 200 in 35ms (next.js: 3ms, application-code: 31ms)
+ POST /api/auth/otp/verify 200 in 371ms (next.js: 4ms, application-code: 367ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/csrf'
+}
+ GET /api/auth/csrf 500 in 89ms (next.js: 61ms, application-code: 28ms)
+ POST /api/auth/otp/request 404 in 323ms (next.js: 9ms, application-code: 314ms)
+ GET /api/auth/otp/dev-last?phone=09423919630 404 in 48ms (next.js: 8ms, application-code: 39ms)
+ POST /api/auth/otp/verify 400 in 166ms (next.js: 8ms, application-code: 158ms)
+ POST /api/auth/otp/request 409 in 579ms (next.js: 10ms, application-code: 569ms)
+ POST /api/auth/otp/request 200 in 458ms (next.js: 3ms, application-code: 454ms)
+ GET /api/auth/otp/dev-last?phone=09423919640 404 in 33ms (next.js: 3ms, application-code: 29ms)
+ POST /api/auth/otp/verify 400 in 113ms (next.js: 9ms, application-code: 104ms)
+[SMS-MOCK] OTP code for 09423919620: 325804 (valid 2 min)
+ POST /api/auth/otp/request 200 in 191ms (next.js: 8ms, application-code: 183ms)
+ POST /api/auth/otp/request 429 in 138ms (next.js: 9ms, application-code: 129ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/csrf'
+}
+ GET /api/auth/csrf 500 in 87ms (next.js: 60ms, application-code: 27ms)
+ POST /api/register 201 in 223ms (next.js: 12ms, application-code: 211ms)
+[SMS-MOCK] OTP code for 09423919660: 654613 (valid 2 min)
+ POST /api/auth/otp/request 200 in 223ms (next.js: 9ms, application-code: 214ms)
+ GET /api/auth/otp/dev-last?phone=09423919660 200 in 39ms (next.js: 10ms, application-code: 30ms)
+ POST /api/auth/otp/verify 200 in 219ms (next.js: 3ms, application-code: 216ms)
+ POST /api/auth/otp/verify 400 in 289ms (next.js: 9ms, application-code: 280ms)
+ POST /api/auth/otp/verify 400 in 314ms (next.js: 3ms, application-code: 311ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/csrf'
+}
+ GET /api/auth/csrf 500 in 82ms (next.js: 58ms, application-code: 24ms)
+ POST /api/register 201 in 221ms (next.js: 9ms, application-code: 212ms)
+[SMS-MOCK] OTP code for 09423919670: 383414 (valid 2 min)
+ POST /api/auth/otp/request 200 in 274ms (next.js: 8ms, application-code: 266ms)
+ GET /api/auth/otp/dev-last?phone=09423919670 200 in 43ms (next.js: 9ms, application-code: 34ms)
+ POST /api/auth/otp/verify 400 in 136ms (next.js: 8ms, application-code: 128ms)
+ POST /api/auth/otp/verify 400 in 135ms (next.js: 9ms, application-code: 126ms)
+ POST /api/auth/otp/verify 400 in 115ms (next.js: 8ms, application-code: 106ms)
+ POST /api/auth/otp/verify 400 in 107ms (next.js: 3ms, application-code: 104ms)
+ POST /api/auth/otp/verify 400 in 109ms (next.js: 3ms, application-code: 106ms)
+ POST /api/auth/otp/verify 400 in 81ms (next.js: 3ms, application-code: 78ms)
+ POST /api/register 201 in 184ms (next.js: 9ms, application-code: 176ms)
+[SMS-MOCK] OTP code for 09423919650: 006676 (valid 2 min)
+ POST /api/auth/otp/request 200 in 201ms (next.js: 3ms, application-code: 198ms)
+[SMS-MOCK] OTP code for 09424919980: 963005 (valid 2 min)
+ POST /api/auth/otp/request 200 in 924ms (next.js: 3ms, application-code: 921ms)
+[SMS-MOCK] OTP code for 09425013190: 143363 (valid 2 min)
+ POST /api/auth/otp/request 200 in 604ms (next.js: 4ms, application-code: 601ms)
+[SMS-MOCK] OTP code for 09425074310: 872170 (valid 2 min)
+ POST /api/auth/otp/request 200 in 776ms (next.js: 9ms, application-code: 767ms)
+[SMS-MOCK] OTP code for 09425152120: 316495 (valid 2 min)
+ POST /api/auth/otp/request 200 in 347ms (next.js: 3ms, application-code: 344ms)
+[SMS-MOCK] OTP code for 09425187530: 639659 (valid 2 min)
+ POST /api/auth/otp/request 200 in 806ms (next.js: 8ms, application-code: 798ms)
+[SMS-MOCK] OTP code for 09425268240: 160515 (valid 2 min)
+ POST /api/auth/otp/request 200 in 632ms (next.js: 3ms, application-code: 629ms)
+[SMS-MOCK] OTP code for 09425331650: 817309 (valid 2 min)
+ POST /api/auth/otp/request 200 in 806ms (next.js: 10ms, application-code: 796ms)
+[SMS-MOCK] OTP code for 09425412460: 493885 (valid 2 min)
+ POST /api/auth/otp/request 200 in 723ms (next.js: 9ms, application-code: 714ms)
+[SMS-MOCK] OTP code for 09425485070: 748638 (valid 2 min)
+ POST /api/auth/otp/request 200 in 1117ms (next.js: 9ms, application-code: 1107ms)
+[SMS-MOCK] OTP code for 09425596980: 768550 (valid 2 min)
+ POST /api/auth/otp/request 200 in 717ms (next.js: 9ms, application-code: 709ms)
+[SMS-MOCK] OTP code for 09425668790: 737547 (valid 2 min)
+ POST /api/auth/otp/request 200 in 1013ms (next.js: 3ms, application-code: 1010ms)
+[SMS-MOCK] OTP code for 09425770810: 455127 (valid 2 min)
+ POST /api/auth/otp/request 200 in 562ms (next.js: 3ms, application-code: 559ms)
+[SMS-MOCK] OTP code for 09425827620: 919871 (valid 2 min)
+ POST /api/auth/otp/request 200 in 1051ms (next.js: 3ms, application-code: 1048ms)
+[SMS-MOCK] OTP code for 09425933530: 154129 (valid 2 min)
+ POST /api/auth/otp/request 200 in 478ms (next.js: 4ms, application-code: 475ms)
+ POST /api/auth/otp/request 429 in 395ms (next.js: 3ms, application-code: 392ms)
+[SMS-MOCK] OTP code for 09426038350: 947353 (valid 2 min)
+ POST /api/auth/otp/request 200 in 768ms (next.js: 4ms, application-code: 764ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/csrf'
+}
+ GET /api/auth/csrf 500 in 96ms (next.js: 85ms, application-code: 11ms)
+ GET / 200 in 1347ms (next.js: 189ms, application-code: 1158ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/csrf'
+}
+ GET /api/auth/csrf 500 in 146ms (next.js: 135ms, application-code: 10ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/csrf'
+}
+ GET /api/auth/csrf 500 in 190ms (next.js: 178ms, application-code: 12ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/providers'
+}
+ GET /api/auth/providers 500 in 245ms (next.js: 227ms, application-code: 18ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/session'
+}
+ GET /api/auth/session 500 in 245ms (next.js: 232ms, application-code: 13ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/csrf'
+}
+ GET /api/auth/csrf 500 in 259ms (next.js: 240ms, application-code: 19ms)
+⨯ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
+    at ignore-listed frames {
+  type: 'WorkerError',
+  page: '/api/auth/csrf'
+}
+ GET /api/auth/csrf 500 in 320ms (next.js: 303ms, application-code: 17ms)

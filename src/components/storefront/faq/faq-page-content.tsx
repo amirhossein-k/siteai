@@ -137,7 +137,12 @@ export function FaqPageContent() {
             className="pointer-events-none absolute -top-24 right-1/2 h-64 w-64 translate-x-1/2 rounded-full bg-primary/20 blur-3xl"
           />
           <div className="relative">
-            <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3.5 py-2 sf-label font-medium text-primary">
+            {/* Readability pass — the pill used a translucent `bg-primary/10`,
+                so the decorative blue glow behind the hero tinted the surface
+                and dropped the label to 3.0–4.2:1 (measured from rendered
+                pixels) in BOTH themes. An opaque card surface makes the
+                primary label a solid 6.2:1 (light) / 5.3:1 (dark). */}
+            <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-sf-card px-3.5 py-2 sf-label font-semibold text-primary">
               <MessagesSquare className="h-3.5 w-3.5" />
               پاسخ به سوالات رایج مشتریان
             </span>
@@ -213,8 +218,10 @@ export function FaqPageContent() {
 
       {/* ── Main: filters + list ──────────────────────────────────────── */}
       <div className="mx-auto grid w-full max-w-7xl gap-6 px-4 pt-10 sm:px-6 lg:grid-cols-[260px_1fr] lg:px-8">
-        {/* Category sidebar */}
-        <aside className="lg:sticky lg:top-24 lg:self-start">
+        {/* Category sidebar. `min-w-0` lets the column shrink rather than
+            forcing the grid track wider than the viewport when the reader
+            enlarges text only (WCAG 1.4.4). */}
+        <aside className="min-w-0 lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-3xl border border-sf-line bg-sf-card/50 p-4">
             <p              className="mb-3 border-b border-sf-line pb-3 sf-meta font-bold text-primary">
               دسته‌بندی‌ها
@@ -235,8 +242,8 @@ export function FaqPageContent() {
                     : "text-sf-dim hover:bg-sf-chip hover:text-sf-strong"
                 )}
               >
-                <span className="flex items-center gap-2">
-                  <LayoutGrid className="h-4 w-4" />
+                <span className="flex min-w-0 items-center gap-2">
+                  <LayoutGrid className="h-4 w-4 shrink-0" />
                   همه سوالات
                 </span>
                 <span
@@ -271,8 +278,8 @@ export function FaqPageContent() {
                         : "text-sf-dim hover:bg-sf-chip hover:text-sf-strong"
                     )}
                   >
-                    <span className="flex items-center gap-2">
-                      <Icon className="h-4 w-4" />
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Icon className="h-4 w-4 shrink-0" />
                       {cat.label}
                     </span>
                     <span
@@ -311,7 +318,7 @@ export function FaqPageContent() {
         </aside>
 
         {/* FAQ list */}
-        <div>
+        <div className="min-w-0">
           <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold tracking-tight text-foreground">

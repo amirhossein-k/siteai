@@ -9,9 +9,20 @@ import { defineConfig, devices } from "@playwright/test";
  * - `workers: 1`, `fullyParallel: false` — deterministic execution against the
  *   shared dev MongoDB (mirrors the sequential 33-suite regression runner).
  *   Per-spec data is PREFIX-isolated so scaling workers later is config-only.
- * - `reuseExistingServer: false` — every run boots its own `npm run dev` so the
- *   mock env below is always in effect. A reused server started without the
- *   mock would send payments to the real Zarinpal sandbox.
+ * - Server lifecycle — Playwright owns the dev server for every NORMAL run,
+ *   locally and in CI (`reuseExistingServer: false`: each run boots its own
+ *   `npm run dev` so the mock env below is always in effect — a reused server
+ *   started WITHOUT the mock would send payments to the real Zarinpal
+ *   sandbox). The single exception is the nightly regression workflow
+ *   (`regression.yml`): there the WORKFLOW owns the server, because the 51
+ *   node suites in `scripts/run-regression.js` drive that same server and it
+ *   is intentionally started WITHOUT `ZARINPAL_MOCK` so the real sandbox is
+ *   exercised. That workflow health-checks the server and then sets
+ *   `REGRESSION_SERVER=1`; Playwright then ATTACHES to the running server
+ *   instead of starting a second one on port 3000 (the duplicate start used to
+ *   abort the Liara upload job with `…/api/auth/csrf is already used` before
+ *   any test body ran). `reuseExistingServer` is deliberately never `true`: in
+ *   attach mode the whole `webServer` block is disabled instead.
  * - ZARINPAL_MOCK / SMS_MOCK are dev-only env seams (src/lib/zarinpal.ts) that
  *   replace the interactive Zarinpal sandbox gateway and SMS provider with
  *   hermetic stubs. They are set on the webServer for local and CI runs.
@@ -21,6 +32,14 @@ import { defineConfig, devices } from "@playwright/test";
  * - Artifacts: screenshot/video/trace retained only on failure.
  */
 const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:3000";
+
+/**
+ * `REGRESSION_SERVER=1` (set by .github/workflows/regression.yml): the workflow
+ * has already started + health-checked the dev server its node suites use, so
+ * Playwright must attach to it rather than boot a second instance on :3000.
+ * Everywhere else this is unset and Playwright owns the server (with mocks).
+ */
+const externalServer = process.env.REGRESSION_SERVER === "1";
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -36,13 +55,15 @@ export default defineConfig({
   outputDir: "test-results",
   globalSetup: "tests/e2e/global-setup.ts",
   globalTeardown: "tests/e2e/global-teardown.ts",
-  webServer: {
-    command: "npm run dev",
-    url: `${BASE_URL}/api/auth/csrf`,
-    reuseExistingServer: false,
-    timeout: 120_000,
-    env: { ...process.env, ZARINPAL_MOCK: "1", SMS_MOCK: "1" },
-  },
+  webServer: externalServer
+    ? undefined
+    : {
+        command: "npm run dev",
+        url: `${BASE_URL}/api/auth/csrf`,
+        reuseExistingServer: false,
+        timeout: 120_000,
+        env: { ...process.env, ZARINPAL_MOCK: "1", SMS_MOCK: "1" },
+      },
   projects: [
     {
       name: "chromium",

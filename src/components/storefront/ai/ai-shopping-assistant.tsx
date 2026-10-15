@@ -126,6 +126,10 @@ export function AiShoppingAssistant() {
   ]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Monotonic id source. `Date.now()` is impure and the React compiler lint
+  // rejects calling it while rendering (it could not prove `askAssistant` is
+  // only ever invoked from an event); a ref counter is stable and unique.
+  const messageIdRef = useRef(0);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -141,7 +145,7 @@ export function AiShoppingAssistant() {
     if (!trimmed || loading) return;
 
     const userMsg: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: `user-${++messageIdRef.current}`,
       sender: "user",
       text: trimmed,
     };
@@ -210,7 +214,9 @@ export function AiShoppingAssistant() {
         onClick={() => setOpen((v) => !v)}
         aria-label="دستیار هوشمند خرید مارلو"
         className={cn(
-          "fixed bottom-5 left-5 z-50 flex items-center gap-2.5 rounded-full px-4 py-3 text-sm font-semibold text-white shadow-2xl transition-all duration-300",
+          /* Readability pass — sf-label (15px) keeps the trigger on the shared
+             storefront reading scale instead of text-sm (14px). */
+          "fixed bottom-5 left-5 z-50 flex items-center gap-2.5 rounded-full px-4 py-3 sf-label font-semibold text-white shadow-2xl transition-all duration-300",
           "bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 hover:scale-105 hover:shadow-indigo-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
         )}
       >
