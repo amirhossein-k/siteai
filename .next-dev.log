@@ -308,3 +308,4 @@ Error: Jest worker encountered 2 child process exceptions, exceeding retry limit
   page: '/api/auth/csrf'
 }
  GET /api/auth/csrf 500 in 320ms (next.js: 303ms, application-code: 17ms)
+[?25h
