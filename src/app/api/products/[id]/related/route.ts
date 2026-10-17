@@ -5,6 +5,19 @@ import { dbConnect } from "@/lib/dbConnect";
 import { applyEffectivePricing } from "@/lib/product-pricing";
 import { computeRatingSummaries } from "@/lib/rating-summary";
 
+/**
+ * Shape of the fields actually used from the lean Product documents (the
+ * models are .js files, so `.lean()` loses its schema typing at the seam).
+ * `category`/`brand` are either ObjectIds or populated `{ _id, ... }` docs —
+ * both expose `toString()`, and only the populated form carries `_id`.
+ */
+interface RelatedRefDoc {
+  _id: unknown;
+  category?: { _id?: unknown; toString(): string };
+  brand?: { _id?: unknown; toString(): string };
+  tags?: unknown[];
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -16,9 +29,9 @@ export async function GET(
 
   try {
     await dbConnect();
-    const current = await Product.findOne({ _id: id, isActive: true })
+    const current = (await Product.findOne({ _id: id, isActive: true })
       .select("category brand tags")
-      .lean();
+      .lean()) as RelatedRefDoc | null;
     if (!current) return NextResponse.json({ products: [] });
 
     const viewed = new Set(
@@ -26,7 +39,7 @@ export async function GET(
         .split(",")
         .filter((value) => mongoose.isValidObjectId(value))
     );
-    const candidates = await Product.find({
+    const candidates = (await Product.find({
       _id: { $ne: id },
       isActive: true,
       stock: { $gt: 0 },
@@ -44,7 +57,7 @@ export async function GET(
       .populate("supplier", "_id businessName")
       .sort({ soldCount: -1, createdAt: -1 })
       .limit(24)
-      .lean();
+      .lean()) as RelatedRefDoc[];
 
     const ordered = [...candidates].sort((a, b) => {
       const score = (item: typeof a) =>
