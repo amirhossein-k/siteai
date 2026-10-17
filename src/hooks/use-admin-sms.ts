@@ -6,6 +6,7 @@ import type {
   AdminSmsTemplate,
   AdminSmsLogsResponse,
   SmsSendResponse,
+  AdminSmsProviderStatus,
 } from "@/types";
 
 /**
@@ -130,5 +131,28 @@ export function useSendManualSms() {
         queryKey: ["admin", "sms", "logs"],
       });
     },
+  });
+}
+
+// ============================================================
+// Provider monitoring (Phase 1 — read-only probe)
+// ============================================================
+
+export const adminSmsStatusKey = ["admin", "sms", "status"] as const;
+
+/**
+ * GET /api/admin/sms/status — read-only SMS.ir provider probe. Soft-refresh
+ * cache (30s) keeps dashboard polling from hammering the provider; the probe
+ * itself is rate-limited server-side too (SMS_STATUS_LIMIT).
+ */
+export function useAdminSmsStatus() {
+  return useQuery({
+    queryKey: adminSmsStatusKey,
+    queryFn: async (): Promise<AdminSmsProviderStatus> => {
+      const { data } = await axios.get("/api/admin/sms/status");
+      return data;
+    },
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
   });
 }
