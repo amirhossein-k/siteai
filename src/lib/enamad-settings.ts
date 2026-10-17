@@ -3,6 +3,17 @@ import EnamadSettings from "@/models/EnamadSettings";
 
 const TRUST_HOSTS = ["trustseal.enamad.ir", "enamad.ir"];
 
+/**
+ * Shape of the single untyped EnamadSettings mongoose document (the model is
+ * a .js file, so `findOne().lean()` loses its schema typing at the seam).
+ */
+export interface EnamadSettingsDoc {
+  key?: string;
+  enabled?: boolean;
+  code?: string;
+  altText?: string;
+}
+
 function safeHttpsUrl(value: unknown): string {
   try {
     const url = new URL(String(value || ""));
@@ -28,7 +39,7 @@ export function sanitizeEnamadCode(raw: unknown): string {
 export async function getPublicEnamadSettings() {
   try {
     await dbConnect();
-    const settings = await EnamadSettings.findOne({ key: "footer" }).lean();
+    const settings = (await EnamadSettings.findOne({ key: "footer" }).lean()) as EnamadSettingsDoc | null;
     if (!settings?.enabled || !settings.code) return null;
     return {
       code: sanitizeEnamadCode(settings.code),

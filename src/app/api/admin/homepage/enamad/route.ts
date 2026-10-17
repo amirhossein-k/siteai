@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { dbConnect } from "@/lib/dbConnect";
 import { requireRoleOrError, serverError } from "@/lib/auth-utils";
 import EnamadSettings from "@/models/EnamadSettings";
-import { sanitizeEnamadCode } from "@/lib/enamad-settings";
+import { sanitizeEnamadCode, type EnamadSettingsDoc } from "@/lib/enamad-settings";
 import { sanitizePlainText } from "@/lib/sanitize";
 
 async function requireAdmin(req: NextRequest) {
@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   if (error) return error;
   try {
     await dbConnect();
-    const settings = await EnamadSettings.findOne({ key: "footer" }).lean();
+    const settings = (await EnamadSettings.findOne({ key: "footer" }).lean()) as EnamadSettingsDoc | null;
     return NextResponse.json({
       settings: {
         enabled: Boolean(settings?.enabled),
@@ -41,7 +41,8 @@ export async function PUT(req: NextRequest) {
       );
     }
     await dbConnect();
-    const settings = await EnamadSettings.findOneAndUpdate(
+    const settings = (
+      await EnamadSettings.findOneAndUpdate(
       { key: "footer" },
       {
         $set: {
@@ -51,7 +52,9 @@ export async function PUT(req: NextRequest) {
         },
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
-    ).lean();
+      ).lean()
+    ) as EnamadSettingsDoc | null;
+    if (!settings) return serverError();
     return NextResponse.json({
       settings: {
         enabled: Boolean(settings.enabled),
