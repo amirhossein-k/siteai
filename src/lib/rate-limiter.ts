@@ -207,6 +207,16 @@ export const SMS_TEMPLATE_WRITE_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/**
+ * Provider status probe (Phase 1): 20 per admin per 15 minutes. Each probe
+ * issues 2 read-only GETs to SMS.ir (/v1/credit + /v1/line) — rate-limiting
+ * keeps dashboard polling from hammering the provider.
+ */
+export const SMS_STATUS_LIMIT: RateLimitConfig = {
+  max: 20,
+  windowMs: 15 * 60 * 1000,
+};
+
 // ============================================================
 // Core
 // ============================================================

@@ -1659,3 +1659,59 @@ export interface SmsSendResponse {
   provider: "mock" | "smsir";
   messageId: string;
 }
+
+// ============================================================
+// SMS.ir Provider Monitoring (Phase 1 — read-only)
+// ============================================================
+
+/** One provider probe state (health check result). */
+export interface AdminSmsStatusProbe {
+  state: "unknown" | "ok" | "configured_but_unreachable" | "failed";
+  messageFa: string;
+}
+
+/** GET /api/admin/sms/status — sanitized provider status payload.
+ *  Never contains the API key, raw provider bodies, or fabricated values. */
+export interface AdminSmsProviderStatus {
+  checkedAt: string;
+  ok: boolean;
+  config: {
+    apiKeyConfigured: boolean;
+    otpTemplateConfigured: boolean;
+    businessSwitchOn: boolean;
+    senderLineConfigured: boolean;
+    senderLine: string | null;
+  };
+  credit: {
+    value: number | null;
+    lastSyncAt: string | null;
+    probeState: AdminSmsStatusProbe["state"];
+    probeMessageFa: string;
+  };
+  lines: {
+    providerLines: string[];
+    lastSyncAt: string | null;
+    probeState: AdminSmsStatusProbe["state"];
+    probeMessageFa: string;
+  };
+  senderMismatch: {
+    detected: boolean;
+    reason: "not_confirmed_by_provider" | "provider_rejects_line" | "missing_provider_lines" | null;
+    messageFa: string;
+  };
+  lastError: {
+    kind: string;
+    messageFa: string;
+    at: string | null;
+  } | null;
+  lastSyncAt: string | null;
+  lastSyncOk: boolean | null;
+  capabilities: {
+    otpVerify: { available: boolean; configured: boolean; planRestricted: boolean };
+    deliveryReports: { available: boolean; pullOnly: boolean };
+    textBulk: { available: boolean; reason: string; messageFa: string };
+    scheduledSending: { available: boolean; reason: string };
+    contacts: { available: boolean; reason: string };
+    webhooks: { available: boolean; reason: string };
+  };
+}

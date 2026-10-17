@@ -33,8 +33,9 @@ import {
   useDeleteSmsTemplate,
   useAdminSmsLogs,
   useSendManualSms,
+  useAdminSmsStatus,
 } from "@/hooks/use-admin-sms";
-import type { AdminSmsTemplate, SmsMessageType } from "@/types";
+import type { AdminSmsTemplate, SmsMessageType, AdminSmsProviderStatus } from "@/types";
 
 /**
  * Session 90 — Admin business-SMS management (پیامک‌ها).
@@ -59,6 +60,197 @@ const STATUS_LABELS: Record<string, string> = {
   sent: "ارسال شده",
   failed: "ناموفق",
 };
+
+// ============================================================
+// Provider monitoring (Phase 1 — read-only SMS.ir probe)
+// ============================================================
+
+/** Stable provider error taxonomy → Persian operator explanation. */
+const PROVIDER_ERROR_KINDS_FA: Record<string, string> = {
+  auth_failed: "خطای احراز هویت (کلید API نامعتبر یا غیرفعال)",
+  rate_limited: "محدودیت تعداد درخواست‌های سرویس‌دهنده",
+  provider_server_error: "خطای داخلی سرویس‌دهنده",
+  provider_logical_error: "خطای منطقی سرویس‌دهنده",
+  insufficient_credit: "موجودی حساب SMS.ir کافی نیست",
+  invalid_line: "شماره خط ارسال نامعتبر است",
+  invalid_recipient: "شماره گیرنده نامعتبر است",
+  recipient_blocked: "شماره گیرنده در لیست سیاه سرویس‌دهنده است",
+  template_not_found: "قالب در سرویس‌دهنده یافت نشد",
+  template_param_invalid: "پارامتر قالب نامعتبر است (مقدار بلند یا نام خالی)",
+  template_rejected: "متن قالب توسط سرویس‌دهنده تأیید نشده است",
+  plan_restricted: "نیازمند ارتقای پلن SMS.ir",
+  line_needs_activation: "خط ارسال نیاز به فعال‌سازی دارد",
+  network_timeout: "انقضای زمان اتصال به سرویس‌دهنده",
+  network_error: "خطای شبکه در ارتباط با سرویس‌دهنده",
+  not_configured: "کلید API سرویس‌دهنده تنظیم نشده است",
+  malformed_response: "پاسخ نامعتبر از سرویس‌دهنده",
+};
+
+function providerErrorFa(kind: string, messageFa: string): string {
+  return PROVIDER_ERROR_KINDS_FA[kind] || messageFa || "خطای ناشناخته سرویس‌دهنده";
+}
+
+function providerProbeBadge(state: AdminSmsProviderStatus["credit"]["probeState"]) {
+  switch (state) {
+    case "ok":
+      return <Badge variant="success">تأیید شد</Badge>;
+    case "configured_but_unreachable":
+      return <Badge variant="destructive">در دسترس نیست</Badge>;
+    case "failed":
+      return <Badge variant="destructive">ناموفق</Badge>;
+    default:
+      return <Badge variant="secondary">در انتظار</Badge>;
+  }
+}
+
+function formatFaDate(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("fa-IR");
+}
+
+/**
+ * پاسخ به ۱۰ سؤال اصلی مدیر: اتصال، خط، موجودی، وضعیت واقعی سرویس‌دهنده.
+ * All values come from the actual provider probe — nothing is fabricated
+ * (a never-synced credit is «در دسترس نیست», not a fake 0).
+ */
+function ProviderStatusCard() {
+  const { data, isLoading, isError, refetch } = useAdminSmsStatus();
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-lg">وضعیت سرویس‌دهنده (SMS.ir)</CardTitle>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8"
+            onClick={() => refetch()}
+            disabled={isLoading}
+          >
+            <RefreshCw className="ml-2 h-3.5 w-3.5" />
+            به‌روزرسانی وضعیت
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isError ? (
+          <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
+            <AlertCircle className="h-4 w-4 text-destructive" />
+            خطا در دریافت وضعیت سرویس‌دهنده
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              تلاش مجدد
+            </Button>
+          </div>
+        ) : isLoading ? (
+          <Skeleton className="h-20 w-full" />
+        ) : data ? (
+          <div className="space-y-3 text-sm">
+            {/* اتصال و احراز هویت */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-36 shrink-0 text-muted-foreground">اتصال سرویس‌دهنده</span>
+              {data.ok ? (
+                <Badge variant="success">متصل</Badge>
+              ) : data.config.apiKeyConfigured ? (
+                <Badge variant="destructive">ناموفق</Badge>
+              ) : (
+                <Badge variant="destructive">نیازمند تنظیمات</Badge>
+              )}
+              {!data.ok &&
+                (data.credit.probeMessageFa || data.lines.probeMessageFa
+                  ? (data.credit.probeMessageFa || data.lines.probeMessageFa)
+                  : providerErrorFa(data.lastError?.kind || "", data.lastError?.messageFa || ""))}
+            </div>
+
+            {/* کلید API — status only, never the secret */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-36 shrink-0 text-muted-foreground">کلید API</span>
+              {data.config.apiKeyConfigured ? (
+                <Badge variant="success">تنظیم شده</Badge>
+              ) : (
+                <Badge variant="destructive">تنظیم نشده</Badge>
+              )}
+              <span className="text-xs text-muted-foreground">(مقدار واقعی هرگز نمایش داده نمی‌شود)</span>
+            </div>
+
+            {/* موجودی */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-36 shrink-0 text-muted-foreground">موجودی حساب</span>
+              {data.credit.value !== null ? (
+                <>
+                  <span dir="ltr" className="font-medium">{data.credit.value.toLocaleString("fa-IR")}</span>
+                  <span className="text-xs text-muted-foreground">
+                    آخرین همگام‌سازی: {formatFaDate(data.credit.lastSyncAt)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  {providerProbeBadge(data.credit.probeState)}
+                  <span className="text-xs text-muted-foreground">موجودی از حساب فعلی در دسترس نیست</span>
+                </>
+              )}
+            </div>
+
+            {/* خط سرویس‌دهنده */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-36 shrink-0 text-muted-foreground">خط سرویس‌دهنده</span>
+              {data.config.senderLine ? (
+                <span dir="ltr" className="font-medium">{data.config.senderLine}</span>
+              ) : (
+                <Badge variant="secondary">تنظیم نشده</Badge>
+              )}
+              {data.lines.providerLines.length > 0 && (
+                <span className="text-xs text-muted-foreground" dir="ltr">
+                  تأییدشده: {data.lines.providerLines.join(", ")}
+                </span>
+              )}
+              {data.senderMismatch.detected && (
+                <Badge variant="destructive">ناهنگی خط</Badge>
+              )}
+              <span className="text-xs text-muted-foreground">
+                آخرین بررسی خط: {formatFaDate(data.lines.lastSyncAt)}
+              </span>
+            </div>
+
+            {/* آخرین خطا */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-36 shrink-0 text-muted-foreground">آخرین خطای سرویس‌دهنده</span>
+              {data.lastError ? (
+                <>
+                  <Badge variant="destructive">{providerErrorFa(data.lastError.kind, data.lastError.messageFa)}</Badge>
+                  <span className="text-xs text-muted-foreground">{formatFaDate(data.lastError.at)}</span>
+                </>
+              ) : (
+                <Badge variant="success">بدون خطای ثبت‌شده</Badge>
+              )}
+            </div>
+
+            {/* قابلیت‌ها — truthful capability flags */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-36 shrink-0 text-muted-foreground">قابلیت‌ها</span>
+              {data.capabilities.otpVerify.configured ? (
+                <Badge variant="success">کد تأیید (OTP): فعال</Badge>
+              ) : (
+                <Badge variant="secondary">کد تأیید (OTP): نیازمند تنظیمات</Badge>
+              )}
+              <Badge variant="secondary">گزارش دلیوری: از طریق API (بدون وبهوک‌)</Badge>
+              <Badge
+                variant={data.capabilities.textBulk.available ? "success" : "secondary"}
+                title={data.capabilities.textBulk.messageFa}
+              >
+                ارسال متن آزاد: غیرفعال تا تأیید خط
+              </Badge>
+            </div>
+
+            <p className="text-[10px] text-muted-foreground">
+              توجه: «ارسال شده» فقط به این معناست که درخواست توسط SMS.ir پذیرفته شده — «تحویل» وضعیتی جداگانه است.
+            </p>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function AdminSmsPage() {
   const [tab, setTab] = useState<"templates" | "logs" | "send">("templates");
@@ -96,6 +288,9 @@ export default function AdminSmsPage() {
           </button>
         ))}
       </div>
+
+      {/* Phase 1 — provider monitoring (always visible above the tabs) */}
+      <ProviderStatusCard />
 
       {tab === "templates" && <TemplatesPanel />}
       {tab === "logs" && <LogsPanel />}
