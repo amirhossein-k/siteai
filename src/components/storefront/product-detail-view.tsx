@@ -437,6 +437,20 @@ export function ProductDetailView({ product }: { product: Product }) {
                 </div>
               )}
             </div>
+
+            {/* Session 93 — price stamp: WHEN this product's pricing
+                configuration (price / variant prices / availability / discount)
+                last changed. Rendered ONLY when the server supplied a formatted
+                label — a product with no stamp renders nothing at all, never a
+                placeholder such as «-» or «نامشخص». The label is produced and
+                formatted SERVER-side (Jalali date + clock time in the store time
+                zone) on the public detail payload; the raw timestamp never
+                reaches the client. Presentation only — no pricing logic here. */}
+            {product.priceLastUpdatedLabel && (
+              <p className="mt-4 border-t border-sf-line pt-3 text-[11px] text-muted-foreground">
+                {product.priceLastUpdatedLabel}
+              </p>
+            )}
           </div>
 
           {/* Variant selector (glass restyle) */}

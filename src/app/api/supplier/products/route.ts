@@ -10,6 +10,17 @@ import { sanitizePlainText } from "@/lib/sanitize";
 import { prepareVariantsForSave } from "@/lib/product-variants";
 import { prepareRichDescription } from "@/lib/product-description";
 import { createWithUniqueSlug } from "@/lib/product-slug";
+import {
+  buildPriceCasUpdate,
+  createProductPriceSnapshotReader,
+  updateProductWithPriceStamp,
+} from "@/lib/product-price-cas";
+import {
+  initialPriceStampFields,
+  omitInternalPriceFields,
+  toPricingRevision,
+} from "@/lib/product-price-audit";
+import { PRICE_CONFLICT_ERROR } from "@/lib/constants";
 
 export async function GET(req: NextRequest) {
   const { token, error } = await requireRoleOrError(req, ["supplier"]);
@@ -114,6 +125,11 @@ export async function POST(req: NextRequest) {
       hasVariants: prepared.hasVariants,
       variants: prepared.variants,
       isActive: body.isActive ?? true,
+      // Session 93 — CREATION-TIME stamp, same contract as the admin POST: the
+      // pricing configuration a product is created with IS its first one, so the
+      // stamp starts real instead of null ("never priced"). Later edits move it
+      // only when the pricing revision actually changes.
+      ...initialPriceStampFields(),
     };
     const slugResult = await createWithUniqueSlug(
       body.slug,
@@ -227,30 +243,71 @@ export async function PUT(req: NextRequest) {
       variants: prepared.variants,
       isActive: body.isActive,
     };
-    const slugResult = await createWithUniqueSlug(
-      body.slug,
-      (candidate) =>
-        Product.findByIdAndUpdate(
-          id,
+
+    // Session 93 — price stamp (trustworthy «آخرین تغییر تنظیمات قیمت و تخفیف»)
+    // with the OWNERSHIP scope pinned in both the snapshot and the CAS filter: the
+    // supplier may only ever stamp a product that is still theirs. Bounded CAS
+    // loop (3 attempts, 409 on exhaustion — never an unconditional write);
+    // full contract: src/lib/product-price-cas.ts.
+    const scopeFilter: Record<string, unknown> = {
+      _id: id,
+      supplier: supplier._id,
+    };
+    const outcome = await updateProductWithPriceStamp({
+      effectiveSlug: body.slug,
+      autoSlug: body.autoSlug === true,
+      readSnapshot: createProductPriceSnapshotReader(scopeFilter),
+      stillExists: async () => (await Product.exists(scopeFilter)) !== null,
+      buildNextRevision: (snapshot) =>
+        toPricingRevision({
+          price: updateFields.price,
+          hasVariants: updateFields.hasVariants,
+          variants: updateFields.variants,
+          // Suppliers never map the admin-only `discount` field: the STORED
+          // config is carried through, so a supplier edit can never move the
+          // stamp on account of a discount it does not own.
+          discount: snapshot.revision.discount,
+        }),
+      write: ({ candidate, token, stamp }) => {
+        const { filter, update: casUpdate } = buildPriceCasUpdate(
+          scopeFilter,
           { ...updateFields, slug: candidate },
-          { new: true, runValidators: true }
-        )
+          token,
+          stamp
+        );
+        return Product.findOneAndUpdate(filter, casUpdate, {
+          new: true,
+          runValidators: true,
+        })
           .populate("category", "name")
           .populate("supplier", "businessName")
           .populate("brand", "name")
           .populate("tags", "name slug")
-          .lean(),
-      body.autoSlug === true ? 20 : 1
-    );
-    if (!slugResult.ok) {
+          .lean();
+      },
+    });
+
+    if (outcome.status === "slug_conflict") {
       return NextResponse.json(
         { error: "محصولی با این اسلاگ قبلاً وجود دارد" },
         { status: 409 }
       );
     }
-    const updated = slugResult.value;
+    if (outcome.status === "price_conflict") {
+      return NextResponse.json(
+        { error: PRICE_CONFLICT_ERROR },
+        { status: 409 }
+      );
+    }
+    if (outcome.status === "not_found") {
+      // PRESERVED BEHAVIOR: this route has no post-update existence check — a
+      // product deleted (or re-assigned) between the pre-check and the write
+      // answered `200` with a `null` body, and still does.
+      return NextResponse.json(null);
+    }
 
-    return NextResponse.json(updated);
+    // The stamp + its token are internal: no response may carry them.
+    return NextResponse.json(omitInternalPriceFields(outcome.value));
   } catch (error: unknown) {
     console.error("Error updating product:", error);
     if (

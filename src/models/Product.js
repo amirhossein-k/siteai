@@ -249,6 +249,35 @@ const ProductSchema = new mongoose.Schema(
       ),
       default: undefined,
     },
+    // Session 93 — PRICE STAMP (trustworthy «آخرین تغییر تنظیمات قیمت و تخفیف»).
+    // `priceLastUpdatedAt` moves ONLY when the product's pricing configuration
+    // changes (price · variant prices · variant availability · discount) — never
+    // when a non-pricing field is edited (name, description, images, slug,
+    // category, brand, tags, isActive, ...). It is INITIALIZED AT CREATION (admin
+    // POST / supplier POST / CSV import, via `initialPriceStampFields`): the price
+    // a product is created with is its first price. `priceVersion` is the CAS
+    // (compare-and-set) token that makes that decision trustworthy under
+    // concurrency: a pricing write pins the token it read and lands only while
+    // the stored token still matches (`$inc` on success), bounded to 3 attempts
+    // (PRICE_STAMP_MAX_ATTEMPTS) with a 409 on exhaustion — never an
+    // unconditional fallback write. Decision + write live in
+    // src/lib/product-price-audit.ts / src/lib/product-price-cas.ts.
+    // INTERNAL: both fields are `select: false` — they never appear in any API
+    // response (the PUBLIC detail payload exposes a rendered label instead, and
+    // write responses are stripped via omitInternalPriceFields). Legacy documents
+    // simply have no `priceVersion` (treated as `null` = "no version yet") and no
+    // `priceLastUpdatedAt` (no backfill — the public payload then renders no
+    // label at all).
+    priceVersion: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    priceLastUpdatedAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
     // Session 56 — Best-Sellers: total units SOLD (paid, non-refunded).
     // Incremented at payment verify (pending→paid claim) and decremented at
     // admin refund (paid→refunded claim) — both exactly-once by construction.

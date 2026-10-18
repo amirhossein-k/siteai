@@ -59,6 +59,7 @@ const suites = [
   "verify-rich-description", // Session 69 — Plate rich product description (authz 401/403, valid rich create + round-trip, unsafe link/image/property rejection, depth/node/size/leaf caps, 2000-char projection, legacy plain-text preserved on rich-less PUT, supplier auto-ownership + same gate, public storefront exposure, derived-description search)
   "verify-variant-wishlist",
   "verify-product-import-export", // Session 51 (before coupons-marketing: creates users/suppliers/products, cleans its own PREFIX'd rows)
+  "verify-price-stamp", // Session 93 — price-update indicator (creation-time stamp on admin/supplier/CSV creates, stamp moves ONLY on a pricing-revision change, bounded CAS token 0→n with no unconditional fallback, internal priceVersion/priceLastUpdatedAt never leak, public detail renders the Jalali date+time label only; self-cleaning PREFIX'd fixtures)
   "verify-coupons-marketing",
   "verify-coupon-eligibility", // Session 55 — private/targeted coupons (audience), runs AFTER coupons-marketing (shared-collection wipes)
   "verify-best-sellers", // Session 56 — Product.soldCount ranking, leak scans, refund reversal, CMS block (cleans its own PREFIX'd rows)

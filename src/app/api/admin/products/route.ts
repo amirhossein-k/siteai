@@ -19,6 +19,18 @@ import { prepareVariantsForSave } from "@/lib/product-variants";
 import { prepareRichDescription } from "@/lib/product-description";
 import { createWithUniqueSlug } from "@/lib/product-slug";
 import { parseProductDiscount } from "@/lib/product-pricing";
+import {
+  buildPriceCasUpdate,
+  createProductPriceSnapshotReader,
+  updateProductWithPriceStamp,
+} from "@/lib/product-price-cas";
+import {
+  initialPriceStampFields,
+  omitInternalPriceFields,
+  resolveNextDiscount,
+  toPricingRevision,
+} from "@/lib/product-price-audit";
+import { PRICE_CONFLICT_ERROR } from "@/lib/constants";
 import { assertNoDirectStockChange } from "@/lib/inventory-adjustments";
 // Note: All models are registered globally via dbConnect.js — no side-effect imports needed here
 
@@ -185,6 +197,13 @@ export async function POST(req: NextRequest) {
       hasVariants: prepared.hasVariants,
       variants: prepared.variants,
       isActive: body.isActive ?? true,
+      // Session 93 — CREATION-TIME stamp: the pricing configuration a product is
+      // created with IS its first one, so the stamp starts real (never a null
+      // "never priced") and the public label is available immediately. Later
+      // pricing EDITS move it only when the revision actually changes
+      // (src/lib/product-price-audit.ts); `priceVersion` keeps its schema
+      // default 0 = "no pricing write yet".
+      ...initialPriceStampFields(),
       // undefined (field omitted) → absent discount; null → explicitly cleared;
       // object → validated config. Supplier routes never map this field.
       discount: discountResult.value,
@@ -324,39 +343,71 @@ export async function PUT(req: NextRequest) {
       update.discount = discountResult.value;
     }
 
-    // Same auto-slug collision handling as POST: auto-generated slugs get a
-    // deterministic suffix; user-entered slugs keep the 409 behavior.
-    const slugResult = await createWithUniqueSlug(
+    // Session 93 — price stamp (trustworthy «آخرین تغییر تنظیمات قیمت و تخفیف»).
+    // The write is a BOUNDED CAS loop: snapshot (token + pricing revision) →
+    // conditional update pinned to that token → at most
+    // PRICE_STAMP_MAX_ATTEMPTS attempts, 409 on exhaustion (never an
+    // unconditional fallback write). The stamp moves ONLY when the pricing
+    // revision changes; every other edit persists with the stamp byte-for-byte
+    // as stored. Full contract: src/lib/product-price-cas.ts.
+    const scopeFilter: Record<string, unknown> = { _id: id };
+    const outcome = await updateProductWithPriceStamp({
       effectiveSlug,
-      (candidate) =>
-        Product.findByIdAndUpdate(
-          id,
+      autoSlug: body.autoSlug === true,
+      readSnapshot: createProductPriceSnapshotReader(scopeFilter),
+      stillExists: async () => (await Product.exists(scopeFilter)) !== null,
+      buildNextRevision: (snapshot) =>
+        toPricingRevision({
+          price: update.price,
+          hasVariants: update.hasVariants,
+          variants: update.variants,
+          // An OMITTED discount keeps the stored config (never a price change);
+          // `null` clears it; an object is the validated submission.
+          discount: resolveNextDiscount(
+            snapshot.revision.discount,
+            discountResult.value
+          ),
+        }),
+      write: ({ candidate, token, stamp }) => {
+        const { filter, update: casUpdate } = buildPriceCasUpdate(
+          scopeFilter,
           { ...update, slug: candidate },
-          { new: true, runValidators: true }
-        )
+          token,
+          stamp
+        );
+        return Product.findOneAndUpdate(filter, casUpdate, {
+          new: true,
+          runValidators: true,
+        })
           .populate("category", "name")
           .populate("supplier", "businessName")
           .populate("brand", "name")
           .populate("tags", "name slug")
-          .lean(),
-      body.autoSlug === true ? 20 : 1
-    );
-    if (!slugResult.ok) {
+          .lean();
+      },
+    });
+
+    if (outcome.status === "slug_conflict") {
       return NextResponse.json(
         { error: "محصولی با این اسلاگ قبلاً وجود دارد" },
         { status: 409 }
       );
     }
-    const updated = slugResult.value;
-
-    if (!updated) {
+    if (outcome.status === "price_conflict") {
+      return NextResponse.json(
+        { error: PRICE_CONFLICT_ERROR },
+        { status: 409 }
+      );
+    }
+    if (outcome.status === "not_found") {
       return NextResponse.json(
         { error: "محصول یافت نشد" },
         { status: 404 }
       );
     }
 
-    return NextResponse.json(updated);
+    // The stamp + its token are internal: no response may carry them.
+    return NextResponse.json(omitInternalPriceFields(outcome.value));
   } catch (error: unknown) {
     console.error("Error updating product:", error);
     if (error && typeof error === "object" && "code" in error && (error as { code: number }).code === 11000) {    return NextResponse.json(

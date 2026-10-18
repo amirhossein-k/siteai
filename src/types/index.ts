@@ -174,6 +174,16 @@ export interface Product {
   supplier?: string | { _id: string; businessName: string } | null;
   hasVariants?: boolean;
   variants?: ProductVariant[];
+  /**
+   * Session 93 — DETAIL-ONLY price-stamp label, produced SERVER-side by the
+   * public product loader: «آخرین تغییر تنظیمات قیمت و تخفیف: ۲۵ آبان ۱۴۰۳ ساعت
+   * ۰۳:۳۰» (Jalali date + clock time in the store time zone). `null`/absent on
+   * products created before the stamp existed (legacy, never backfilled) and on
+   * every LIST payload — the detail view then renders no line at all. The raw
+   * `priceLastUpdatedAt` timestamp and the CAS token `priceVersion` are internal
+   * and never part of this shape.
+   */
+  priceLastUpdatedLabel?: string | null;
   ratingSummary?: RatingSummary;
   createdAt: string;
   updatedAt: string;
