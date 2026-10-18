@@ -56,3 +56,34 @@ export const PAGINATION = {
   DEFAULT_PAGE_SIZE: 20,
   MAX_PAGE_SIZE: 100,
 } as const;
+
+/**
+ * Price-stamp policy (Session 93) — the CAS (compare-and-set) contract behind
+ * `Product.priceLastUpdatedAt`.
+ *
+ * A price write is a BOUNDED read → conditional-write loop: the snapshot
+ * carries the product's `priceVersion` token and the write only lands while the
+ * stored token still equals it. `PRICE_STAMP_MAX_ATTEMPTS` (3) bounds that
+ * loop; the 4th conflict is a genuine concurrent-edit storm and is REPORTED
+ * (HTTP 409), never resolved by an unconditional fallback write.
+ */
+export const PRICE_STAMP_MAX_ATTEMPTS = 3;
+
+/**
+ * Store time zone (Asia/Tehran, UTC+03:30) — the SINGLE zone constant for
+ * Jalali date + time labels rendered SERVER-side, today the product price stamp
+ * on the public detail payload (src/lib/persian-date.ts). Pinned explicitly so
+ * a rendered label never depends on the host TZ (the VPS runs UTC, browsers run
+ * the visitor's zone) and stays deterministic in tests.
+ * Client-rendered dates keep using the runtime zone (src/lib/utils.ts).
+ */
+export const STORE_TIMEZONE = "Asia/Tehran";
+
+/**
+ * 409 body for an exhausted price-stamp CAS (the product's `priceVersion`
+ * changed under every attempt — a genuine concurrent-edit storm). Never
+ * resolved by an unconditional fallback write; the caller retries with fresh
+ * data.
+ */
+export const PRICE_CONFLICT_ERROR =
+  "قیمت این محصول همزمان تغییر کرده است؛ لطفاً دوباره تلاش کنید";

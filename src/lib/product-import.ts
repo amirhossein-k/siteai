@@ -8,6 +8,11 @@
  * validators). Each row is all-or-nothing; failures/skips are reported
  * per-row with Persian reasons. Create-only (v1): duplicate slug → skipped,
  * never overwritten.
+ *
+ * Session 93 — every created row is stamped with its CREATION instant
+ * (`initialPriceStampFields`, the same contract as the POST APIs): the pricing
+ * configuration a product is imported with IS its first one, so the public
+ * price-stamp label is available immediately instead of reading "never priced".
  */
 import {
   parseProductCsv,
@@ -15,6 +20,7 @@ import {
   MAX_CSV_BYTES,
 } from "@/lib/product-csv";
 import { sanitizePlainText } from "@/lib/sanitize";
+import { initialPriceStampFields } from "@/lib/product-price-audit";
 import Product from "@/models/Product";
 import Category from "@/models/Category";
 import Brand from "@/models/Brand";
@@ -185,6 +191,10 @@ export async function executeProductImport(
                   hasVariants: false,
                   variants: [],
                   isActive: row.isActive,
+                  // Session 93 — same creation-time stamp as the POST APIs: an
+                  // imported product's initial pricing configuration is a real
+                  // price instant, never a null "never priced" stamp.
+                  ...initialPriceStampFields(),
                 });
                 r.status = "created";
                 seenInFile.add(row.slug);

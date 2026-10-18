@@ -6,6 +6,7 @@ import {
   applyEffectivePricing,
   type PublicDiscountMetadata,
 } from "@/lib/product-pricing";
+import { applyPriceStampVisibility } from "@/lib/product-price-audit";
 import type {
   RatingSummary,
   RichDescriptionNode,
@@ -57,6 +58,16 @@ export interface PublicProduct {
   tags?: Array<{ _id: string; name: string; slug: string } | string | null>;
   hasVariants?: boolean;
   variants?: ProductVariant[];
+  /**
+   * Session 93 — DETAIL-ONLY stamp: «آخرین تغییر تنظیمات قیمت و تخفیف: ۲۵ آبان
+   * ۱۴۰۳ ساعت ۰۳:۳۰» for the product's pricing configuration, or `null` when the
+   * product has no stamp at all (a LEGACY document created before the field
+   * existed — there is no backfill; every product created since is stamped at
+   * creation time).
+   * The raw timestamp behind it (`priceLastUpdatedAt`) and the CAS token
+   * (`priceVersion`) are INTERNAL — they never leave the server.
+   */
+  priceLastUpdatedLabel?: string | null;
   ratingSummary: RatingSummary;
   createdAt: string;
   updatedAt: string;
@@ -88,7 +99,12 @@ async function queryPublicProduct(
 ): Promise<PublicProduct | null> {
   await dbConnect();
   const product = await Product.findOne(filter)
-    .select("-soldCount")
+    // Session 93 — `-soldCount` (internal) plus the price stamp read EXPLICITLY:
+    // the model keeps `priceLastUpdatedAt` out of every projection
+    // (`select: false`) and this detail payload is its only public consumer, so
+    // the single `+` plus-path re-includes it (Mongo still receives a pure
+    // exclusion projection) while the CAS token `priceVersion` stays hidden.
+    .select("-soldCount +priceLastUpdatedAt")
     .populate("category", "name slug")
     .populate("supplier", "_id businessName logo")
     .populate("brand", "name slug logo")
@@ -99,12 +115,14 @@ async function queryPublicProduct(
   // to NextResponse.json's serialization and safe for RSC props.
   const plain = JSON.parse(JSON.stringify(product)) as PublicProduct & {
     discount?: unknown;
+    priceLastUpdatedAt?: unknown;
   };
   plain.ratingSummary = await computeRatingSummary(plain._id);
-  // Session 77 — effective pricing: effectivePrice + ACTIVE-only discount
-  // metadata (the raw discount subdoc never leaves the server). Variants get
-  // per-variant effectivePrice.
-  return applyEffectivePricing(plain);
+  // Session 77/93 — effective pricing (effectivePrice + ACTIVE-only discount
+  // metadata) and the stamp's public projection: the raw stamp is exchanged for
+  // its Jalali label, so neither the timestamp nor the CAS token is readable
+  // off the payload (src/lib/product-price-audit.ts).
+  return applyEffectivePricing(applyPriceStampVisibility(plain));
 }
 
 /** Detail by slug (public product page). */
