@@ -28,18 +28,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 1.0,
     },
     {
-      url: `${baseUrl}/login`,
-      lastModified: new Date(),
-      changeFrequency: "monthly" as const,
-      priority: 0.3,
-    },
-    {
-      url: `${baseUrl}/register`,
-      lastModified: new Date(),
-      changeFrequency: "monthly" as const,
-      priority: 0.3,
-    },
-    {
       // Public FAQ page (linked from the storefront footer).
       url: `${baseUrl}/faq`,
       lastModified: new Date(),
