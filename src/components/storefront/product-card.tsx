@@ -110,8 +110,10 @@ export function ProductCard({
     toggleWishlist.mutate({ productId: product._id, inList: inWishlist });
   };
 
+  // Null-safe: `typeof null === "object"`, so a dangling category ref
+  // (populate → null) used to pass this guard and crash on `.name`.
   const categoryName =
-    typeof product.category === "object"
+    product.category && typeof product.category === "object"
       ? (product.category as { name: string }).name
       : "دسته‌بندی";
 
