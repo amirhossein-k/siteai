@@ -49,7 +49,6 @@ export function WebsiteJsonLd() {
         name: APP_NAME,
         alternateName: [...APP_ALTERNATE_NAMES],
         url: APP_URL,
-        searchUrl: `${APP_URL}/search?q={search_term_string}`,
       })}
     />
   );

@@ -45,12 +45,21 @@ export const metadata: Metadata = {
     siteName: APP_NAME,
     title: `${APP_NAME} (Marloo Shop) | خرید آنلاین با بهترین قیمت`,
     description: APP_DESCRIPTION,
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1500,
+        height: 788,
+        alt: `${APP_NAME} (Marloo Shop)`,
+      },
+    ],
   },
 
   twitter: {
     card: "summary_large_image",
     title: `${APP_NAME} (Marloo Shop) | خرید آنلاین با بهترین قیمت`,
     description: APP_DESCRIPTION,
+    images: ["/og-image.png"],
   },
 
   robots: {

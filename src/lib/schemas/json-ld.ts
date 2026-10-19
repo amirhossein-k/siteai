@@ -74,12 +74,10 @@ export function websiteSchema({
   name,
   alternateName,
   url,
-  searchUrl,
 }: {
   name: string;
   alternateName?: string | string[];
   url: string;
-  searchUrl?: string;
 }) {
   const schema: Record<string, unknown> = {
     "@context": "https://schema.org",
@@ -89,16 +87,6 @@ export function websiteSchema({
   };
 
   if (alternateName) schema.alternateName = alternateName;
-  if (searchUrl) {
-    schema.potentialAction = {
-      "@type": "SearchAction",
-      target: {
-        "@type": "EntryPoint",
-        urlTemplate: searchUrl,
-      },
-      "query-input": "required name=search_term_string",
-    };
-  }
 
   return schema;
 }
