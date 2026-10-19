@@ -8,6 +8,8 @@
 import { normalizePersian, searchTokens } from "@/lib/ai-assistant/normalize";
 import { orderRefOf, rankProducts, toOrderView, toProductDetail } from "@/lib/ai-assistant/store-data";
 import type { StoreDataSource } from "@/lib/ai-assistant/types";
+import type { ModelMessage } from "@/lib/ai-assistant/provider";
+import type { ToolDefinition } from "@/lib/ai-assistant/tools";
 
 export const NOW = new Date("2026-10-19T09:00:00.000Z");
 const PAST = new Date("2026-10-01T00:00:00.000Z");
@@ -127,9 +129,26 @@ export type ScriptStep =
   | { kind: "raw"; status?: number; body: unknown }
   | { kind: "throw"; error: unknown };
 
+/** Body the assistant sends to the provider (parsed back from the JSON string). */
+export interface RecordedRequestBody {
+  model: string;
+  max_tokens: number;
+  temperature: number;
+  system: string;
+  messages: ModelMessage[];
+  tools?: ToolDefinition[];
+  tool_choice?: { type: string };
+}
+
+export interface RecordedRequest {
+  url: string;
+  headers: Record<string, string>;
+  body: RecordedRequestBody;
+}
+
 export interface MockProvider {
   fetchImpl: (url: string, init: RequestInit) => Promise<Response>;
-  requests: Array<{ url: string; headers: Record<string, string>; body: Record<string, unknown> }>;
+  requests: RecordedRequest[];
 }
 
 export function mockProvider(script: ScriptStep[]): MockProvider {
@@ -137,7 +156,7 @@ export function mockProvider(script: ScriptStep[]): MockProvider {
   let i = 0;
   let toolSeq = 0;
   const fetchImpl = async (url: string, init: RequestInit) => {
-    requests.push({ url, headers: init.headers as Record<string, string>, body: JSON.parse(String(init.body)) });
+    requests.push({ url, headers: init.headers as Record<string, string>, body: JSON.parse(String(init.body)) as RecordedRequestBody });
     const step = script[i++];
     if (!step) throw new Error(`mock provider: no scripted response for request #${i}`);
     if (step.kind === "throw") throw step.error;

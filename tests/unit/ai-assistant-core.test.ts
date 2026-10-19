@@ -5,6 +5,29 @@ import { getAnthropicMessagesUrl, getProviderConfig, parseMessagesPayload } from
 import { getPolicyKnowledge, rankProducts, toRecommendationCard } from "@/lib/ai-assistant/store-data";
 import { parseAssistantRequest } from "@/lib/ai-assistant/handler";
 import { parseSearchInput } from "@/lib/ai-assistant/tools";
+import type { AssistantProductSummary } from "@/lib/ai-assistant/types";
+
+/** Full product summary with neutral defaults, so tests only spell out the fields they use. */
+function summary(p: Pick<AssistantProductSummary, "id" | "name" | "slug"> & Partial<AssistantProductSummary>): AssistantProductSummary {
+  return {
+    url: `/products/${p.slug}`,
+    image: "",
+    originalPrice: 0,
+    effectivePrice: 0,
+    discountPercent: 0,
+    discountAmount: 0,
+    discountEndsAt: null,
+    inStock: true,
+    stock: 1,
+    categoryName: "",
+    categorySlug: "",
+    brandName: "",
+    brandSlug: "",
+    hasVariants: false,
+    shortDescription: "",
+    ...p,
+  };
+}
 
 describe("Persian normalization", () => {
   it("unifies Arabic letters, ZWNJ and Persian/Arabic digits", () => {
@@ -157,8 +180,8 @@ describe("policy knowledge", () => {
 describe("card selection", () => {
   it("only shows cards for products actually named in the reply, in reply order", () => {
     const seen = new Map([
-      ["a", { id: "a", name: "ماگ سرامیکی", slug: "mug" } as any],
-      ["b", { id: "b", name: "هدفون سونی", slug: "sony" } as any],
+      ["a", summary({ id: "a", name: "ماگ سرامیکی", slug: "mug" })],
+      ["b", summary({ id: "b", name: "هدفون سونی", slug: "sony" })],
     ]);
     const cards = pickCards("هدفون سونی بهتر است؛ ماگ سرامیکی هم دارید", seen);
     expect(cards.map((c) => c.id)).toEqual(["b", "a"]);
@@ -166,7 +189,7 @@ describe("card selection", () => {
   });
 
   it("maps to the chat card shape", () => {
-    const card = toRecommendationCard({ id: "x", name: "n", slug: "s", image: "", originalPrice: 100, effectivePrice: 90, discountPercent: 10, inStock: true, stock: 2 } as any);
+    const card = toRecommendationCard(summary({ id: "x", name: "n", slug: "s", image: "", originalPrice: 100, effectivePrice: 90, discountPercent: 10, inStock: true, stock: 2 }));
     expect(card._id).toBe("x");
     expect(card.reason).toContain("تخفیف");
   });
@@ -174,10 +197,10 @@ describe("card selection", () => {
 
 describe("ranking", () => {
   it("prefers name matches and skips out-of-budget items", () => {
-    const docs = [
+    const docs: Array<Record<string, unknown>> = [
       { _id: "1", name: "کیف چرمی", slug: "k", price: 500_000, isActive: true, stock: 1, category: { name: "" }, brand: null },
       { _id: "2", name: "کیف دستی مدل بزرگ", slug: "k2", price: 5_000_000, isActive: true, stock: 1, category: { name: "" }, brand: null },
-    ] as any[];
+    ];
     const out = rankProducts(docs, { maxPrice: 1_000_000 }, ["کیف"], normalizePersian);
     expect(out.map((p) => p.id)).toEqual(["1"]);
   });
