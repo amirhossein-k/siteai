@@ -117,7 +117,8 @@ export function ProductRail({
                 <Skeleton className="mb-1 h-3 min-h-4 w-16" />
                 <Skeleton className="mb-2 h-10 w-full" />
                 <Skeleton className="mb-2 h-7 w-24" />
-                <Skeleton className="mb-3 h-6 w-full" />
+                <Skeleton className="mb-2 h-6 w-full" />
+                <Skeleton className="mb-3 h-6 w-2/3" />
                 <Skeleton className="h-9 w-full" />
               </div>
             </div>

@@ -526,6 +526,7 @@ export default function CatalogReference() {
                       <span className="cr-skeleton-line cr-skeleton-title" />
                       <span className="cr-skeleton-line cr-skeleton-rating" />
                       <span className="cr-skeleton-line cr-skeleton-price" />
+                      <span className="cr-skeleton-line cr-skeleton-countdown" />
                       <span className="cr-skeleton-line cr-skeleton-cta" />
                     </div>
                   </div>
