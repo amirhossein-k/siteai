@@ -190,10 +190,20 @@ export function AiShoppingAssistant() {
           query: trimmed,
           intent,
           maxPrice: budget,
-          history: messages.slice(-4).map((m) => ({
-            role: m.sender === "user" ? "user" : "assistant",
-            content: m.text,
-          })),
+          // Multi-turn context: recent turns plus the ids of products shown as
+          // cards, so follow-ups like «این بهتره یا اون یکی؟» can be resolved.
+          // The server re-reads those products from the DB (history is untrusted).
+          history: messages
+            .filter((m) => m.id !== "welcome")
+            .slice(-10)
+            .map((m) => ({
+              role: m.sender === "user" ? "user" : "assistant",
+              content: m.text,
+              productIds:
+                m.sender === "bot" && m.products?.length
+                  ? m.products.map((p) => p._id)
+                  : undefined,
+            })),
         }),
       });
 
@@ -204,7 +214,7 @@ export function AiShoppingAssistant() {
           {
             id: `bot-${Date.now()}`,
             sender: "bot",
-            text: data.error || "مشکلی پیش آمد. لطفاً دوباره امتحان کنید.",
+            text: data.reply || data.error || "مشکلی پیش آمد. لطفاً دوباره امتحان کنید.",
           },
         ]);
         return;
