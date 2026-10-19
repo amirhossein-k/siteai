@@ -24,7 +24,7 @@ const vazirmatn = Vazirmatn({
 
 export const metadata: Metadata = {
   title: {
-    default: `${APP_NAME} | خرید آنلاین با بهترین قیمت و دستیار هوشمند`,
+    default: `${APP_NAME} (Marloo Shop) | خرید آنلاین با بهترین قیمت`,
     template: `%s | ${APP_NAME}`,
   },
   description: APP_DESCRIPTION,
@@ -43,13 +43,13 @@ export const metadata: Metadata = {
     locale: "fa_IR",
     url: APP_URL,
     siteName: APP_NAME,
-    title: `${APP_NAME} | خرید آنلاین با بهترین قیمت`,
+    title: `${APP_NAME} (Marloo Shop) | خرید آنلاین با بهترین قیمت`,
     description: APP_DESCRIPTION,
   },
 
   twitter: {
     card: "summary_large_image",
-    title: `${APP_NAME} | خرید آنلاین با بهترین قیمت`,
+    title: `${APP_NAME} (Marloo Shop) | خرید آنلاین با بهترین قیمت`,
     description: APP_DESCRIPTION,
   },
 
