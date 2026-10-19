@@ -20,7 +20,7 @@ export function generateMetadata({
   title,
   description = APP_DESCRIPTION,
   keywords,
-  ogImage = "/og-image.png",
+  ogImage,
   canonicalUrl,
   noIndex = false,
   locale = "fa",

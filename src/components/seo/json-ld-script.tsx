@@ -8,7 +8,7 @@ import {
   itemListSchema,
   serializeJsonLd,
 } from "@/lib/schemas/json-ld";
-import { APP_URL } from "@/lib/constants";
+import { APP_ALTERNATE_NAMES, APP_NAME, APP_URL } from "@/lib/constants";
 
 function JsonLdScript({ data }: { data: Record<string, unknown> }) {
   return (
@@ -34,9 +34,9 @@ export function OrganizationJsonLd() {
   return (
     <JsonLdScript
       data={organizationSchema({
-        name: "فروشگاه من",
+        name: APP_NAME,
+        alternateName: [...APP_ALTERNATE_NAMES],
         url: APP_URL,
-        sameAs: ["#"],
       })}
     />
   );
@@ -46,7 +46,8 @@ export function WebsiteJsonLd() {
   return (
     <JsonLdScript
       data={websiteSchema({
-        name: "فروشگاه من",
+        name: APP_NAME,
+        alternateName: [...APP_ALTERNATE_NAMES],
         url: APP_URL,
         searchUrl: `${APP_URL}/search?q={search_term_string}`,
       })}

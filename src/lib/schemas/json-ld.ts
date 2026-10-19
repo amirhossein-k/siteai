@@ -29,12 +29,14 @@ export function serializeJsonLd(data: Record<string, unknown>): string {
  */
 export function organizationSchema({
   name,
+  alternateName,
   url,
   logo,
   sameAs = [],
   contactPoint,
 }: {
   name: string;
+  alternateName?: string | string[];
   url: string;
   logo?: string;
   sameAs?: string[];
@@ -50,6 +52,7 @@ export function organizationSchema({
     url,
   };
 
+  if (alternateName) schema.alternateName = alternateName;
   if (logo) schema.logo = logo;
   if (sameAs.length > 0) schema.sameAs = sameAs;
 
@@ -69,10 +72,12 @@ export function organizationSchema({
  */
 export function websiteSchema({
   name,
+  alternateName,
   url,
   searchUrl,
 }: {
   name: string;
+  alternateName?: string | string[];
   url: string;
   searchUrl?: string;
 }) {
@@ -83,6 +88,7 @@ export function websiteSchema({
     url,
   };
 
+  if (alternateName) schema.alternateName = alternateName;
   if (searchUrl) {
     schema.potentialAction = {
       "@type": "SearchAction",

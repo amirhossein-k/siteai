@@ -4,8 +4,15 @@
 
 export const APP_NAME = "مارلو شاپ";
 export const APP_DESCRIPTION =
-  "مارلو شاپ | خرید آنلاین با بهترین قیمت، ضمانت اصالت کالا، ارسال سریع و مشاور خرید هوشمند";
+  "مارلو شاپ یک فروشگاه اینترنتی برای خرید آنلاین محصولات باکیفیت، قیمت مناسب و ارسال سریع است.";
 export const APP_TAGLINE = "تجربه خرید هوشمند، سریع و مطمئن";
+export const APP_ALTERNATE_NAMES = [
+  "مارلو شاپ",
+  "مارلو",
+  "Marloo",
+  "MarlooShop",
+  "Marloo Shop",
+] as const;
 export const APP_KEYWORDS = [
   "مارلو شاپ",
   "فروشگاه اینترنتی",
