@@ -270,7 +270,7 @@ export function ProductCard({
       {/* Content */}
       <div className="flex flex-1 flex-col p-4">
         {/* Category */}
-        <p className="mb-1 truncate text-[11px] font-medium text-sf-dim">
+        <p className="mb-1 min-h-[1rem] truncate text-[11px] font-medium text-sf-dim">
           {categoryName}
         </p>
 
@@ -289,11 +289,13 @@ export function ProductCard({
           </h3>
         </Link>
 
-        <ProductRating summary={product.ratingSummary} />
+        <div className="min-h-[1.75rem]">
+          <ProductRating summary={product.ratingSummary} />
+        </div>
 
         {/* Price hierarchy — dominant effective price (the theme's strongest
             text token), struck-through original + supplier link secondary. */}
-        <div className="mt-auto flex items-end justify-between gap-2">
+        <div className="mt-auto flex min-h-[2rem] items-end justify-between gap-2">
           <div className="flex min-w-0 flex-wrap items-baseline gap-1.5">
             <span className="text-lg font-extrabold tracking-tight text-sf-price">
               {formatPrice(effectivePrice)}
@@ -322,22 +324,22 @@ export function ProductCard({
         {/* Discount countdown (Session 78) — only while the server reports an
             ACTIVE discount with a finite end. Presentation only; the server
             remains authoritative for pricing. */}
-        {discountEndsAt && (
-          <div className="mt-2">
+        <div className="mt-2 min-h-[1.5rem]">
+          {discountEndsAt && (
             <DiscountCountdown
               endsAt={discountEndsAt}
               compact
               onExpire={() => onCountdownExpire?.(discountEndsAt)}
             />
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Add to cart — brand-gradient CTA (tokenised `blue-grad`), with a
             short-lived confirmation state. z-10 lifts it above the stretched
             product overlay. */}
         <Button
           className={cn(
-            "relative z-10 mt-3 w-full gap-2 text-xs font-semibold text-white shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]",
+            "relative z-10 mt-3 min-h-9 w-full gap-2 text-xs font-semibold text-white shadow-lg transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.99]",
             justAdded ? "bg-emerald-600 hover:bg-emerald-600" : "blue-grad"
           )}
           size="sm"

@@ -519,7 +519,16 @@ export default function CatalogReference() {
             {isLoading ? (
               <div className="cr-grid">
                 {Array.from({ length: 6 }, (_, i) => (
-                  <div className="cr-skeleton" key={i} aria-hidden="true" />
+                  <div className="cr-skeleton" key={i} aria-hidden="true">
+                    <div className="cr-skeleton-image" />
+                    <div className="cr-skeleton-content">
+                      <span className="cr-skeleton-line cr-skeleton-category" />
+                      <span className="cr-skeleton-line cr-skeleton-title" />
+                      <span className="cr-skeleton-line cr-skeleton-rating" />
+                      <span className="cr-skeleton-line cr-skeleton-price" />
+                      <span className="cr-skeleton-line cr-skeleton-cta" />
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : isError ? (
