@@ -37,7 +37,6 @@ interface StreamRegistry {
 // registry on globalThis guarantees ONE Map across all module instances in the
 // same process (dev AND production).
 declare global {
-  // eslint-disable-next-line no-var
   var __notificationStreamRegistry: StreamRegistry | undefined;
 }
 

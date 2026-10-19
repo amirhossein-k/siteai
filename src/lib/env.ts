@@ -9,7 +9,7 @@ const requiredEnvVars = [
   "NEXTAUTH_URL",
 ] as const;
 
-const optionalEnvVars = [
+export const optionalEnvVars = [
   "NEXT_PUBLIC_APP_URL",
   "NEXT_PUBLIC_GA_ID",
   "TELEGRAM_BOT_TOKEN",

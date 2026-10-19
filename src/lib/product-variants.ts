@@ -113,7 +113,6 @@ export async function prepareVariantsForSave(
       ? await Attribute.find({ _id: { $in: attributeIds } }).lean()
       : [];
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const attributesMap = new Map<string, { name: string; values: string[] }>();
   for (const attr of attributes as unknown as Array<{
     _id: unknown;
