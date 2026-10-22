@@ -163,7 +163,11 @@ export function getBaseUrl(): string {
  * Fail-safe by design: an unknown host degrades to a placeholder, never a crash.
  */
 const ALLOWED_IMAGE_HOSTS: ReadonlySet<string> = (() => {
-  const hosts = new Set<string>(["localhost", "c589564.parspack.net"]);
+  const hosts = new Set<string>([
+    "localhost",
+    "c589564.parspack.net",
+    "c986913.parspack.net",
+  ]);
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
   if (appUrl) {
     try {

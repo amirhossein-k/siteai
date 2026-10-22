@@ -52,9 +52,18 @@ const liaraHostname = hostnameOf(
 );
 const appUrlHostname = hostnameOf(process.env.NEXT_PUBLIC_APP_URL, "");
 
+const allowedLiaraHostnames = new Set([
+  liaraHostname,
+  "c589564.parspack.net",
+  "c986913.parspack.net",
+]);
+
 const remotePatterns: NonNullable<
   NextConfig["images"]
->["remotePatterns"] = [{ protocol: "https", hostname: liaraHostname }];
+>["remotePatterns"] = Array.from(allowedLiaraHostnames, (hostname) => ({
+  protocol: "https" as const,
+  hostname,
+}));
 if (appUrlHostname) {
   remotePatterns.push({ protocol: "https", hostname: appUrlHostname });
 }
