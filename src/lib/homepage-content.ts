@@ -18,6 +18,7 @@ import HomepageHeroSlide from "@/models/HomepageHeroSlide";
 import HomepageCampaignBanner from "@/models/HomepageCampaignBanner";
 import HomepageGiftCollection from "@/models/HomepageGiftCollection";
 import HomepageTrustBadge from "@/models/HomepageTrustBadge";
+import HomepageSeoAccordionItem from "@/models/HomepageSeoAccordionItem";
 import { sanitizePlainText } from "@/lib/sanitize";
 import { homepageConfig } from "@/lib/homepage-config";
 
@@ -222,14 +223,14 @@ export const DEFAULT_SECTIONS: DefaultSection[] = [
     },
   },
   {
-    slug: "trust-badges",
-    sortOrder: 10,
-    component: "trust-badges",
+    slug: "seo-accordion",
+    sortOrder: 11,
+    component: "seo-accordion",
     title: "",
     subtitle: "",
     presentation: {
       appearance: defaultAppearance(),
-      behavior: { ...defaultBehavior(), layoutVariant: "grid" },
+      behavior: { ...defaultBehavior(), layoutVariant: "stacked" },
     },
   },
 ];
@@ -251,6 +252,7 @@ export const HOMEPAGE_COMPONENTS = [
   "popular-brands",
   "gift-collections",
   "trust-badges",
+  "seo-accordion",
 ];
 
 export function isKnownHomepageComponent(component: string): boolean {
@@ -266,6 +268,7 @@ export const CONTENT_MODELS_BY_COMPONENT: Record<
   "campaign-banner": { model: HomepageCampaignBanner, sectionComponent: "campaign-banner" },
   "gift-collections": { model: HomepageGiftCollection, sectionComponent: "gift-collections" },
   "trust-badges": { model: HomepageTrustBadge, sectionComponent: "trust-badges" },
+  "seo-accordion": { model: HomepageSeoAccordionItem, sectionComponent: "seo-accordion" },
 };
 
 // ============================================================
@@ -309,7 +312,7 @@ export type HomepageContentStatus = (typeof CONTENT_STATUSES)[number];
  * message or null when valid. Applies sanitization where noted via `out`.
  */
 export function validateContentRow(
-  type: "hero-slide" | "campaign-banner" | "gift-collection" | "trust-badge",
+  type: "hero-slide" | "campaign-banner" | "gift-collection" | "trust-badge" | "seo-accordion-item",
   body: Record<string, unknown>,
   out: Record<string, unknown>
 ): string | null {
@@ -358,6 +361,20 @@ export function validateContentRow(
     out.imageDesktop = str(body.imageDesktop);
     out.imageMobile = str(body.imageMobile);
     out.themeColor = str(body.themeColor);
+    return null;
+  }
+
+  // seo-accordion-item — question (title) + answer (description). Both are
+  // required so the published content always answers a real question.
+  if (type === "seo-accordion-item") {
+    const question = text(body.title);
+    if (!question) return "سوال آکاردئون الزامی است";
+    if (question.length > 200) return "سوال حداکثر ۲۰۰ کاراکتر است";
+    const answer = text(body.description);
+    if (!answer) return "متن پاسخ الزامی است";
+    if (answer.length > 2000) return "متن پاسخ حداکثر ۲۰۰۰ کاراکتر است";
+    out.title = question;
+    out.description = answer;
     return null;
   }
 
@@ -453,6 +470,43 @@ export const DEFAULT_TRUST_BADGES: Array<{
 ];
 
 /**
+ * Initial SEO accordion items (sample content) — ALWAYS created as DRAFT.
+ * Answer wording is either owner-approved FAQ wording (delivery time, order
+ * tracking, purchase flow) or deliberately claim-free general text. Nothing is
+ * publicly visible until an admin publishes the item from the dashboard.
+ */
+export const DEFAULT_SEO_ACCORDION_ITEMS: Array<{
+  title: string;
+  description: string;
+}> = [
+  {
+    title: "مارلو شاپ چیست؟",
+    description:
+      "مارلو شاپ یک فروشگاه اینترنتی است که می‌توانید در آن محصولات را مشاهده و مقایسه کنید، سبد خرید بسازید و سفارش خود را ثبت نمایید. فهرست کامل دسته‌بندی‌ها و محصولات در صفحه «محصولات» در دسترس است.",
+  },
+  {
+    title: "چطور از مارلو شاپ خرید کنیم؟",
+    description:
+      "محصول مورد نظر را انتخاب و به سبد خرید اضافه کنید، سپس در صفحه پرداخت اطلاعات ارسال را تکمیل کنید، روش پرداخت را انتخاب کرده و سفارش را نهایی کنید.",
+  },
+  {
+    title: "چطور سفارش خود را پیگیری کنیم؟",
+    description:
+      "پس از ارسال سفارش، اطلاعات رهگیری از طریق پیامک برای شما ارسال می‌شود. همچنین می‌توانید جزئیات سفارش را در بخش «سفارشات» حساب کاربری خود ببینید.",
+  },
+  {
+    title: "ارسال سفارش چقدر زمان می‌برد؟",
+    description:
+      "سفارش‌ها معمولاً ظرف یک روز کاری پس از تأیید پرداخت آماده و ارسال می‌شوند. زمان تحویل بسته به مقصد، معمولاً بین ۱ تا ۷ روز کاری است.",
+  },
+  {
+    title: "چطور مشخصات و موجودی کالا را بررسی کنیم؟",
+    description:
+      "برای بررسی مشخصات هر کالا، صفحه همان محصول را باز کنید؛ توضیحات، قیمت و وضعیت موجودی محصول در همان صفحه درج شده است. اگر محصولی ناموجود باشد، امکان افزودن آن به سبد خرید وجود ندارد.",
+  },
+];
+
+/**
  * Map the Session 50 static configuration (homepage-config.ts) into content
  * model rows for a component + section slug. Used for the DB seed and the
  * static fallback — content models are small, typed and DB-agnostic here.
@@ -506,6 +560,14 @@ function mapStaticContent(component: string, sectionSlug: string): any[] {
       title: b.title,
       description: b.description,
       icon: b.icon,
+    }));
+  }
+  if (component === "seo-accordion") {
+    return DEFAULT_SEO_ACCORDION_ITEMS.map((item) => ({
+      sectionSlug,
+      title: item.title,
+      description: item.description,
+      status: "draft",
     }));
   }
   return [];

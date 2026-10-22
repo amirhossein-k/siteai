@@ -217,6 +217,15 @@ export const SMS_STATUS_LIMIT: RateLimitConfig = {
   windowMs: 15 * 60 * 1000,
 };
 
+/**
+ * Admin template read from SMS.ir provider: 30 per admin per 15 minutes.
+ * Read-only GETs to /v1/templates — independent from SMS_STATUS_LIMIT.
+ */
+export const SMS_TEMPLATE_READ_LIMIT: RateLimitConfig = {
+  max: 30,
+  windowMs: 15 * 60 * 1000,
+};
+
 // ============================================================
 // Core
 // ============================================================

@@ -663,3 +663,341 @@ export async function getSmsIrHealth(
     checkedAt,
   };
 }
+
+// ===========================================================================
+// Template management — read-only provider calls (GET, no SMS consumed)
+// ===========================================================================
+
+/**
+ * SMS.ir template check status mapping.
+ *
+ * Official status codes (doc.md, "وضعیت بررسی قالب"):
+ *   1 = در حال بررسی (pending)
+ *   2 = تایید شده (approved)
+ *   3 = رد شده (rejected)
+ *
+ * Additional client-side statuses for templates not present in the provider:
+ *   not_found    — provider explicitly reported template_not_found (113)
+ *   unknown      — provider returned an unrecognized status code
+ *   not_submitted — locally known that the template has never been submitted
+ *                   to SMS.ir (only set by the local Marloo record, never by
+ *                   the provider API).
+ */
+export type SmsIrTemplateStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "not_found"
+  | "unknown"
+  | "not_submitted";
+
+/** A single template parameter as returned by SMS.ir. */
+export interface SmsIrTemplateParameter {
+  name: string;
+  description: string | null;
+}
+
+/** A single SMS.ir template as returned by /v1/templates or /v1/templates/:id. */
+export interface SmsIrTemplate {
+  id: number;
+  title: string;
+  templateText: string;
+  type: number; // 1=OTP, 2=Notification, 3=Order Status, 100=Other
+  parameters: SmsIrTemplateParameter[];
+  status: number; // 1=pending, 2=approved, 3=rejected
+  rejectionReason: string | null;
+  creationDateTime: number | null; // UnixTime (UTC)
+}
+
+/** Result of listing templates from /v1/templates. */
+export interface SmsIrTemplatesResult {
+  ok: true;
+  templates: SmsIrTemplate[];
+  total: number;
+  page: number;
+  pageSize: number;
+} | SmsIrFailure;
+
+/** Result of getting a single template from /v1/templates/:id. */
+export interface SmsIrTemplateResult {
+  ok: true;
+  template: SmsIrTemplate;
+} | SmsIrFailure;
+
+/**
+ * Map the official SMS.ir template review status code (1/2/3) to our
+ * client-facing status. Any other code is treated as unknown.
+ */
+export function mapSmsIrTemplateStatus(status: number): SmsIrTemplateStatus {
+  switch (status) {
+    case 1:
+      return "pending";
+    case 2:
+      return "approved";
+    case 3:
+      return "rejected";
+    default:
+      return "unknown";
+  }
+}
+
+/**
+ * List templates from SMS.ir (GET /v1/templates).
+ * Read-only — no SMS is sent, no credit is consumed.
+ * Supports optional pageNumber, pageSize, and status filter.
+ */
+export async function getSmsIrTemplates(
+  options: SmsIrRequestOptions & {
+    pageNumber?: number;
+    pageSize?: number;
+    status?: number;
+  } = {}
+): Promise<SmsIrTemplatesResult> {
+  const env = options.env ?? process.env;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? 10_000;
+  const pageNumber = options.pageNumber ?? 1;
+  const pageSize = options.pageSize ?? 10;
+  const status = options.status;
+
+  if (!isSmsIrUsable(env)) {
+    return { ok: false, kind: "not_configured", messageFa: FA_MESSAGES.not_configured };
+  }
+
+  const cfg = resolveSmsIrConfig(env);
+  const apiKey = env.SMS_IR_API_KEY as string;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const url = new URL(`${cfg.baseUrl}/v1/templates`);
+    url.searchParams.set("pageNumber", String(pageNumber));
+    url.searchParams.set("pageSize", String(pageSize));
+    if (status !== undefined) {
+      url.searchParams.set("status", String(status));
+    }
+
+    const res = await fetchImpl(url.toString(), {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "x-api-key": apiKey,
+      },
+      signal: controller.signal,
+    });
+
+    // Read the body first (the provider status may live in a non-200 body).
+    let raw = "";
+    try {
+      raw = await res.text();
+    } catch {
+      raw = "";
+    }
+
+    let envelope: SmsIrEnvelope | null;
+    try {
+      const parsed = parseSmsIrEnvelope(JSON.parse(raw));
+      envelope = parsed.ok ? parsed.envelope : null;
+    } catch {
+      envelope = null;
+    }
+
+    if (!res.ok) {
+      const failure = normalizeSmsIrError(res.status, {
+        providerStatus: envelope?.status,
+        providerMessage: envelope?.message || bounded(raw),
+      });
+      // Scrub the key from any echoed diagnostics before it escapes.
+      if (failure.providerMessage) {
+        failure.providerMessage = failure.providerMessage.split(apiKey).join("****");
+      }
+      return failure;
+    }
+
+    if (!envelope) {
+      return {
+        ok: false,
+        kind: "malformed_response",
+        messageFa: FA_MESSAGES.malformed_response,
+        httpStatus: res.status,
+      };
+    }
+
+    if (envelope.status !== 1) {
+      return normalizeSmsIrError(res.status, {
+        providerStatus: envelope.status,
+        providerMessage: envelope.message,
+      });
+    }
+
+    const rawTemplates = envelope.data;
+    if (!Array.isArray(rawTemplates)) {
+      return {
+        ok: false,
+        kind: "malformed_response",
+        messageFa: FA_MESSAGES.malformed_response,
+      };
+    }
+
+    const templates: SmsIrTemplate[] = rawTemplates.map((t: any) => ({
+      id: typeof t.id === "number" ? t.id : 0,
+      title: typeof t.title === "string" ? t.title : "",
+      templateText: typeof t.templateText === "string" ? t.templateText : "",
+      type: typeof t.type === "number" ? t.type : 100,
+      parameters: Array.isArray(t.parameters)
+        ? t.parameters.map((p: any) => ({
+            name: typeof p.name === "string" ? p.name : "",
+            description:
+              typeof p.description === "string" ? p.description : null,
+          }))
+        : [],
+      status: typeof t.status === "number" ? t.status : 0,
+      rejectionReason:
+        typeof t.rejectionReason === "string" ? t.rejectionReason : null,
+      creationDateTime:
+        typeof t.creationDateTime === "number" ? t.creationDateTime : null,
+    }));
+
+    return {
+      ok: true,
+      templates,
+      total: templates.length,
+      page: pageNumber,
+      pageSize: pageSize,
+    };
+  } catch (err) {
+    const isAbort =
+      err instanceof Error &&
+      (err.name === "AbortError" ||
+        err.name === "TimeoutError" ||
+        /aborted|timeout/i.test(err.message || ""));
+    return {
+      ok: false,
+      kind: isAbort ? "network_timeout" : "network_error",
+      messageFa: FA_MESSAGES[isAbort ? "network_timeout" : "network_error"],
+    } as SmsIrFailure;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Get a single template from SMS.ir (GET /v1/templates/:TemplateId).
+ * Read-only — no SMS is sent, no credit is consumed.
+ */
+export async function getSmsIrTemplate(
+  templateId: number,
+  options: SmsIrRequestOptions = {}
+): Promise<SmsIrTemplateResult> {
+  const env = options.env ?? process.env;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? 10_000;
+
+  if (!isSmsIrUsable(env)) {
+    return { ok: false, kind: "not_configured", messageFa: FA_MESSAGES.not_configured };
+  }
+
+  const cfg = resolveSmsIrConfig(env);
+  const apiKey = env.SMS_IR_API_KEY as string;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetchImpl(`${cfg.baseUrl}/v1/templates/${templateId}`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "x-api-key": apiKey,
+      },
+      signal: controller.signal,
+    });
+
+    // Read the body first (the provider status may live in a non-200 body).
+    let raw = "";
+    try {
+      raw = await res.text();
+    } catch {
+      raw = "";
+    }
+
+    let envelope: SmsIrEnvelope | null;
+    try {
+      const parsed = parseSmsIrEnvelope(JSON.parse(raw));
+      envelope = parsed.ok ? parsed.envelope : null;
+    } catch {
+      envelope = null;
+    }
+
+    if (!res.ok) {
+      const failure = normalizeSmsIrError(res.status, {
+        providerStatus: envelope?.status,
+        providerMessage: envelope?.message || bounded(raw),
+      });
+      // Scrub the key from any echoed diagnostics before it escapes.
+      if (failure.providerMessage) {
+        failure.providerMessage = failure.providerMessage.split(apiKey).join("****");
+      }
+      return failure;
+    }
+
+    if (!envelope) {
+      return {
+        ok: false,
+        kind: "malformed_response",
+        messageFa: FA_MESSAGES.malformed_response,
+        httpStatus: res.status,
+      };
+    }
+
+    if (envelope.status !== 1) {
+      return normalizeSmsIrError(res.status, {
+        providerStatus: envelope.status,
+        providerMessage: envelope.message,
+      });
+    }
+
+    const t = envelope.data;
+    if (!t || typeof t !== "object") {
+      return {
+        ok: false,
+        kind: "malformed_response",
+        messageFa: FA_MESSAGES.malformed_response,
+      };
+    }
+
+    return {
+      ok: true,
+      template: {
+        id: typeof t.id === "number" ? t.id : 0,
+        title: typeof t.title === "string" ? t.title : "",
+        templateText: typeof t.templateText === "string" ? t.templateText : "",
+        type: typeof t.type === "number" ? t.type : 100,
+        parameters: Array.isArray(t.parameters)
+          ? t.parameters.map((p: any) => ({
+              name: typeof p.name === "string" ? p.name : "",
+              description:
+                typeof p.description === "string" ? p.description : null,
+            }))
+          : [],
+        status: typeof t.status === "number" ? t.status : 0,
+        rejectionReason:
+          typeof t.rejectionReason === "string" ? t.rejectionReason : null,
+        creationDateTime:
+          typeof t.creationDateTime === "number" ? t.creationDateTime : null,
+      },
+    };
+  } catch (err) {
+    const isAbort =
+      err instanceof Error &&
+      (err.name === "AbortError" ||
+        err.name === "TimeoutError" ||
+        /aborted|timeout/i.test(err.message || ""));
+    return {
+      ok: false,
+      kind: isAbort ? "network_timeout" : "network_error",
+      messageFa: FA_MESSAGES[isAbort ? "network_timeout" : "network_error"],
+    } as SmsIrFailure;
+  } finally {
+    clearTimeout(timer);
+  }
+}

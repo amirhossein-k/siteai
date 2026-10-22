@@ -7,6 +7,9 @@ import type {
   AdminSmsLogsResponse,
   SmsSendResponse,
   AdminSmsProviderStatus,
+  SmsIrTemplate,
+  SmsIrTemplatesResult,
+  SmsIrTemplateStatus,
 } from "@/types";
 
 /**
@@ -152,6 +155,62 @@ export function useAdminSmsStatus() {
       const { data } = await axios.get("/api/admin/sms/status");
       return data;
     },
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// ============================================================
+// Provider templates (Phase 1 — read-only SMS.ir template listing)
+// ============================================================
+
+export const adminSmsProviderTemplatesKey = [
+  "admin",
+  "sms",
+  "provider",
+  "templates",
+] as const;
+
+/**
+ * GET /api/admin/sms/provider/templates — read-only list of SMS.ir templates.
+ * Results are cached for 30s to avoid hammering the provider.
+ */
+export function useAdminSmsProviderTemplates(params: {
+  pageNumber?: number;
+  pageSize?: number;
+  status?: number;
+}) {
+  return useQuery({
+    queryKey: [...adminSmsProviderTemplatesKey, params] as const,
+    queryFn: async (): Promise<SmsIrTemplatesResult> => {
+      const search = new URLSearchParams();
+      if (params.pageNumber) search.set("pageNumber", String(params.pageNumber));
+      if (params.pageSize) search.set("pageSize", String(params.pageSize));
+      if (params.status !== undefined) search.set("status", String(params.status));
+      const { data } = await axios.get(
+        `/api/admin/sms/provider/templates?${search.toString()}`
+      );
+      return data;
+    },
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * GET /api/admin/sms/provider/templates/:templateId — read-only single template.
+ */
+export function useAdminSmsProviderTemplate(templateId: number | null) {
+  return useQuery({
+    queryKey: [...adminSmsProviderTemplatesKey, templateId] as const,
+    queryFn: async (): Promise<SmsIrTemplate> => {
+      if (templateId == null) throw new Error("templateId is required");
+      const { data } = await axios.get(
+        `/api/admin/sms/provider/templates/${templateId}`
+      );
+      return data.template;
+    },
+    enabled: templateId != null,
     staleTime: 30 * 1000,
     refetchOnWindowFocus: false,
   });

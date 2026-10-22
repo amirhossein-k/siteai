@@ -12,7 +12,8 @@ export type HomepageContentType =
   | "hero-slide"
   | "campaign-banner"
   | "gift-collection"
-  | "trust-badge";
+  | "trust-badge"
+  | "seo-accordion-item";
 
 export interface EnamadSettings {
   enabled: boolean;
@@ -48,6 +49,7 @@ const PLURAL: Record<HomepageContentType, string> = {
   "campaign-banner": "campaign-banners",
   "gift-collection": "gift-collections",
   "trust-badge": "trust-badges",
+  "seo-accordion-item": "seo-accordion-items",
 };
 
 export interface AdminHomepageSection {

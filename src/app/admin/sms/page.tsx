@@ -35,7 +35,14 @@ import {
   useSendManualSms,
   useAdminSmsStatus,
 } from "@/hooks/use-admin-sms";
-import type { AdminSmsTemplate, SmsMessageType, AdminSmsProviderStatus } from "@/types";
+import type {
+  AdminSmsTemplate,
+  SmsMessageType,
+  AdminSmsProviderStatus,
+  SmsIrTemplate,
+  SmsIrTemplateStatus,
+} from "@/types";
+import { useAdminSmsProviderTemplates } from "@/hooks/use-admin-sms";
 
 /**
  * Session 90 — Admin business-SMS management (پیامک‌ها).
@@ -59,6 +66,25 @@ const TYPE_LABELS: Record<SmsMessageType, string> = {
 const STATUS_LABELS: Record<string, string> = {
   sent: "ارسال شده",
   failed: "ناموفق",
+};
+
+/** Provider template review status → Persian label. */
+const PROVIDER_TEMPLATE_STATUS_LABELS: Record<SmsIrTemplateStatus, string> = {
+  pending: "در حال بررسی",
+  approved: "تایید شده",
+  rejected: "رد شده",
+  not_found: "یافت نشد",
+  unknown: "نامشخص",
+  not_submitted: "ثبت نشده",
+};
+
+const PROVIDER_TEMPLATE_STATUS_BADGE: Record<SmsIrTemplateStatus, string> = {
+  pending: "secondary",
+  approved: "success",
+  rejected: "destructive",
+  not_found: "destructive",
+  unknown: "secondary",
+  not_submitted: "secondary",
 };
 
 // ============================================================

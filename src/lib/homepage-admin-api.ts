@@ -16,7 +16,8 @@ export type HomepageContentType =
   | "hero-slide"
   | "campaign-banner"
   | "gift-collection"
-  | "trust-badge";
+  | "trust-badge"
+  | "seo-accordion-item";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ContentModel = any;

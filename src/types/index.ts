@@ -1725,3 +1725,55 @@ export interface AdminSmsProviderStatus {
     webhooks: { available: boolean; reason: string };
   };
 }
+
+/** SMS.ir template review status as mapped from the provider. */
+export type SmsIrTemplateStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "not_found"
+  | "unknown"
+  | "not_submitted";
+
+/** A single template parameter as returned by SMS.ir. */
+export interface SmsIrTemplateParameter {
+  name: string;
+  description: string | null;
+}
+
+/** A single SMS.ir template as returned by /v1/templates or /v1/templates/:id. */
+export interface SmsIrTemplate {
+  id: number;
+  title: string;
+  templateText: string;
+  type: number; // 1=OTP, 2=Notification, 3=Order Status, 100=Other
+  parameters: SmsIrTemplateParameter[];
+  status: number; // 1=pending, 2=approved, 3=rejected
+  rejectionReason: string | null;
+  creationDateTime: number | null; // UnixTime (UTC)
+}
+
+/** Result of listing templates from /v1/templates. */
+export interface SmsIrTemplatesResult {
+  ok: true;
+  templates: SmsIrTemplate[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** Result of getting a single template from /v1/templates/:id. */
+export interface SmsIrTemplateResult {
+  ok: true;
+  template: SmsIrTemplate;
+}
+
+/** Provider-side failure (used internally by API routes). */
+export interface SmsIrTemplateFailure {
+  ok: false;
+  kind: string;
+  messageFa: string;
+  httpStatus?: number;
+  providerStatus?: number;
+  providerMessage?: string;
+}
