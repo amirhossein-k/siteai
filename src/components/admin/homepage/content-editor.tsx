@@ -23,7 +23,8 @@ export type HomepageContentType =
   | "hero-slide"
   | "campaign-banner"
   | "gift-collection"
-  | "trust-badge";
+  | "trust-badge"
+  | "seo-accordion-item";
 
 type FieldId =
   | "title"
@@ -45,6 +46,12 @@ interface ContentTypeConfig {
   label: string;
   fields: FieldId[];
   iconOptions?: string[];
+  /** Long-form description (answer) uses a brief description textarea */
+  descriptionTextarea?: boolean;
+  /** Labels for the title/description fields (question/answer wording) */
+  fieldLabels?: Partial<Record<"title" | "description", string>>;
+  /** Show a live question/answer preview under the form */
+  showPreview?: boolean;
 }
 
 export const CONTENT_TYPE_CONFIGS: ContentTypeConfig[] = [
@@ -80,6 +87,14 @@ export const CONTENT_TYPE_CONFIGS: ContentTypeConfig[] = [
       "truck", "shield-check", "star", "headphones", "tag", "package",
       "badge-check", "refresh-cw", "heart", "gift", "credit-card", "store",
     ],
+  },
+  {
+    type: "seo-accordion-item",
+    label: "توضیحات سئوی صفحه اصلی (پرسش و پاسخ)",
+    fields: ["title", "description", "sortOrder", "isActive", "status"],
+    fieldLabels: { title: "سوال", description: "متن پاسخ" },
+    descriptionTextarea: true,
+    showPreview: true,
   },
 ];
 
@@ -290,10 +305,11 @@ export function ContentEditor({ type, sectionSlug }: ContentEditorProps) {
           </div>
 
           {config.fields.includes("title") && (
-            <Field label="عنوان" required>
+            <Field label={config.fieldLabels?.title ?? "عنوان"} required>
               <Input
                 value={String(form.title ?? "")}
                 onChange={(e) => set("title", e.target.value)}
+                maxLength={200}
                 required
               />
             </Field>
@@ -314,14 +330,25 @@ export function ContentEditor({ type, sectionSlug }: ContentEditorProps) {
               />
             </Field>
           )}
-          {config.fields.includes("description") && (
-            <Field label="توضیحات">
-              <Input
-                value={String(form.description ?? "")}
-                onChange={(e) => set("description", e.target.value)}
-              />
-            </Field>
-          )}
+          {config.fields.includes("description") &&
+            (config.descriptionTextarea ? (
+              <Field label={config.fieldLabels?.description ?? "توضیحات"} required>
+                <textarea
+                  className="flex min-h-28 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={String(form.description ?? "")}
+                  onChange={(e) => set("description", e.target.value)}
+                  maxLength={2000}
+                  required
+                />
+              </Field>
+            ) : (
+              <Field label={config.fieldLabels?.description ?? "توضیحات"}>
+                <Input
+                  value={String(form.description ?? "")}
+                  onChange={(e) => set("description", e.target.value)}
+                />
+              </Field>
+            ))}
           {config.fields.includes("ctaLabel") && (
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="متن دکمه">
@@ -428,11 +455,35 @@ export function ContentEditor({ type, sectionSlug }: ContentEditorProps) {
             )}
           </div>
 
+          {/* Draft guard — admin sees exactly what will be published */}
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-6 text-muted-foreground">
+            آیتم‌های «پیش‌نویس» در صفحه اصلی نمایش داده نمی‌شوند؛ برای نمایش، وضعیت را «منتشر شده» کنید. ترتیب نمایش (ترتیب کوچک‌تر اول) در صفحه اصلی رعایت می‌شود.
+          </div>
+
           <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
             <Plus className="h-4 w-4" />
             {editingId ? "ذخیره تغییرات" : "افزودن"}
           </Button>
         </form>
+
+        {config.showPreview && (String(form.title ?? "").trim() || String(form.description ?? "").trim()) ? (
+          <div className="rounded-lg border bg-muted/20 p-4">
+            <h3 className="text-xs font-semibold text-muted-foreground">پیش‌نمایش</h3>
+            <div className="mt-3 divide-y divide-border rounded-xl border bg-card">
+              <div>
+                <p className="px-4 py-3 text-sm font-medium">{String(form.title ?? "").trim()}</p>
+                {String(form.description ?? "").trim() && (
+                  <p className="whitespace-pre-line border-t px-4 py-3 text-xs leading-6 text-muted-foreground">
+                    {String(form.description ?? "").trim()}
+                  </p>
+                )}
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              فقط آیتم‌های منتشر شده در صفحه اصلی دیده می‌شوند.
+            </p>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );

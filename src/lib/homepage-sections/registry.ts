@@ -28,6 +28,7 @@ import { PremiumCollection } from "@/components/storefront/home/premium-collecti
 import { PopularBrands } from "@/components/storefront/home/popular-brands";
 import { GiftCollections } from "@/components/storefront/home/gift-collections";
 import { TrustBadges } from "@/components/storefront/home/trust-badges";
+import { SeoAccordion } from "@/components/storefront/home/seo-accordion";
 
 export interface HomepageBlockDefinition {
   /** Renderer identifier stored on HomepageSection.component. */
@@ -58,6 +59,8 @@ const resolveGiftCollections = (sectionSlug: string) =>
   getContentRowsByComponent("gift-collections", sectionSlug);
 const resolveTrustBadges = (sectionSlug: string) =>
   getContentRowsByComponent("trust-badges", sectionSlug);
+const resolveSeoAccordionItems = (sectionSlug: string) =>
+  getContentRowsByComponent("seo-accordion", sectionSlug);
 
 /**
  * The one place a new homepage block is registered. Order is irrelevant —
@@ -136,6 +139,16 @@ export const homepageBlockRegistry: Record<string, HomepageBlockDefinition> = {
     hasContent: true,
     lazy: true,
     minHeight: 280,
+  },
+  /* Admin-managed SEO accordion — server-rendered native details/summary,
+     crawlable without client JS; renders nothing until items are published. */
+  "seo-accordion": {
+    component: "seo-accordion",
+    renderer: SeoAccordion,
+    resolveContent: resolveSeoAccordionItems,
+    hasContent: true,
+    lazy: true,
+    minHeight: 240,
   },
 };
 

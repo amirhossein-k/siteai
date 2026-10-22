@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LayoutTemplate, Image as ImageIcon, Megaphone, Gift, ShieldCheck, BadgeCheck } from "lucide-react";
+import {
+  LayoutTemplate,
+  Image as ImageIcon,
+  Megaphone,
+  Gift,
+  ShieldCheck,
+  BadgeCheck,
+  HelpCircle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SectionsEditor } from "@/components/admin/homepage/sections-editor";
@@ -19,6 +27,7 @@ const TYPE_COMPONENT: Record<HomepageContentType, string> = {
   "campaign-banner": "campaign-banner",
   "gift-collection": "gift-collections",
   "trust-badge": "trust-badges",
+  "seo-accordion-item": "seo-accordion",
 };
 
 const DEFAULT_SLUG: Record<HomepageContentType, string> = {
@@ -26,6 +35,7 @@ const DEFAULT_SLUG: Record<HomepageContentType, string> = {
   "campaign-banner": "campaign-banner",
   "gift-collection": "gift-collections",
   "trust-badge": "trust-badges",
+  "seo-accordion-item": "seo-accordion",
 };
 
 const TABS: { id: Tab; label: string; icon: typeof LayoutTemplate }[] = [
@@ -34,6 +44,7 @@ const TABS: { id: Tab; label: string; icon: typeof LayoutTemplate }[] = [
   { id: "campaign-banner", label: "بنر کمپین", icon: Megaphone },
   { id: "gift-collection", label: "کالکشن هدیه", icon: Gift },
   { id: "trust-badge", label: "نشان‌های اعتماد", icon: ShieldCheck },
+  { id: "seo-accordion-item", label: "توضیحات صفحه اصلی", icon: HelpCircle },
   { id: "enamad", label: "اینماد فوتر", icon: BadgeCheck },
 ];
 
