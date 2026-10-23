@@ -20,9 +20,20 @@
  *   - Injectable fetch/env/now so unit tests are fully hermetic (no network,
  *     no real SMS, no credit consumption — read-only GETs authorized).
  *
+ * Type consolidation (Phase 2A): `SmsIrTemplateStatus`, `SmsIrTemplateParameter`,
+ * `SmsIrTemplate` are defined once in `@/types` and imported here to avoid
+ * duplicate declarations. Composite result types (`SmsIrTemplatesResult`,
+ * `SmsIrTemplateResult`) remain here because they reference `SmsIrFailure`.
+ *
  * HTTP surface used by the REST API (official): 200 success · 400 logical
  * error · 401 auth · 429 rate limit · 500 unexpected.
  */
+
+import type {
+  SmsIrTemplate,
+  SmsIrTemplateParameter,
+  SmsIrTemplateStatus,
+} from "@/types";
 
 // ===========================================================================
 // Types — normalized provider model (only fields SMS.ir actually provides)
@@ -668,58 +679,17 @@ export async function getSmsIrHealth(
 // Template management — read-only provider calls (GET, no SMS consumed)
 // ===========================================================================
 
-/**
- * SMS.ir template check status mapping.
- *
- * Official status codes (doc.md, "وضعیت بررسی قالب"):
- *   1 = در حال بررسی (pending)
- *   2 = تایید شده (approved)
- *   3 = رد شده (rejected)
- *
- * Additional client-side statuses for templates not present in the provider:
- *   not_found    — provider explicitly reported template_not_found (113)
- *   unknown      — provider returned an unrecognized status code
- *   not_submitted — locally known that the template has never been submitted
- *                   to SMS.ir (only set by the local Marloo record, never by
- *                   the provider API).
- */
-export type SmsIrTemplateStatus =
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "not_found"
-  | "unknown"
-  | "not_submitted";
-
-/** A single template parameter as returned by SMS.ir. */
-export interface SmsIrTemplateParameter {
-  name: string;
-  description: string | null;
-}
-
-/** A single SMS.ir template as returned by /v1/templates or /v1/templates/:id. */
-export interface SmsIrTemplate {
-  id: number;
-  title: string;
-  templateText: string;
-  type: number; // 1=OTP, 2=Notification, 3=Order Status, 100=Other
-  parameters: SmsIrTemplateParameter[];
-  status: number; // 1=pending, 2=approved, 3=rejected
-  rejectionReason: string | null;
-  creationDateTime: number | null; // UnixTime (UTC)
-}
-
 /** Result of listing templates from /v1/templates. */
-export interface SmsIrTemplatesResult {
+export type SmsIrTemplatesResult = {
   ok: true;
   templates: SmsIrTemplate[];
-  total: number;
+  total: number | null;
   page: number;
   pageSize: number;
 } | SmsIrFailure;
 
 /** Result of getting a single template from /v1/templates/:id. */
-export interface SmsIrTemplateResult {
+export type SmsIrTemplateResult = {
   ok: true;
   template: SmsIrTemplate;
 } | SmsIrFailure;
@@ -861,7 +831,7 @@ export async function getSmsIrTemplates(
     return {
       ok: true,
       templates,
-      total: templates.length,
+      total: null,
       page: pageNumber,
       pageSize: pageSize,
     };
@@ -886,7 +856,7 @@ export async function getSmsIrTemplates(
  * Read-only — no SMS is sent, no credit is consumed.
  */
 export async function getSmsIrTemplate(
-  templateId: number,
+  templateId: string | number,
   options: SmsIrRequestOptions = {}
 ): Promise<SmsIrTemplateResult> {
   const env = options.env ?? process.env;

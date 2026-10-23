@@ -8,9 +8,9 @@ import type {
   SmsSendResponse,
   AdminSmsProviderStatus,
   SmsIrTemplate,
-  SmsIrTemplatesResult,
   SmsIrTemplateStatus,
 } from "@/types";
+import type { SmsIrTemplatesResult } from "@/lib/sms-ir-admin";
 
 /**
  * Session 90 — admin business-SMS hooks (Phase 1c).
@@ -213,5 +213,48 @@ export function useAdminSmsProviderTemplate(templateId: number | null) {
     enabled: templateId != null,
     staleTime: 30 * 1000,
     refetchOnWindowFocus: false,
+  });
+}
+
+// ============================================================
+// Provider template link / verify (Phase 2A — admin mutations)
+// ============================================================
+
+export interface LinkProviderInput {
+  providerTemplateId: string;
+}
+
+export function useAdminSmsLinkProvider(templateId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: LinkProviderInput): Promise<unknown> => {
+      const { data } = await axios.post(
+        `/api/admin/sms/templates/${templateId}/link-provider`,
+        input
+      );
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: adminSmsKeys.templates,
+      });
+    },
+  });
+}
+
+export function useAdminSmsVerifyProvider(templateId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (): Promise<unknown> => {
+      const { data } = await axios.post(
+        `/api/admin/sms/templates/${templateId}/verify-provider`
+      );
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: adminSmsKeys.templates,
+      });
+    },
   });
 }

@@ -184,6 +184,22 @@ export interface Product {
    * and never part of this shape.
    */
   priceLastUpdatedLabel?: string | null;
+  // ===== Perfume/Cologne specific fields (optional, additive) =====
+  gender?: "men" | "women" | "unisex" | null;
+  perfumeType?: "parfum" | "edp" | "edt" | "edc" | "cologne" | "body_spray" | null;
+  fragranceFamily?: "woody" | "floral" | "fresh" | "oriental" | "aromatic" | "fougere" | "chypre" | "gourmand" | null;
+  topNotes?: string[] | null;
+  heartNotes?: string[] | null;
+  baseNotes?: string[] | null;
+  longevity?: "weak" | "moderate" | "long" | "very_long" | null;
+  sillage?: "intimate" | "moderate" | "strong" | "enormous" | null;
+  season?: ("spring" | "summer" | "autumn" | "winter")[] | null;
+  occasion?: ("daily" | "evening" | "formal" | "party" | "office" | "romantic")[] | null;
+  countryOfOrigin?: string | null;
+  releaseYear?: number | null;
+  barcode?: string | null;
+  authenticityType?: "original" | "tester" | "decant" | "sample" | null;
+  // ===== End Perfume/Cologne fields =====
   ratingSummary?: RatingSummary;
   createdAt: string;
   updatedAt: string;
@@ -1629,6 +1645,16 @@ export interface AdminSmsTemplate {
   type: SmsMessageType;
   /** SMS.ir pattern id (may be empty while the system runs mock-first). */
   providerTemplateId: string;
+  /** Provider-side review status of the linked SMS.ir template. */
+  providerStatus: "not_submitted" | "pending" | "approved" | "rejected" | "not_found";
+  /** Timestamp of the last successful provider verification. */
+  providerVerifiedAt: string | null;
+  /** Timestamp of the last successful provider check. */
+  providerLastCheckedAt: string | null;
+  /** Description of the last provider check failure (network / timeout / malformed / 5xx). */
+  providerLastCheckError: string;
+  /** Provider rejection reason when providerStatus === "rejected". */
+  providerRejectionReason: string;
   /** Server-derived from body placeholders — never client-declared. */
   variables: string[];
   body: string;
@@ -1726,14 +1752,7 @@ export interface AdminSmsProviderStatus {
   };
 }
 
-/** SMS.ir template review status as mapped from the provider. */
-export type SmsIrTemplateStatus =
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "not_found"
-  | "unknown"
-  | "not_submitted";
+
 
 /** A single template parameter as returned by SMS.ir. */
 export interface SmsIrTemplateParameter {
@@ -1753,27 +1772,12 @@ export interface SmsIrTemplate {
   creationDateTime: number | null; // UnixTime (UTC)
 }
 
-/** Result of listing templates from /v1/templates. */
-export interface SmsIrTemplatesResult {
-  ok: true;
-  templates: SmsIrTemplate[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
+/** SMS.ir template review status as mapped from the provider. */
+export type SmsIrTemplateStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "not_found"
+  | "unknown"
+  | "not_submitted";
 
-/** Result of getting a single template from /v1/templates/:id. */
-export interface SmsIrTemplateResult {
-  ok: true;
-  template: SmsIrTemplate;
-}
-
-/** Provider-side failure (used internally by API routes). */
-export interface SmsIrTemplateFailure {
-  ok: false;
-  kind: string;
-  messageFa: string;
-  httpStatus?: number;
-  providerStatus?: number;
-  providerMessage?: string;
-}

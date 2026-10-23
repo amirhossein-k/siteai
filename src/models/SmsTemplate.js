@@ -54,6 +54,44 @@ const SmsTemplateSchema = new mongoose.Schema(
       trim: true,
       maxlength: 12,
     },
+    // Provider-side review status of the linked SMS.ir template.
+    // Independent from local `isActive`. Set only by link-provider /
+    // verify-provider (read-only GET /v1/templates/:id). Never changed by
+    // network errors / timeouts / malformed responses.
+    providerStatus: {
+      type: String,
+      enum: ["not_submitted", "pending", "approved", "rejected", "not_found"],
+      default: "not_submitted",
+    },
+    // Timestamp of the last *successful* provider verification that yielded
+    // a conclusive template status (1/2/3/404/113). Unchanged on network
+    // errors, timeouts, malformed responses, or HTTP 5xx.
+    providerVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+    // Timestamp of the last *successful* provider check (same semantics as
+    // providerVerifiedAt — only updated on conclusive provider responses).
+    providerLastCheckedAt: {
+      type: Date,
+      default: null,
+    },
+    // Description of the last provider check failure (network / timeout /
+    // malformed / 5xx). Preserved independently of providerStatus — never
+    // replaces the template status.
+    providerLastCheckError: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 300,
+    },
+    // Provider rejection reason when providerStatus === "rejected".
+    providerRejectionReason: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 300,
+    },
     // Declared variable names (e.g. ["orderNo", "customerName"]). A send must
     // provide EXACTLY these keys — no missing, no extra (fail-closed).
     variables: {
