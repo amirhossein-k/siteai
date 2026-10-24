@@ -106,6 +106,15 @@ export async function GET(req: NextRequest) {
         name: t.name,
         type: t.type,
         providerTemplateId: t.providerTemplateId || "",
+        providerStatus: t.providerStatus || "not_submitted",
+        providerVerifiedAt: t.providerVerifiedAt
+          ? t.providerVerifiedAt.toISOString()
+          : null,
+        providerLastCheckedAt: t.providerLastCheckedAt
+          ? t.providerLastCheckedAt.toISOString()
+          : null,
+        providerLastCheckError: t.providerLastCheckError || "",
+        providerRejectionReason: t.providerRejectionReason || "",
         variables: t.variables || [],
         body: t.body || "",
         isActive: t.isActive,
@@ -227,14 +236,22 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
+    // Load existing template to detect provider-relevant field changes.
+    const existing: any = await SmsTemplate.findById(id).lean();
+    if (!existing) {
+      return NextResponse.json({ error: "قالب یافت نشد" }, { status: 404 });
+    }
+
     const updateData: Record<string, unknown> = { updatedBy: token!.id };
+    let providerReset = false;
+
     if (body.name !== undefined) {
       const name = sanitizePlainText(String(body.name).trim());
       if (!name) {
         return NextResponse.json({ error: "نام قالب الزامی است" }, { status: 400 });
       }
-      const existing = await SmsTemplate.findOne({ name, _id: { $ne: id } });
-      if (existing) {
+      const nameExisting = await SmsTemplate.findOne({ name, _id: { $ne: id } });
+      if (nameExisting) {
         return NextResponse.json(
           { error: "قالبی با این نام قبلاً وجود دارد" },
           { status: 409 }
@@ -244,15 +261,32 @@ export async function PUT(req: NextRequest) {
     }
     if (body.type !== undefined) updateData.type = body.type;
     if (body.providerTemplateId !== undefined) {
-      updateData.providerTemplateId = String(body.providerTemplateId).trim();
+      const newProviderId = String(body.providerTemplateId).trim();
+      updateData.providerTemplateId = newProviderId;
+      if (newProviderId !== (existing.providerTemplateId || "")) {
+        providerReset = true;
+      }
     }
     if (body.body !== undefined) {
       const text = sanitizePlainText(String(body.body));
       updateData.body = text;
       // Body edits re-derive the declared variables server-side.
       updateData.variables = extractTemplateVariables(text);
+      if (text !== (existing.body || "")) {
+        providerReset = true;
+      }
     }
     if (body.isActive !== undefined) updateData.isActive = Boolean(body.isActive);
+
+    // Changing providerTemplateId or body invalidates prior provider
+    // verification — the local content no longer matches the provider record.
+    if (providerReset) {
+      updateData.providerStatus = "not_submitted";
+      updateData.providerVerifiedAt = null;
+      updateData.providerLastCheckedAt = null;
+      updateData.providerLastCheckError = "";
+      updateData.providerRejectionReason = "";
+    }
 
     const updated: any = await SmsTemplate.findByIdAndUpdate(id, updateData, {
       new: true,

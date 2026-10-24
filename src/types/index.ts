@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // Shared TypeScript Types
 // ============================================================
 
@@ -75,7 +75,7 @@ export interface ProductVariant {
   sku: string;
   attributes: ProductVariantAttribute[];
   price: number;
-  /** Server-computed effective (post-discount) price — equals price when no discount is active. */
+  /** Server-computed effective (post-discount) price â€” equals price when no discount is active. */
   effectivePrice?: number;
   supplierPrice: number;
   stock: number;
@@ -97,7 +97,7 @@ export type RichDescriptionNode = {
   type?: string;
   text?: string;
   url?: string;
-  /** Paste-deserializer key from @platejs/link (always "_blank" — server-bounded). */
+  /** Paste-deserializer key from @platejs/link (always "_blank" â€” server-bounded). */
   target?: string;
   align?: string;
   /** Plate ListPlugin list style on blocks (bounded CSS values: ul/ol/disc/...). */
@@ -121,9 +121,9 @@ export type RichDescriptionNode = {
 
 // --- Product discount / sale pricing (Session 77) ---
 // The stored config is an OPTIONAL embedded Product.discount subdoc (absent on
-// pre-discount products — zero migration). Pricing math + time semantics live
+// pre-discount products â€” zero migration). Pricing math + time semantics live
 // in src/lib/product-pricing.ts (single source of truth). The STORED config
-// is admin/API-only and NEVER appears on public shapes — public payloads
+// is admin/API-only and NEVER appears on public shapes â€” public payloads
 // carry only the ACTIVE-only summary below (discount = null when no discount
 // is live, so future/expired/disabled configuration never leaks).
 export type ProductDiscountType = "percent" | "fixed";
@@ -131,7 +131,7 @@ export type ProductDiscountType = "percent" | "fixed";
 /** Raw stored/admin-submitted discount (Product.discount subdoc). */
 export interface ProductDiscount {
   type: ProductDiscountType;
-  /** percent → 1–90; fixed → whole toman amount */
+  /** percent â†’ 1â€“90; fixed â†’ whole toman amount */
   value: number;
   startsAt: string | null;
   endsAt: string | null;
@@ -156,9 +156,9 @@ export interface Product {
   name: string;
   description: string;
   descriptionRich?: RichDescriptionNode[];
-  /** Original/base price — NEVER overwritten by a discount. */
+  /** Original/base price â€” NEVER overwritten by a discount. */
   price: number;
-  /** Server-computed effective (post-discount) price — equals price when no discount is active. */
+  /** Server-computed effective (post-discount) price â€” equals price when no discount is active. */
   effectivePrice?: number;
   /** Active-only discount summary (null when no discount is live). */
   discount?: ProductDiscountSummary | null;
@@ -168,22 +168,38 @@ export interface Product {
   isActive?: boolean;
   slug?: string;
   brand?: string | { _id: string; name: string; slug?: string; logo?: string } | null;
-  // Session 65/71 — populated relations are `null` at RUNTIME when the
-  // referenced Supplier doc was deleted (Mongoose populate → null); consumers
+  // Session 65/71 â€” populated relations are `null` at RUNTIME when the
+  // referenced Supplier doc was deleted (Mongoose populate â†’ null); consumers
   // must null-check (the product page's supplier badge does).
   supplier?: string | { _id: string; businessName: string } | null;
   hasVariants?: boolean;
   variants?: ProductVariant[];
   /**
-   * Session 93 — DETAIL-ONLY price-stamp label, produced SERVER-side by the
-   * public product loader: «آخرین تغییر تنظیمات قیمت و تخفیف: ۲۵ آبان ۱۴۰۳ ساعت
-   * ۰۳:۳۰» (Jalali date + clock time in the store time zone). `null`/absent on
+   * Session 93 â€” DETAIL-ONLY price-stamp label, produced SERVER-side by the
+   * public product loader: Â«Ø¢Ø®Ø±ÛŒÙ† ØªØºÛŒÛŒØ± ØªÙ†Ø¸ÛŒÙ…Ø§Øª Ù‚ÛŒÙ…Øª Ùˆ ØªØ®ÙÛŒÙ: Û²Ûµ Ø¢Ø¨Ø§Ù† Û±Û´Û°Û³ Ø³Ø§Ø¹Øª
+   * Û°Û³:Û³Û°Â» (Jalali date + clock time in the store time zone). `null`/absent on
    * products created before the stamp existed (legacy, never backfilled) and on
-   * every LIST payload — the detail view then renders no line at all. The raw
+   * every LIST payload â€” the detail view then renders no line at all. The raw
    * `priceLastUpdatedAt` timestamp and the CAS token `priceVersion` are internal
    * and never part of this shape.
    */
   priceLastUpdatedLabel?: string | null;
+  // ===== Perfume/Cologne specific fields (optional, additive) =====
+  gender?: "men" | "women" | "unisex" | null;
+  perfumeType?: "parfum" | "edp" | "edt" | "edc" | "cologne" | "body_spray" | null;
+  fragranceFamily?: "woody" | "floral" | "fresh" | "oriental" | "aromatic" | "fougere" | "chypre" | "gourmand" | null;
+  topNotes?: string[] | null;
+  heartNotes?: string[] | null;
+  baseNotes?: string[] | null;
+  longevity?: "weak" | "moderate" | "long" | "very_long" | null;
+  sillage?: "intimate" | "moderate" | "strong" | "enormous" | null;
+  season?: ("spring" | "summer" | "autumn" | "winter")[] | null;
+  occasion?: ("daily" | "evening" | "formal" | "party" | "office" | "romantic")[] | null;
+  countryOfOrigin?: string | null;
+  releaseYear?: number | null;
+  barcode?: string | null;
+  authenticityType?: "original" | "tester" | "decant" | "sample" | null;
+  // ===== End Perfume/Cologne fields =====
   ratingSummary?: RatingSummary;
   createdAt: string;
   updatedAt: string;
@@ -191,14 +207,14 @@ export interface Product {
 
 // --- Public Catalog Facets (Session 47) ---
 
-/** Public brand facet (GET /api/brands) — active only, strict projection. */
+/** Public brand facet (GET /api/brands) â€” active only, strict projection. */
 export interface PublicBrand {
   _id: string;
   name: string;
   slug: string;
 }
 
-/** Public tag facet (GET /api/tags) — active only, strict projection. */
+/** Public tag facet (GET /api/tags) â€” active only, strict projection. */
 export interface PublicTag {
   _id: string;
   name: string;
@@ -214,7 +230,7 @@ export interface AttributeFacetValue {
 }
 
 /**
- * One attribute facet group (GET /api/attributes/facets) — ACTIVE attributes
+ * One attribute facet group (GET /api/attributes/facets) â€” ACTIVE attributes
  * only, values carrying counts over the currently visible product set.
  */
 export interface AttributeFacet {
@@ -233,7 +249,7 @@ export interface AttributeFacetsResponse {
 
 /**
  * Wishlist row as returned by GET /api/wishlist.
- * `product` is null when the underlying product was deleted — the UI renders
+ * `product` is null when the underlying product was deleted â€” the UI renders
  * an unavailable placeholder (the row is never silently dropped).
  * `variantId`/`variantSnapshot` are present ONLY on variant-level rows
  * (Session 43): null variantId = product-level row. Product-level and
@@ -241,15 +257,15 @@ export interface AttributeFacetsResponse {
  */
 export interface WishlistItem {
   _id: string;
-  /** شناسه محصول — حتی وقتی خود محصول حذف شده (product=null) قابل حذف از لیست است */
+  /** Ø´Ù†Ø§Ø³Ù‡ Ù…Ø­ØµÙˆÙ„ â€” Ø­ØªÛŒ ÙˆÙ‚ØªÛŒ Ø®ÙˆØ¯ Ù…Ø­ØµÙˆÙ„ Ø­Ø°Ù Ø´Ø¯Ù‡ (product=null) Ù‚Ø§Ø¨Ù„ Ø­Ø°Ù Ø§Ø² Ù„ÛŒØ³Øª Ø§Ø³Øª */
   productId: string;
   product: (Pick<
     Product,
     "_id" | "name" | "slug" | "price" | "stock" | "images" | "hasVariants"
   > & { isActive?: boolean; category?: string | { _id: string; name: string } }) | null;
-  /** variant-level row id (null = product-level row) — Session 43 */
+  /** variant-level row id (null = product-level row) â€” Session 43 */
   variantId?: string | null;
-  /** denormalized variant info saved at add time — Session 43 */
+  /** denormalized variant info saved at add time â€” Session 43 */
   variantSnapshot?: { sku?: string; label?: string } | null;
   createdAt: string;
 }
@@ -257,11 +273,11 @@ export interface WishlistItem {
 /** GET /api/wishlist/ids */
 export interface WishlistIdsResponse {
   ids: string[];
-  /** سرشماری کل اقلام علاقه‌مندی (برای بج هدر) */
+  /** Ø³Ø±Ø´Ù…Ø§Ø±ÛŒ Ú©Ù„ Ø§Ù‚Ù„Ø§Ù… Ø¹Ù„Ø§Ù‚Ù‡â€ŒÙ…Ù†Ø¯ÛŒ (Ø¨Ø±Ø§ÛŒ Ø¨Ø¬ Ù‡Ø¯Ø±) */
   count: number;
 }
 
-// --- Wishlist → Cart bulk move (Session 38) ---
+// --- Wishlist â†’ Cart bulk move (Session 38) ---
 
 export type WishlistCartSkippedReason =
   | "deleted"
@@ -283,10 +299,10 @@ export interface WishlistCartAddItem {
   slug: string;
   name: string;
   price: number;
-  /** Live stock at resolution time — the client store clamps quantity to this */
+  /** Live stock at resolution time â€” the client store clamps quantity to this */
   maxQuantity: number;
   image?: string;
-  /** Extensible — reserved for future variant metadata */
+  /** Extensible â€” reserved for future variant metadata */
   variant?: { id: string; sku?: string; label?: string };
 }
 
@@ -302,9 +318,9 @@ export interface WishlistCartAddResult {
 export type ReviewStatus = "pending" | "approved" | "rejected";
 
 export interface RatingSummary {
-  /** میانگین امتیاز دیدگاه‌های تأییدشده (rounded to 1 decimal) */
+  /** Ù…ÛŒØ§Ù†Ú¯ÛŒÙ† Ø§Ù…ØªÛŒØ§Ø² Ø¯ÛŒØ¯Ú¯Ø§Ù‡â€ŒÙ‡Ø§ÛŒ ØªØ£ÛŒÛŒØ¯Ø´Ø¯Ù‡ (rounded to 1 decimal) */
   average: number;
-  /** تعداد دیدگاه‌های تأییدشده */
+  /** ØªØ¹Ø¯Ø§Ø¯ Ø¯ÛŒØ¯Ú¯Ø§Ù‡â€ŒÙ‡Ø§ÛŒ ØªØ£ÛŒÛŒØ¯Ø´Ø¯Ù‡ */
   count: number;
 }
 
@@ -337,7 +353,7 @@ export interface Review {
   text: string;
   status: ReviewStatus;
   rejectionReason?: string;
-  /** Optional supplier reply (Session 37) — backward compatible */
+  /** Optional supplier reply (Session 37) â€” backward compatible */
   reply?: ReviewReply | null;
   createdAt: string;
   updatedAt: string;
@@ -357,7 +373,7 @@ export interface AdminReview extends Omit<Review, "customer" | "product"> {
   reply?: ReviewReply | null;
 }
 
-/** Supplier queue item (GET /api/supplier/reviews) — Session 37 */
+/** Supplier queue item (GET /api/supplier/reviews) â€” Session 37 */
 export interface SupplierReview extends Omit<Review, "customer" | "product"> {
   customer: { _id: string; name: string };
   product: { _id: string; name: string; slug: string; images?: string[]; isActive?: boolean };
@@ -380,11 +396,11 @@ export interface MyReviewsResponse {
 export type CouponType = "percent" | "fixed";
 
 /**
- * Coupon audience (Session 55) — WHO may redeem the code.
+ * Coupon audience (Session 55) â€” WHO may redeem the code.
  * - public: anyone (default; a missing eligibility block means public).
  * - assigned_users: only the users in `assignedUsers`.
  * - user_groups: users belonging to any group slug in `groups` (groups are
- *   NOT implemented yet — group coupons are ineligible for everyone, fail-closed).
+ *   NOT implemented yet â€” group coupons are ineligible for everyone, fail-closed).
  */
 export type CouponEligibilityMode = "public" | "assigned_users" | "user_groups";
 
@@ -394,7 +410,7 @@ export interface CouponEligibility {
   /** ObjectId refs of explicitly-assigned users (mode: assigned_users).
    * Strings in raw POST/PUT payloads; populated user objects in admin GET. */
   assignedUsers: Array<{ _id: string; name: string; phone: string } | string>;
-  /** Lowercase group slugs (mode: user_groups) — fail-closed today. */
+  /** Lowercase group slugs (mode: user_groups) â€” fail-closed today. */
   groups: string[];
 }
 
@@ -403,7 +419,7 @@ export interface Coupon {
   _id: string;
   code: string;
   type: CouponType;
-  /** percent → discount percent; fixed → toman amount */
+  /** percent â†’ discount percent; fixed â†’ toman amount */
   value: number;
   /** minimum pre-discount subtotal (0 = none) */
   minSubtotal: number;
@@ -428,7 +444,7 @@ export interface Coupon {
 export type AdminCoupon = Coupon;
 
 /**
- * Public marketing coupon (GET /api/coupons/public) — Session 44.
+ * Public marketing coupon (GET /api/coupons/public) â€” Session 44.
  * Only isPublic + active + in-window coupons are ever exposed; internal
  * limits (usageLimit/perUserLimit/usedCount) are NEVER returned.
  */
@@ -436,7 +452,7 @@ export interface PublicCoupon {
   _id: string;
   code: string;
   type: CouponType;
-  /** percent → discount percent; fixed → toman amount */
+  /** percent â†’ discount percent; fixed â†’ toman amount */
   value: number;
   /** minimum pre-discount subtotal (0 = none) */
   minSubtotal: number;
@@ -445,13 +461,13 @@ export interface PublicCoupon {
   endsAt: string | null;
 }
 
-/** GET /api/coupons/public — paginated (Session 27 shape). */
+/** GET /api/coupons/public â€” paginated (Session 27 shape). */
 export interface PublicCouponsResponse extends PaginatedResponse<PublicCoupon> {
   /** Total PUBLIC coupons (matches data.length only when all fit on one page). */
   total: number;
 }
 
-/** POST /api/coupons/validate — rules preview (no discount math). */
+/** POST /api/coupons/validate â€” rules preview (no discount math). */
 export interface CouponValidationResponse {
   valid: boolean;
   code: string;
@@ -463,7 +479,7 @@ export interface CouponValidationResponse {
   perUserLimit: number;
 }
 
-/** Order discount snapshot (additive — absent on orders placed before Session 39). */
+/** Order discount snapshot (additive â€” absent on orders placed before Session 39). */
 export interface OrderDiscount {
   code: string;
   couponId: string;
@@ -536,7 +552,7 @@ export interface AdminStat {
 
 // --- Admin Analytics & Reporting (Session 41) ---
 
-/** Per-day bucket in the time series (zero-filled — no gaps). */
+/** Per-day bucket in the time series (zero-filled â€” no gaps). */
 export interface AnalyticsTimePoint {
   /** YYYY-MM-DD (UTC) */
   date: string;
@@ -604,22 +620,22 @@ export interface AdminProduct {
   name: string;
   slug: string;
   description?: string;
-  /** Session 69 — rich Slate JSON; absent on legacy products. Must be mapped
+  /** Session 69 â€” rich Slate JSON; absent on legacy products. Must be mapped
    * into edit-form defaultValues or the editor mounts empty and a save
    * silently replaces the rich structure with plain text. */
   descriptionRich?: RichDescriptionNode[];
   images?: string[];
   brand?: { _id: string; name: string } | string | null;
   tags?: Array<{ _id: string; name: string; slug: string } | string | null>;
-  // Session 65 — populated relations can be `null` at RUNTIME when the
-  // referenced Category/Supplier doc was deleted (Mongoose populate → null)
+  // Session 65 â€” populated relations can be `null` at RUNTIME when the
+  // referenced Category/Supplier doc was deleted (Mongoose populate â†’ null)
   // and a raw ObjectId string on legacy/edge payloads. Consumers must
   // normalize (see lib/utils.ts relationId), never assume a populated doc.
   category: { _id: string; name: string } | string | null;
   supplier: { _id: string; businessName: string } | string | null;
   supplierPrice: number;
   price: number;
-  /** Session 82 Phase A/B — sourcing mode (consignment | purchased). */
+  /** Session 82 Phase A/B â€” sourcing mode (consignment | purchased). */
   sourcing?: string;
   /** Admin-only stored discount config (absent on pre-discount products). */
   discount?: ProductDiscount | null;
@@ -627,7 +643,7 @@ export interface AdminProduct {
   hasVariants?: boolean;
   variants?: ProductVariant[];
   isActive: boolean;
-  // Session 56 — internal best-sellers counter (units paid, non-refunded).
+  // Session 56 â€” internal best-sellers counter (units paid, non-refunded).
   // Admin/supplier API responses include it; the PUBLIC products API never
   // does (projection exclusion). Only used to power sort=best_selling.
   soldCount?: number;
@@ -643,21 +659,21 @@ export interface AdminOrderItem {
   variantLabel?: string;
   image?: string;
   name: string;
-  /** Actual effective unit price the customer paid (Session 77 — == original when no discount). */
+  /** Actual effective unit price the customer paid (Session 77 â€” == original when no discount). */
   price: number;
-  /** Pre-discount unit price snapshot (Session 77 — additive; absent on old orders). */
+  /** Pre-discount unit price snapshot (Session 77 â€” additive; absent on old orders). */
   originalPrice?: number | null;
-  /** Per-unit toman reduction applied at purchase (Session 77 — 0/absent when none). */
+  /** Per-unit toman reduction applied at purchase (Session 77 â€” 0/absent when none). */
   discountAmount?: number;
   supplierPrice: number;
-  /** Exact weighted FIFO cost consumed at checkout (Session 82 Phase C —
+  /** Exact weighted FIFO cost consumed at checkout (Session 82 Phase C â€”
    * purchased-sourcing, post-cutover only; absent on consignment/pre-cutover). */
   fifoUnitCost?: number | null;
   quantity: number;
 }
 
 /**
- * Shipping fulfillment metadata (Session 57). Additive — absent on orders
+ * Shipping fulfillment metadata (Session 57). Additive â€” absent on orders
  * placed before Session 57; renderers must optional-chain. `provider` is the
  * courier name (future courier-integration seam).
  */
@@ -684,7 +700,7 @@ export interface AdminOrder {
     address?: string;
     postalCode?: string;
   };
-  /** Shipping fulfillment metadata (Session 57 — additive). */
+  /** Shipping fulfillment metadata (Session 57 â€” additive). */
   shipping?: OrderShipping;
   payment: {
     status: OrderPaymentStatus;
@@ -710,7 +726,7 @@ export interface AdminOrder {
 }
 
 /**
- * POST /api/orders/[id]/cancel — customer self-service cancellation (Session 46).
+ * POST /api/orders/[id]/cancel â€” customer self-service cancellation (Session 46).
  * Only cancellable while the order is awaiting payment
  * (status `pending_payment` + `payment.status` `pending`).
  */
@@ -778,19 +794,19 @@ export type ConversationSenderRole = "customer" | "admin" | "supplier";
 export interface ConversationMessage {
   _id: string;
   sender: { _id: string; name: string } | string;
-  /** Server-derived role of the author — never trusted from the client. */
+  /** Server-derived role of the author â€” never trusted from the client. */
   senderRole: ConversationSenderRole;
   text: string;
   createdAt: string;
 }
 
 /**
- * A customer-support conversation (one per customer × SupplierOrder).
+ * A customer-support conversation (one per customer Ã— SupplierOrder).
  * Shared list shape across the customer/admin/supplier surfaces; `messages`
  * is present only on detail responses.
  *
  * NOTE (Session 68 hardening): `customer`/`order`/`supplier` are populated
- * relations — Mongoose populate() sets them to `null` at RUNTIME when the
+ * relations â€” Mongoose populate() sets them to `null` at RUNTIME when the
  * referenced document was deleted (e.g. a conversation whose supplier was
  * removed). Consumers must use null-safe access (see
  * src/lib/conversation-relations.ts), never the `typeof x === "object"`
@@ -808,7 +824,7 @@ export interface CustomerConversation {
   status: ConversationStatus;
   /** Staff replied since the customer last read (flipped on customer detail GET). */
   customerUnread: boolean;
-  /** Customer replied since staff last read (staff = admin ∪ the conversation's supplier). */
+  /** Customer replied since staff last read (staff = admin âˆª the conversation's supplier). */
   staffUnread: boolean;
   lastMessageAt: string | null;
   lastMessagePreview: string;
@@ -822,7 +838,7 @@ export interface CustomerConversation {
   updatedAt: string;
 }
 
-/** GET /api/conversations/eligible-orders — the customer's purchased orders. */
+/** GET /api/conversations/eligible-orders â€” the customer's purchased orders. */
 export interface EligibleConversationOrder {
   orderId: string;
   orderShortId: string;
@@ -842,10 +858,10 @@ export interface EligibleConversationOrder {
 // ============================================================
 
 /**
- * Admin supplier-management row (Session 66) — GET /api/admin/suppliers?all=true.
+ * Admin supplier-management row (Session 66) â€” GET /api/admin/suppliers?all=true.
  * ADMIN-ONLY shape: includes wallet/contact figures + the linked user. These
  * fields must NEVER appear on the PUBLIC supplier endpoints (see PublicSupplier).
- * `user` is null only when the User ref was deleted (Mongoose populate → null).
+ * `user` is null only when the User ref was deleted (Mongoose populate â†’ null).
  */
 export interface AdminSupplier {
   _id: string;
@@ -871,7 +887,7 @@ export interface AdminSupplier {
 
 /**
  * Public supplier storefront profile (GET /api/suppliers).
- * STRICT projection whitelist — NEVER includes user, contactPhone,
+ * STRICT projection whitelist â€” NEVER includes user, contactPhone,
  * bankAccount, telegramChatId, balance or pendingReserve.
  */
 export interface PublicSupplier {
@@ -934,7 +950,7 @@ export interface SupplierOrder {
   updatedAt: string;
 }
 
-// --- Session 82 Phase D — inventory ledger views ---
+// --- Session 82 Phase D â€” inventory ledger views ---
 export type InventoryMovementType =
   | "opening_balance"
   | "receipt"
@@ -943,7 +959,7 @@ export type InventoryMovementType =
   | "cancellation_restock"
   | "purchase_return"
   | "adjustment"
-  // RESERVED in the model enum (no code path produces it today) — kept in
+  // RESERVED in the model enum (no code path produces it today) â€” kept in
   // sync with the model so legacy rows stay type-safe.
   | "sourcing_change";
 
@@ -952,7 +968,7 @@ export interface InventoryMovementView {
   product: { _id: string; name: string; slug: string } | string;
   variantId?: string | null;
   type: InventoryMovementType;
-  /** Signed quantity (+receipt / −sale). */
+  /** Signed quantity (+receipt / âˆ’sale). */
   quantity: number;
   unitCost: number;
   totalCost: number;
@@ -1008,9 +1024,9 @@ export interface WalletTransaction {
 
 export interface WalletInfo {
   balance: number;
-  /** موجودی کل منهای رزرو درخواست‌های در انتظار تأیید */
+  /** Ù…ÙˆØ¬ÙˆØ¯ÛŒ Ú©Ù„ Ù…Ù†Ù‡Ø§ÛŒ Ø±Ø²Ø±Ùˆ Ø¯Ø±Ø®ÙˆØ§Ø³Øªâ€ŒÙ‡Ø§ÛŒ Ø¯Ø± Ø§Ù†ØªØ¸Ø§Ø± ØªØ£ÛŒÛŒØ¯ */
   availableBalance: number;
-  /** مبلغ رزرو شده برای درخواست‌های تسویه در انتظار تأیید */
+  /** Ù…Ø¨Ù„Øº Ø±Ø²Ø±Ùˆ Ø´Ø¯Ù‡ Ø¨Ø±Ø§ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øªâ€ŒÙ‡Ø§ÛŒ ØªØ³ÙˆÛŒÙ‡ Ø¯Ø± Ø§Ù†ØªØ¸Ø§Ø± ØªØ£ÛŒÛŒØ¯ */
   pendingReserve: number;
   totalEarnings: number;
   totalPaidOut: number;
@@ -1077,7 +1093,7 @@ export interface NotificationItem {
   updatedAt: string;
 }
 
-/** GET /api/notifications — paginated inbox + unread badge count */
+/** GET /api/notifications â€” paginated inbox + unread badge count */
 export interface NotificationsResponse extends PaginatedResponse<NotificationItem> {
   unreadCount: number;
 }
@@ -1088,7 +1104,7 @@ export interface UnreadCountResponse {
 }
 
 /**
- * SSE push event (Session 40) — delivered to /api/notifications/stream
+ * SSE push event (Session 40) â€” delivered to /api/notifications/stream
  * subscribers immediately after a Notification document is committed.
  * The DB write stays the source of truth; this is a delivery hint that lets
  * the client invalidate its React Query cache for instant UI updates.
@@ -1204,7 +1220,7 @@ export interface ProductImportReport {
 }
 
 // ---------------------------------------------------------------------------
-// Admin Reports (Session 81) — accounting-aware reporting subsystem
+// Admin Reports (Session 81) â€” accounting-aware reporting subsystem
 // ---------------------------------------------------------------------------
 
 /** Date-range presets understood by the reports API (custom = explicit from/to). */
@@ -1220,19 +1236,19 @@ export type ReportPreset =
 /** Validated filter inputs for every report endpoint (server-parsed, whitelisted). */
 export interface ReportFilters {
   preset: ReportPreset | null;
-  /** YYYY-MM-DD (UTC day start) — inclusive. */
+  /** YYYY-MM-DD (UTC day start) â€” inclusive. */
   from: string | null;
-  /** YYYY-MM-DD (UTC day start) — inclusive. */
+  /** YYYY-MM-DD (UTC day start) â€” inclusive. */
   to: string | null;
   productId?: string;
   categoryId?: string;
   customerId?: string;
   orderStatus?: string;
-  /** Purchase status (draft/ordered/…/cancelled) — only for the purchases report. */
+  /** Purchase status (draft/ordered/â€¦/cancelled) â€” only for the purchases report. */
   purchaseStatus?: string;
-  /** Expense status (paid/pending/void) — only for the expenses report (Session 82 Phase E). */
+  /** Expense status (paid/pending/void) â€” only for the expenses report (Session 82 Phase E). */
   expenseStatus?: string;
-  /** Expense category enum — only for the expenses report (Session 82 Phase E). */
+  /** Expense category enum â€” only for the expenses report (Session 82 Phase E). */
   expenseCategory?: string;
   /** Profitability trend grouping requested by the report UI. */
   trendGroup?: "day" | "week" | "month";
@@ -1291,7 +1307,7 @@ export interface SalesReportRow {
   sku: string;
   category: string;
   quantity: number;
-  /** Weighted average net unit price (Σ net / Σ qty) — historical, per order line. */
+  /** Weighted average net unit price (Î£ net / Î£ qty) â€” historical, per order line. */
   avgUnitPrice: number;
   grossSales: number;
   productDiscount: number;
@@ -1300,7 +1316,7 @@ export interface SalesReportRow {
   cogs: number;
   returnedQuantity: number;
   returnedAmount: number;
-  /** COGS of the returned units (historical snapshot basis) — sales-window operational column. */
+  /** COGS of the returned units (historical snapshot basis) â€” sales-window operational column. */
   returnedCogs: number;
   netQuantity: number;
   netSalesAfterReturns: number;
@@ -1405,7 +1421,7 @@ export interface InventoryReportRow {
   lastSaleAt: string | null;
 }
 
-/** One line of the P&L statement (label → amount → %). */
+/** One line of the P&L statement (label â†’ amount â†’ %). */
 export interface PnlStatementRow {
   key: string;
   label: string;
@@ -1428,7 +1444,7 @@ export interface ProfitLossReport {
   change: {
     netSales: number | null;
     grossProfit: number | null;
-    /** Net profit change (Session 82 Phase E — requires the expense ledger). */
+    /** Net profit change (Session 82 Phase E â€” requires the expense ledger). */
     netProfit: number | null;
     orders: number | null;
   };
@@ -1445,7 +1461,7 @@ export interface DashboardReport {
 }
 
 // ============================================================
-// Admin Accounting (Session 82 Phase A) — cutover + opening inventory
+// Admin Accounting (Session 82 Phase A) â€” cutover + opening inventory
 // ============================================================
 
 /** Store-level accounting configuration (singleton doc `accounting`). */
@@ -1474,7 +1490,7 @@ export interface OpeningBalanceCandidate {
   name: string;
   variantLabel?: string;
   stock: number;
-  /** Current supplierPrice shown only as a suggested default — never silently accepted. */
+  /** Current supplierPrice shown only as a suggested default â€” never silently accepted. */
   suggestedCost: number;
   sourcing: "consignment" | "purchased";
 }
@@ -1483,7 +1499,7 @@ export interface OpeningBalanceCandidate {
 export interface OpeningBalanceItemInput {
   productId: string;
   variantId?: string;
-  /** REQUIRED when stock > 0 — the admin-confirmed opening unit cost. */
+  /** REQUIRED when stock > 0 â€” the admin-confirmed opening unit cost. */
   openingCost?: number;
   /** Optional per-product opening date (defaults to the cutover date). */
   openingDate?: string;
@@ -1500,7 +1516,7 @@ export interface InitializeAccountingResponse {
 }
 
 // ============================================================
-// Admin Purchases (Session 82 Phase B) — procurement
+// Admin Purchases (Session 82 Phase B) â€” procurement
 // ============================================================
 
 export type PurchaseStatus =
@@ -1565,7 +1581,7 @@ export interface PurchaseOrderView {
 }
 
 /** Row of the purchases report (Session 82 Phase B). */
-/** Expense-ledger line (Session 82 Phase E) — amounts are exactly what the admin recorded. */
+/** Expense-ledger line (Session 82 Phase E) â€” amounts are exactly what the admin recorded. */
 export interface ExpenseReportRow {
   _id: string;
   expenseDate: string;
@@ -1629,7 +1645,17 @@ export interface AdminSmsTemplate {
   type: SmsMessageType;
   /** SMS.ir pattern id (may be empty while the system runs mock-first). */
   providerTemplateId: string;
-  /** Server-derived from body placeholders — never client-declared. */
+  /** Provider-side review status of the linked SMS.ir template. */
+  providerStatus: "not_submitted" | "pending" | "approved" | "rejected" | "not_found";
+  /** Timestamp of the last successful provider verification. */
+  providerVerifiedAt: string | null;
+  /** Timestamp of the last successful provider check. */
+  providerLastCheckedAt: string | null;
+  /** Description of the last provider check failure (network / timeout / malformed / 5xx). */
+  providerLastCheckError: string;
+  /** Provider rejection reason when providerStatus === "rejected". */
+  providerRejectionReason: string;
+  /** Server-derived from body placeholders â€” never client-declared. */
   variables: string[];
   body: string;
   isActive: boolean;
@@ -1660,10 +1686,10 @@ export interface AdminSmsLog {
   createdAt: string;
 }
 
-/** GET /api/admin/sms/logs — paginated envelope. */
+/** GET /api/admin/sms/logs â€” paginated envelope. */
 export interface AdminSmsLogsResponse extends PaginatedResponse<AdminSmsLog> {}
 
-/** POST /api/admin/sms/send — success payload. */
+/** POST /api/admin/sms/send â€” success payload. */
 export interface SmsSendResponse {
   message: string;
   provider: "mock" | "smsir";
@@ -1671,7 +1697,7 @@ export interface SmsSendResponse {
 }
 
 // ============================================================
-// SMS.ir Provider Monitoring (Phase 1 — read-only)
+// SMS.ir Provider Monitoring (Phase 1 â€” read-only)
 // ============================================================
 
 /** One provider probe state (health check result). */
@@ -1680,7 +1706,7 @@ export interface AdminSmsStatusProbe {
   messageFa: string;
 }
 
-/** GET /api/admin/sms/status — sanitized provider status payload.
+/** GET /api/admin/sms/status â€” sanitized provider status payload.
  *  Never contains the API key, raw provider bodies, or fabricated values. */
 export interface AdminSmsProviderStatus {
   checkedAt: string;
@@ -1726,14 +1752,7 @@ export interface AdminSmsProviderStatus {
   };
 }
 
-/** SMS.ir template review status as mapped from the provider. */
-export type SmsIrTemplateStatus =
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "not_found"
-  | "unknown"
-  | "not_submitted";
+
 
 /** A single template parameter as returned by SMS.ir. */
 export interface SmsIrTemplateParameter {
@@ -1753,27 +1772,11 @@ export interface SmsIrTemplate {
   creationDateTime: number | null; // UnixTime (UTC)
 }
 
-/** Result of listing templates from /v1/templates. */
-export interface SmsIrTemplatesResult {
-  ok: true;
-  templates: SmsIrTemplate[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-/** Result of getting a single template from /v1/templates/:id. */
-export interface SmsIrTemplateResult {
-  ok: true;
-  template: SmsIrTemplate;
-}
-
-/** Provider-side failure (used internally by API routes). */
-export interface SmsIrTemplateFailure {
-  ok: false;
-  kind: string;
-  messageFa: string;
-  httpStatus?: number;
-  providerStatus?: number;
-  providerMessage?: string;
-}
+/** SMS.ir template review status as mapped from the provider. */
+export type SmsIrTemplateStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "not_found"
+  | "unknown"
+  | "not_submitted";
