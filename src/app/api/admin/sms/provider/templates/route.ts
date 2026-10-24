@@ -6,11 +6,9 @@ import {
   getSmsIrTemplates,
   resolveSmsIrConfig,
   mapSmsIrTemplateStatus,
+  type SmsIrTemplatesResult,
 } from "@/lib/sms-ir-admin";
-import type {
-  SmsIrTemplatesResult,
-  SmsIrTemplateStatus,
-} from "@/types";
+import type { SmsIrTemplateStatus } from "@/types";
 
 /**
  * Phase 1 — Read-only SMS.ir template listing (GET only).
@@ -47,16 +45,27 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const pageNumber = parseInt(searchParams.get("pageNumber") ?? "1", 10);
     const pageSize = parseInt(searchParams.get("pageSize") ?? "10", 10);
-    const status = searchParams.get("status");
+    const statusParam = searchParams.get("status");
+    let status: number | undefined;
+    if (statusParam !== null) {
+      const parsed = parseInt(statusParam, 10);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 3) {
+        return NextResponse.json(
+          { error: "پارامتر status نامعتبر است. مقادیر مجاز: 1, 2, 3" },
+          { status: 400 }
+        );
+      }
+      status = parsed;
+    }
 
-    const result: SmsIrTemplatesResult = await getSmsIrTemplates({
+    const result = await getSmsIrTemplates({
       env: process.env,
       pageNumber: Number.isInteger(pageNumber) && pageNumber >= 1 ? pageNumber : 1,
       pageSize:
         Number.isInteger(pageSize) && pageSize >= 1 && pageSize <= 100
           ? pageSize
           : 10,
-      status: status ? parseInt(status, 10) : undefined,
+      status,
     });
 
     if (!result.ok) {

@@ -5,8 +5,8 @@ import { rateLimit, SMS_TEMPLATE_READ_LIMIT } from "@/lib/rate-limiter";
 import {
   getSmsIrTemplate,
   mapSmsIrTemplateStatus,
+  type SmsIrTemplateResult,
 } from "@/lib/sms-ir-admin";
-import type { SmsIrTemplateResult } from "@/types";
 
 /**
  * Phase 1 — Read-only SMS.ir template detail (GET only).
@@ -25,7 +25,7 @@ import type { SmsIrTemplateResult } from "@/types";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { templateId: string } }
+  { params }: { params: Promise<{ templateId: string }> }
 ) {
   const { token, error } = await requireRoleOrError(req, ["admin"]);
   if (error) return error;
@@ -42,7 +42,8 @@ export async function GET(
       );
     }
 
-    const templateId = parseInt(params.templateId, 10);
+    const { templateId: templateIdParam } = await params;
+    const templateId = parseInt(templateIdParam, 10);
     if (!Number.isInteger(templateId) || templateId <= 0) {
       return NextResponse.json(
         { error: "شناسه قالب نامعتبر است" },
@@ -50,7 +51,7 @@ export async function GET(
       );
     }
 
-    const result: SmsIrTemplateResult = await getSmsIrTemplate(templateId, {
+    const result = await getSmsIrTemplate(templateId, {
       env: process.env,
     });
 

@@ -34,12 +34,15 @@ import {
   useAdminSmsLogs,
   useSendManualSms,
   useAdminSmsStatus,
+  useAdminSmsLinkProvider,
+  useAdminSmsVerifyProvider,
 } from "@/hooks/use-admin-sms";
 import type {
   AdminSmsTemplate,
   SmsMessageType,
   AdminSmsProviderStatus,
   SmsIrTemplate,
+  SmsIrTemplateParameter,
   SmsIrTemplateStatus,
 } from "@/types";
 import { useAdminSmsProviderTemplates } from "@/hooks/use-admin-sms";
@@ -85,6 +88,23 @@ const PROVIDER_TEMPLATE_STATUS_BADGE: Record<SmsIrTemplateStatus, string> = {
   not_found: "destructive",
   unknown: "secondary",
   not_submitted: "secondary",
+};
+
+/** Local template provider status → Persian label (no "unknown"). */
+const LOCAL_PROVIDER_STATUS_LABELS: Record<string, string> = {
+  not_submitted: "ثبت نشده",
+  pending: "در حال بررسی",
+  approved: "تایید شده",
+  rejected: "رد شده",
+  not_found: "یافت نشد",
+};
+
+const LOCAL_PROVIDER_STATUS_BADGE: Record<string, string> = {
+  not_submitted: "secondary",
+  pending: "secondary",
+  approved: "success",
+  rejected: "destructive",
+  not_found: "destructive",
 };
 
 // ============================================================
@@ -278,8 +298,139 @@ function ProviderStatusCard() {
   );
 }
 
+// ============================================================
+// Provider templates panel (Phase 1 — read-only SMS.ir templates)
+// ============================================================
+
+function ProviderTemplatesPanel() {
+  const { data, isLoading, isError, refetch } = useAdminSmsProviderTemplates({
+    pageNumber: 1,
+    pageSize: 20,
+  });
+
+  if (isError) {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-lg">قالب‌های SMS.ir</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-12">
+            <AlertCircle className="mb-3 h-8 w-8 text-destructive" />
+            <p className="mb-4 text-muted-foreground">
+              خطا در دریافت قالب‌های SMS.ir
+            </p>
+            <Button variant="outline" onClick={() => refetch()}>
+              <RefreshCw className="ml-2 h-4 w-4" />
+              تلاش مجدد
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+  );
+} else if (isLoading) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-lg">قالب‌های SMS.ir</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 w-full" />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+} else if (!data || !data.ok) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-lg">قالب‌های SMS.ir</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col items-center justify-center py-12">
+          <Inbox className="mx-auto mb-3 h-8 w-8" />
+          <p className="text-muted-foreground">
+            قالبی در سرویس‌دهنده SMS.ir یافت نشد.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+} else {
+  return (
+  <Card>
+    <CardHeader className="flex flex-row items-center justify-between">
+      <CardTitle className="text-lg">قالب‌های SMS.ir</CardTitle>
+      <Badge variant="secondary">{data.templates.length} قالب</Badge>
+    </CardHeader>
+    <CardContent>
+      <div className="divide-y rounded-xl border">
+        {data.templates.map((t: SmsIrTemplate) => (
+          <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="font-bold">{t.title}</p>
+                <Badge variant="secondary">
+                  {PROVIDER_TEMPLATE_STATUS_LABELS[t.status as unknown as SmsIrTemplateStatus] ||
+                    t.status.toString()}
+                </Badge>
+              </div>
+              <p className="mt-0.5 max-w-xl truncate text-xs text-muted-foreground">
+                {t.templateText || "—"}
+              </p>
+              {t.parameters.length > 0 && (
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  متغیرها: {t.parameters.map((p: SmsIrTemplateParameter) => p.name).join("، ")}
+                </p>
+              )}
+              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                شناسه: {t.id} &nbsp;•&nbsp;
+                نوع: {t.type} &nbsp;•&nbsp;
+                ثبت شده در:
+                {t.creationDateTime
+                  ? new Date(t.creationDateTime * 1000).toLocaleString(
+                    "fa-IR"
+                  )
+                  : "—"}
+              </p>
+            </div>
+            <div className="flex items-center gap-1">
+              <Badge
+                variant={
+                  (PROVIDER_TEMPLATE_STATUS_BADGE[t.status as unknown as SmsIrTemplateStatus] ||
+                    "secondary") as
+                    | "default"
+                    | "secondary"
+                    | "destructive"
+                    | "outline"
+                    | "success"
+                    | "warning"
+                }
+              >
+                {PROVIDER_TEMPLATE_STATUS_LABELS[t.status as unknown as SmsIrTemplateStatus] ||
+                  t.status.toString()}
+              </Badge>
+              {t.rejectionReason && (
+                <Badge variant="destructive" title={t.rejectionReason}>
+                  رد شده
+                </Badge>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </CardContent>
+    </Card>
+  );}
+}
+
 export default function AdminSmsPage() {
-  const [tab, setTab] = useState<"templates" | "logs" | "send">("templates");
+  const [tab, setTab] = useState<"templates" | "logs" | "send" | "provider-templates">(
+    "templates"
+  );
 
   return (
     <div className="space-y-6">
@@ -296,6 +447,7 @@ export default function AdminSmsPage() {
         {(
           [
             { key: "templates", label: "قالب‌ها" },
+            { key: "provider-templates", label: "قالب‌های SMS.ir" },
             { key: "logs", label: "گزارش ارسال" },
             { key: "send", label: "ارسال دستی" },
           ] as const
@@ -319,6 +471,7 @@ export default function AdminSmsPage() {
       <ProviderStatusCard />
 
       {tab === "templates" && <TemplatesPanel />}
+      {tab === "provider-templates" && <ProviderTemplatesPanel />}
       {tab === "logs" && <LogsPanel />}
       {tab === "send" && <SendPanel />}
     </div>
@@ -402,60 +555,15 @@ function TemplatesPanel() {
           ) : (
             <div className="divide-y rounded-xl border">
               {(templates || []).map((t) => (
-                <div key={t._id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium">{t.name}</p>
-                      <Badge variant="secondary">{TYPE_LABELS[t.type]}</Badge>
-                      {t.isActive ? (
-                        <Badge variant="success">فعال</Badge>
-                      ) : (
-                        <Badge variant="destructive">غیرفعال</Badge>
-                      )}
-                    </div>
-                    <p className="mt-0.5 max-w-xl truncate text-xs text-muted-foreground">
-                      {t.body || "—"}
-                    </p>
-                    {t.variables.length > 0 && (
-                      <p className="mt-0.5 text-[10px] text-muted-foreground">
-                        متغیرها: {t.variables.join("، ")}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      title="ویرایش"
-                      onClick={() => {
-                        setEditing(t);
-                        setShowForm(true);
-                      }}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 gap-1 text-xs"
-                      onClick={() => handleToggle(t)}
-                      disabled={updateTemplate.isPending}
-                    >
-                      {t.isActive ? "غیرفعال‌سازی" : "فعال‌سازی"}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive"
-                      title="حذف"
-                      onClick={() => handleDelete(t)}
-                      disabled={deleteTemplate.isPending}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
+                <TemplateListItem
+                  key={t._id}
+                  template={t}
+                  onToggle={handleToggle}
+                  onDelete={handleDelete}
+                  onEdit={t => { setEditing(t); setShowForm(true); }}
+                  updateTemplate={updateTemplate}
+                  deleteTemplate={deleteTemplate}
+                />
               ))}
             </div>
           )}
@@ -489,6 +597,166 @@ function TemplatesPanel() {
         />
       )}
     </>
+  );
+}
+
+// ============================================================
+// Template list item — with provider status & link/verify actions
+// ============================================================
+
+interface TemplateListItemProps {
+  template: AdminSmsTemplate;
+  onToggle: (t: AdminSmsTemplate) => Promise<void>;
+  onDelete: (t: AdminSmsTemplate) => Promise<void>;
+  onEdit: (t: AdminSmsTemplate) => void;
+  updateTemplate: ReturnType<typeof useUpdateSmsTemplate>;
+  deleteTemplate: ReturnType<typeof useDeleteSmsTemplate>;
+}
+
+function TemplateListItem({
+  template,
+  onToggle,
+  onDelete,
+  onEdit,
+  updateTemplate,
+  deleteTemplate,
+}: TemplateListItemProps) {
+  const linkProvider = useAdminSmsLinkProvider(template._id);
+  const verifyProvider = useAdminSmsVerifyProvider(template._id);
+
+  const hasProviderId = Boolean(template.providerTemplateId);
+
+  async function handleLink() {
+    try {
+      await linkProvider.mutateAsync({ providerTemplateId: template.providerTemplateId });
+      showToast.success("قالب به سرویس‌دهنده لینک شد");
+    } catch {
+      showToast.error("خطا در لینک کردن قالب به سرویس‌دهنده");
+    }
+  }
+
+  async function handleVerify() {
+    try {
+      await verifyProvider.mutateAsync();
+      showToast.success("وضعیت قالب از سرویس‌دهنده بررسی شد");
+    } catch {
+      showToast.error("خطا در بررسی وضعیت قالب از سرویس‌دهنده");
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-medium">{template.name}</p>
+          <Badge variant="secondary">{TYPE_LABELS[template.type]}</Badge>
+          {template.isActive ? (
+            <Badge variant="success">فعال</Badge>
+          ) : (
+            <Badge variant="destructive">غیرفعال</Badge>
+          )}
+          <Badge
+            variant={
+              (LOCAL_PROVIDER_STATUS_BADGE[template.providerStatus] ||
+                "secondary") as
+                | "default"
+                | "secondary"
+                | "destructive"
+                | "outline"
+                | "success"
+                | "warning"
+            }
+          >
+            {LOCAL_PROVIDER_STATUS_LABELS[template.providerStatus] || template.providerStatus}
+          </Badge>
+        </div>
+        <p className="mt-0.5 max-w-xl truncate text-xs text-muted-foreground">
+          {template.body || "—"}
+        </p>
+        {template.variables.length > 0 && (
+          <p className="mt-0.5 text-[10px] text-muted-foreground">
+            متغیرها: {template.variables.join("، ")}
+          </p>
+        )}
+        {hasProviderId && (
+          <div className="mt-0.5 text-[10px] text-muted-foreground">
+            شناسه سرویس‌دهنده:{template.providerTemplateId}&nbsp;•&nbsp;
+            تایید شده در:{template.providerVerifiedAt
+              ? new Date(template.providerVerifiedAt).toLocaleString("fa-IR")
+              : "—"}
+          </div>
+        )}
+        {template.providerLastCheckError && (
+          <div className="mt-0.5 text-[10px] text-destructive">
+            آخرین خطا: {template.providerLastCheckError}
+          </div>
+        )}
+        {template.providerRejectionReason && (
+          <div className="mt-0.5 text-[10px] text-destructive" title={template.providerRejectionReason}>
+            دلیل رد: {template.providerRejectionReason}
+          </div>
+        )}
+      </div>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          title="ویرایش"
+          onClick={() => onEdit(template)}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1 text-xs"
+          onClick={() => onToggle(template)}
+          disabled={updateTemplate.isPending}
+        >
+          {template.isActive ? "غیرفعال‌سازی" : "فعال‌سازی"}
+        </Button>
+        {!hasProviderId ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1 text-xs"
+            disabled={linkProvider.isPending}
+            onClick={handleLink}
+          >
+            {linkProvider.isPending ? (
+              <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              "لینک به SMS.ir"
+            )}
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1 text-xs"
+            disabled={verifyProvider.isPending}
+            onClick={handleVerify}
+          >
+            {verifyProvider.isPending ? (
+              <Loader2 className="ml-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              "بررسی با SMS.ir"
+            )}
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive"
+          title="حذف"
+          onClick={() => onDelete(template)}
+          disabled={deleteTemplate.isPending}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
   );
 }
 
