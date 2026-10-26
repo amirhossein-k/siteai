@@ -10,7 +10,6 @@ import {
   getSmsIrTemplate,
   mapSmsIrTemplateStatus,
 } from "@/lib/sms-ir-admin";
-import type { SmsIrTemplateStatus } from "@/types";
 
 const KEY_ENV = { SMS_IR_API_KEY: "test-key-1234567890" };
 

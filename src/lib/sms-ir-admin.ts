@@ -119,6 +119,58 @@ export function parseSmsIrEnvelope(
 }
 
 // ============================================================
+// Template payload shape-carriers (Phase 2A — type-safe normalization)
+// ============================================================
+
+/**
+ * Shape-carrier for one raw SMS.ir template item (list + detail payloads).
+ * Provider data is never trusted: every field is `unknown` and coerced
+ * defensively in toSmsIrTemplate below.
+ */
+interface RawSmsIrTemplate {
+  id?: unknown;
+  title?: unknown;
+  templateText?: unknown;
+  type?: unknown;
+  parameters?: unknown;
+  status?: unknown;
+  rejectionReason?: unknown;
+  creationDateTime?: unknown;
+}
+
+/** Shape-checked mapping of one raw provider template parameter list. */
+function toSmsIrTemplateParameters(raw: unknown): SmsIrTemplateParameter[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((p: unknown): SmsIrTemplateParameter => {
+    const param = (typeof p === "object" && p !== null ? p : {}) as {
+      name?: unknown;
+      description?: unknown;
+    };
+    return {
+      name: typeof param.name === "string" ? param.name : "",
+      description:
+        typeof param.description === "string" ? param.description : null,
+    };
+  });
+}
+
+/** Shape-checked mapping of one raw provider template item. */
+function toSmsIrTemplate(raw: RawSmsIrTemplate): SmsIrTemplate {
+  return {
+    id: typeof raw.id === "number" ? raw.id : 0,
+    title: typeof raw.title === "string" ? raw.title : "",
+    templateText: typeof raw.templateText === "string" ? raw.templateText : "",
+    type: typeof raw.type === "number" ? raw.type : 100,
+    parameters: toSmsIrTemplateParameters(raw.parameters),
+    status: typeof raw.status === "number" ? raw.status : 0,
+    rejectionReason:
+      typeof raw.rejectionReason === "string" ? raw.rejectionReason : null,
+    creationDateTime:
+      typeof raw.creationDateTime === "number" ? raw.creationDateTime : null,
+  };
+}
+
+// ============================================================
 // Error normalization
 // ============================================================
 
@@ -809,24 +861,9 @@ export async function getSmsIrTemplates(
       };
     }
 
-    const templates: SmsIrTemplate[] = rawTemplates.map((t: any) => ({
-      id: typeof t.id === "number" ? t.id : 0,
-      title: typeof t.title === "string" ? t.title : "",
-      templateText: typeof t.templateText === "string" ? t.templateText : "",
-      type: typeof t.type === "number" ? t.type : 100,
-      parameters: Array.isArray(t.parameters)
-        ? t.parameters.map((p: any) => ({
-            name: typeof p.name === "string" ? p.name : "",
-            description:
-              typeof p.description === "string" ? p.description : null,
-          }))
-        : [],
-      status: typeof t.status === "number" ? t.status : 0,
-      rejectionReason:
-        typeof t.rejectionReason === "string" ? t.rejectionReason : null,
-      creationDateTime:
-        typeof t.creationDateTime === "number" ? t.creationDateTime : null,
-    }));
+    const templates: SmsIrTemplate[] = rawTemplates.map(
+      (t: RawSmsIrTemplate) => toSmsIrTemplate(t)
+    );
 
     return {
       ok: true,
@@ -935,27 +972,7 @@ export async function getSmsIrTemplate(
       };
     }
 
-    return {
-      ok: true,
-      template: {
-        id: typeof t.id === "number" ? t.id : 0,
-        title: typeof t.title === "string" ? t.title : "",
-        templateText: typeof t.templateText === "string" ? t.templateText : "",
-        type: typeof t.type === "number" ? t.type : 100,
-        parameters: Array.isArray(t.parameters)
-          ? t.parameters.map((p: any) => ({
-              name: typeof p.name === "string" ? p.name : "",
-              description:
-                typeof p.description === "string" ? p.description : null,
-            }))
-          : [],
-        status: typeof t.status === "number" ? t.status : 0,
-        rejectionReason:
-          typeof t.rejectionReason === "string" ? t.rejectionReason : null,
-        creationDateTime:
-          typeof t.creationDateTime === "number" ? t.creationDateTime : null,
-      },
-    };
+    return { ok: true, template: toSmsIrTemplate(t) };
   } catch (err) {
     const isAbort =
       err instanceof Error &&

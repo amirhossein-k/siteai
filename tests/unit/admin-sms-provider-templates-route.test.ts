@@ -10,11 +10,10 @@
  * Deterministic: vi.mock only, injected values, no timers, no credentials.
  * No real SMS.ir access — no SMS is sent.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { GET } from "@/app/api/admin/sms/provider/templates/route";
 
-const FAKE_KEY = "phase1-test-key-987654321";
 const ADMIN_ID = "a".repeat(24);
 
 const mocks = vi.hoisted(() => ({
