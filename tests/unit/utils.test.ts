@@ -184,6 +184,22 @@ describe("isAllowedImageSrc", () => {
     );
   });
 
+  it("accepts the new Parspack storage host (active upload endpoint)", () => {
+    expect(isAllowedImageSrc("https://c986913.parspack.net/uploads/a.jpg")).toBe(
+      true
+    );
+  });
+
+  it("still accepts legacy-host URLs already stored in the DB", () => {
+    expect(
+      isAllowedImageSrc("https://c589564.parspack.net/uploads/legacy/b.jpg")
+    ).toBe(true);
+  });
+
+  it("rejects a different subdomain of the same storage domain", () => {
+    expect(isAllowedImageSrc("https://c000000.parspack.net/s.jpg")).toBe(false);
+  });
+
   it("accepts localhost (dev) http + https", () => {
     expect(isAllowedImageSrc("http://localhost:3000/x.jpg")).toBe(true);
     expect(isAllowedImageSrc("https://localhost/x.jpg")).toBe(true);
