@@ -10,7 +10,7 @@
  * Deterministic: vi.mock only, injected values, no timers, no credentials.
  * No real SMS.ir access — no SMS is sent.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { POST } from "@/app/api/admin/sms/templates/[id]/verify-provider/route";
 
@@ -199,7 +199,7 @@ describe("POST /api/admin/sms/templates/:id/verify-provider", () => {
       ok: false,
       kind: "template_not_found",
       messageFa: "قالب در سرویس‌دهنده یافت نشد",
-    } as any);
+    });
 
     const res = await POST(req("http://localhost/api/admin/sms/templates/" + TEMPLATE_ID + "/verify-provider"), { params: Promise.resolve({ id: TEMPLATE_ID }) });
     expect(res.status).toBe(200);
@@ -258,7 +258,7 @@ describe("POST /api/admin/sms/templates/:id/verify-provider", () => {
       ok: false,
       kind: "network_timeout",
       messageFa: "اتصال به سرویس‌دهنده زمان‌بر شد (timeout)",
-    } as any);
+    });
 
     const res = await POST(req("http://localhost/api/admin/sms/templates/" + TEMPLATE_ID + "/verify-provider"), { params: Promise.resolve({ id: TEMPLATE_ID }) });
     expect(res.status).toBe(502);
@@ -275,7 +275,7 @@ describe("POST /api/admin/sms/templates/:id/verify-provider", () => {
       ok: false,
       kind: "network_error",
       messageFa: "خطای شبکه در ارتباط با سرویس‌دهنده",
-    } as any);
+    });
 
     const res = await POST(req("http://localhost/api/admin/sms/templates/" + TEMPLATE_ID + "/verify-provider"), { params: Promise.resolve({ id: TEMPLATE_ID }) });
     expect(res.status).toBe(502);
@@ -292,7 +292,7 @@ describe("POST /api/admin/sms/templates/:id/verify-provider", () => {
       ok: false,
       kind: "malformed_response",
       messageFa: "پاسخ نامعتبر از سرویس‌دهنده",
-    } as any);
+    });
 
     const res = await POST(req("http://localhost/api/admin/sms/templates/" + TEMPLATE_ID + "/verify-provider"), { params: Promise.resolve({ id: TEMPLATE_ID }) });
     expect(res.status).toBe(502);
