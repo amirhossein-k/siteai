@@ -9,6 +9,26 @@ import {
 } from "./helpers/fixtures";
 import { formatPrice } from "./helpers/money";
 
+// The storage host is DEPLOYED CONFIGURATION, not a UI constant: the project
+// moved off the legacy c589564.parspack.net host (run #68 failed because these
+// assertions were hard-coded to it while LIARA_ENDPOINT — checked on the
+// repo — points at the newer c986913.parspack.net host), and the endpoint can
+// change again. The upload API builds bucket URLs as
+// `${LIARA_ENDPOINT}/${bucket}/${key}`, so every persisted product URL (and
+// every rendered <img> src) starts with the configured endpoint verbatim.
+// Derive the expected prefix from the environment (the Regression workflow
+// injects it as a secret); if the env var is absent, the fallback pins the
+// project's current known host so a broken upload — not an absent env var —
+// is still what fails the suite. Assertions stay as strict as before: an
+// absolute URL to the configured storage host, still requiring an exact
+// origin + path match.
+const UPLOAD_ENDPOINT =
+  process.env.LIARA_ENDPOINT || "https://c986913.parspack.net";
+const UPLOAD_URL_PREFIX_RE = new RegExp(
+  `^${UPLOAD_ENDPOINT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`
+);
+const UPLOAD_SRC_ATTRIBUTE_PREFIX = `img[src^="${UPLOAD_ENDPOINT}"]`;
+
 // The real-editor journey drives the ADMIN product form — run all three
 // tests with the admin session (storefront views work for any role).
 test.use({ storageState: getState().adminStatePath });
@@ -499,12 +519,12 @@ test.describe("Rich product description", () => {
       };
       const imgNode = findNode(product.descriptionRich);
       expect(imgNode).toBeTruthy();
-      expect(imgNode?.url).toMatch(/^https:\/\/c589564\.parspack\.net\//);
+      expect(imgNode?.url).toMatch(UPLOAD_URL_PREFIX_RE);
 
       // Storefront renders the description image.
       await page.goto(`/products/${uiSlug}`);
       await expect(
-        page.locator('img[src^="https://c589564.parspack.net"]')
+        page.locator(UPLOAD_SRC_ATTRIBUTE_PREFIX)
       ).toBeVisible();
     });
 
@@ -550,9 +570,7 @@ test.describe("Rich product description", () => {
 
       // Uploaded + rendered: real thumbnail with the allowlisted host AND the
       // «آپلود شد» badge — not just a toast.
-      const thumbnail = page.locator(
-        'img[src^="https://c589564.parspack.net"]'
-      );
+      const thumbnail = page.locator(UPLOAD_SRC_ATTRIBUTE_PREFIX);
       await expect(thumbnail).toBeVisible();
       await expect(page.getByText("آپلود شد").first()).toBeVisible();
 
@@ -570,7 +588,7 @@ test.describe("Rich product description", () => {
         }
       ).data[0];
       expect(product.images.length).toBe(1);
-      expect(product.images[0]).toMatch(/^https:\/\/c589564\.parspack\.net\//);
+      expect(product.images[0]).toMatch(UPLOAD_URL_PREFIX_RE);
 
       // Reopened edit form still renders the thumbnail.
       await page.goto(`/admin/products/${product._id}/edit`);
