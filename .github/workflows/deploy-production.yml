@@ -26,6 +26,24 @@ jobs:
           script: |
             set -e
 
+            # Deploy #52 root cause: appleboy/ssh-action runs a NON-interactive
+            # SSH session, which never sources ~/.nvm/nvm.sh — so the nvm-managed
+            # toolchain is not on PATH and `npm` was "command not found" even
+            # though node v22.23.4 is installed on the VPS. Load nvm explicitly,
+            # then explicitly ensure the project's known node bin dir is on PATH
+            # (before the first npm invocation, both as the required guarantee
+            # and as a fallback if nvm.sh is ever absent).
+            export NVM_DIR="$HOME/.nvm"
+            if [ -s "$NVM_DIR/nvm.sh" ]; then
+              # shellcheck disable=SC1091
+              . "$NVM_DIR/nvm.sh"
+            fi
+            export PATH="$HOME/.nvm/versions/node/v22.23.4/bin:$PATH"
+
+            echo "==> Toolchain check"
+            node --version
+            npm --version
+
             cd /home/deploy/siteai
 
             echo "==> Fetch latest code"
