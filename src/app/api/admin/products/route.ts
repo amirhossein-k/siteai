@@ -1,5 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
+import mongoose from "mongoose";
 import { dbConnect } from "@/lib/dbConnect";
+import { z } from "zod";
 import {
   requireRoleOrError,
   serverError,
@@ -240,6 +242,141 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// Session 82 — authoritative 14-field perfume/cologne contract. The values
+// mirror src/types/index.ts exactly (no invented restrictions). Product identity
+// (`id`) is deliberately NOT part of this schema — it is validated separately
+// from the URL query and is never part of the update payload.
+const PERFUME_UPDATE_FIELDS = [
+  "gender",
+  "perfumeType",
+  "fragranceFamily",
+  "topNotes",
+  "heartNotes",
+  "baseNotes",
+  "longevity",
+  "sillage",
+  "season",
+  "occasion",
+  "countryOfOrigin",
+  "releaseYear",
+  "barcode",
+  "authenticityType",
+] as const;
+
+const GENDER_VALUES = ["men", "women", "unisex"] as const;
+const PERFUME_TYPE_VALUES = ["parfum", "edp", "edt", "edc", "cologne", "body_spray"] as const;
+const FRAGRANCE_FAMILY_VALUES = ["woody", "floral", "fresh", "oriental", "aromatic", "fougere", "chypre", "gourmand"] as const;
+const LONGEVITY_VALUES = ["weak", "moderate", "long", "very_long"] as const;
+const SILLAGE_VALUES = ["intimate", "moderate", "strong", "enormous"] as const;
+const SEASON_VALUES = ["spring", "summer", "autumn", "winter"] as const;
+const OCCASION_VALUES = ["daily", "evening", "formal", "party", "office", "romantic"] as const;
+const AUTHENTICITY_TYPE_VALUES = ["original", "tester", "decant", "sample"] as const;
+
+// Session 82 follow-up — narrow backward-compatibility normalizers for the
+// legacy (non-perfume) PUT fields. Before the perfume schema existed this route
+// had no Zod at all, so Mongoose casting accepted these values. The schema must
+// keep accepting exactly those, without becoming broad coercion.
+const NUMERIC_STRING_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+/**
+ * Accept a real number or a VALID numeric string, converting the string to a
+ * number before any pricing/CAS calculation. Everything else (empty string,
+ * whitespace, booleans, null, "NaN", "Infinity", hex, partial numbers) is
+ * passed through untouched so the underlying `z.number()` rejects it.
+ */
+function numericField<T extends z.ZodNumber>(schema: T) {
+  return z.preprocess((value) => {
+    if (typeof value !== "string") return value;
+    const trimmed = value.trim();
+    if (trimmed === "") return value; // never "" -> 0
+    if (!NUMERIC_STRING_PATTERN.test(trimmed)) return value;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : value;
+  }, schema);
+}
+
+/**
+ * Historical Mongoose Boolean casting accepted the exact strings "true" and
+ * "false". `z.coerce.boolean()` is unusable here (Boolean("false") is true),
+ * so only those two spellings are normalized; everything else is left for
+ * `z.boolean()` to reject.
+ */
+const booleanField = z.preprocess(
+  (value) => (value === "true" ? true : value === "false" ? false : value),
+  z.boolean()
+);
+
+/**
+ * Decision A — the variant configuration is a MANDATORY, explicit part of the
+ * PUT contract. A missing property must never be interpreted as false/[] (that
+ * silently erased every variant of a variant product). Returns a user-facing
+ * error message, or null when the shape is valid.
+ */
+function validateVariantContract(
+  body: Record<string, unknown>
+): string | null {
+  const hasHasVariants = Object.prototype.hasOwnProperty.call(
+    body,
+    "hasVariants"
+  );
+  const hasVariantsArray = Object.prototype.hasOwnProperty.call(
+    body,
+    "variants"
+  );
+  if (!hasHasVariants || !hasVariantsArray) {
+    return "پیکربندی تنوع الزامی است: hasVariants و variants باید ارسال شوند";
+  }
+  if (typeof body.hasVariants !== "boolean") {
+    return "نوع hasVariants نامعتبر است";
+  }
+  if (!Array.isArray(body.variants)) {
+    return "نوع variants نامعتبر است";
+  }
+  if (body.hasVariants === true && body.variants.length === 0) {
+    return "برای محصول دارای تنوع، حداقل یک تنوع لازم است";
+  }
+  if (body.hasVariants === false && body.variants.length > 0) {
+    return "محصول ساده نباید تنوع داشته باشد";
+  }
+  return null;
+}
+
+const productApiUpdateSchema = z.object({
+  name: z.string().optional(),
+  // `null` is accepted for backwards compatibility: the historical handler only
+  // read `slug` when it was a string and otherwise regenerated it from the name.
+  slug: z.string().nullable().optional(),
+  // Three-state semantics are `.nullable().optional()` + the pre-validation
+  // "" stripping below: omitted/"" → absent (preserve), null → clear, value → update.
+  gender: z.enum(GENDER_VALUES).nullable().optional(),
+  perfumeType: z.enum(PERFUME_TYPE_VALUES).nullable().optional(),
+  fragranceFamily: z.enum(FRAGRANCE_FAMILY_VALUES).nullable().optional(),
+  topNotes: z.array(z.string()).nullable().optional(),
+  heartNotes: z.array(z.string()).nullable().optional(),
+  baseNotes: z.array(z.string()).nullable().optional(),
+  longevity: z.enum(LONGEVITY_VALUES).nullable().optional(),
+  sillage: z.enum(SILLAGE_VALUES).nullable().optional(),
+  season: z.array(z.enum(SEASON_VALUES)).nullable().optional(),
+  occasion: z.array(z.enum(OCCASION_VALUES)).nullable().optional(),
+  countryOfOrigin: z.string().nullable().optional(),
+  releaseYear: z.number().nullable().optional(),
+  barcode: z.string().nullable().optional(),
+  authenticityType: z.enum(AUTHENTICITY_TYPE_VALUES).nullable().optional(),
+  description: z.string().optional(),
+  descriptionRich: z.unknown().optional(),
+  // `null` clears the brand (historical `body.brand || null`); "" is normalized
+  // to null below. An omitted key is preserved (no write).
+  brand: z.string().nullable().optional(),
+  category: z.string().optional(),
+  supplier: z.string().optional(),
+  price: numericField(z.number().nonnegative()).optional(),
+  supplierPrice: numericField(z.number().nonnegative()).optional(),
+  stock: numericField(z.number().int().nonnegative()).optional(),
+  isActive: booleanField.optional(),
+  autoSlug: z.boolean().optional(),
+  discount: z.unknown().optional(),
+});
+
 export async function PUT(req: NextRequest) {
   const { error } = await requireRoleOrError(req, ["admin"]);
   if (error) return error;
@@ -255,12 +392,85 @@ export async function PUT(req: NextRequest) {
         { status: 400 }
       );
     }
+    // A malformed id must be a 400 — never an unhandled Mongoose CastError (500).
+    if (!mongoose.isValidObjectId(id)) {
+      return NextResponse.json(
+        { error: "شناسه محصول نامعتبر است" },
+        { status: 400 }
+      );
+    }
 
     const body = await req.json();
 
-    // Prepare variants (validates attributes, SKUs, combos; recomputes summary)
-    // Pass the product id so the global SKU check excludes this product's own SKUs
-    const prepared = await prepareVariantsForSave(body, id);
+    // Decision A — variant configuration is MANDATORY. Missing properties are
+    // rejected here, before any validation/write, so they can never fall back
+    // to false/[] and silently erase a variant product.
+    if (body === null || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "بدنه درخواست نامعتبر است" },
+        { status: 400 }
+      );
+    }
+    const variantContractError = validateVariantContract(
+      body as Record<string, unknown>
+    );
+    if (variantContractError) {
+      return NextResponse.json(
+        { error: variantContractError },
+        { status: 400 }
+      );
+    }
+
+    // Session 82 — empty-string normalization MUST run BEFORE Zod validation.
+    // For all 14 perfume fields "" means "preserve the stored value", which is
+    // exactly the same as omitting the key. Doing this after validation is too
+    // late: Zod would already have rejected "" for enum/array/number fields.
+    const normalizedBody: Record<string, unknown> = { ...body };
+    for (const field of PERFUME_UPDATE_FIELDS) {
+      if (normalizedBody[field] === "") delete normalizedBody[field];
+    }
+
+    // Product identity is the URL query id (validated above), never the body.
+    // `id` is not declared in the schema, so Zod strips any body-supplied id
+    // and it can never reach the update payload.
+    const apiResult = productApiUpdateSchema.safeParse(normalizedBody);
+    if (!apiResult.success) {
+      const formError = (apiResult.error.formErrors && typeof apiResult.error.formErrors.raw === "function")
+        ? apiResult.error.formErrors.raw()[0]
+        : apiResult.error.issues?.[0]?.message || "Invalid data";
+      return NextResponse.json(
+        { error: formError },
+        { status: 400 }
+      );
+    }
+
+    // Session 82 — explicit, auditable three-state normalization.
+    // "" was removed BEFORE validation (preserve == omit), so only these remain:
+    //   - key absent from the request → preserve (not in $set)
+    //   - value === null             → BSON null (in $set)
+    //   - []                         → empty array (in $set — never dropped)
+    //   - valid scalar/enum/array    → in $set
+    // No truthiness checks: null and [] are deliberately preserved.
+    const normalizedUpdate: Record<string, unknown> = {};
+    for (const field of PERFUME_UPDATE_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(normalizedBody, field)) continue;
+      const value = apiResult.data[field];
+      if (value === undefined) continue;
+      normalizedUpdate[field] = value;
+    }
+
+    // Prepare variants (validates attributes, SKUs, combos; recomputes summary).
+    // Pass the product id so the global SKU check excludes this product's own SKUs.
+    //
+    // `hasVariants`/`variants` are deliberately NOT declared in
+    // productApiUpdateSchema — the variant helper owns their validation. Zod
+    // strips unknown keys, so they must be read from the raw request body (their
+    // original source) rather than from apiResult.data. Otherwise every variant
+    // product would be downgraded to a simple product with its variants erased.
+    const prepared = await prepareVariantsForSave(
+      { hasVariants: body.hasVariants, variants: body.variants },
+      id
+    );
     if (!prepared.ok) {
       return NextResponse.json({ error: prepared.error }, { status: prepared.status });
     }
@@ -277,7 +487,7 @@ export async function PUT(req: NextRequest) {
     // active variant price (variants) or the submitted price (simple).
     const discountResult = parseProductDiscount(
       body.discount,
-      prepared.hasVariants ? prepared.price : body.price
+      prepared.hasVariants ? prepared.price : apiResult.data.price
     );
     if (!discountResult.ok) {
       return NextResponse.json(
@@ -290,7 +500,7 @@ export async function PUT(req: NextRequest) {
     // initialized, direct stock edits are rejected (use /admin/inventory
     // adjustments instead). Non-stock product editing is untouched.
     const stockGuard = await assertNoDirectStockChange(id, {
-      stock: prepared.hasVariants ? undefined : body.stock,
+      stock: prepared.hasVariants ? undefined : apiResult.data.stock,
       variants: prepared.hasVariants ? prepared.variants : undefined,
     });
     if (!stockGuard.ok) {
@@ -323,20 +533,31 @@ export async function PUT(req: NextRequest) {
           : sanitizePlainText(body.description || ""),
       descriptionRich: rich.descriptionRich,
       images: body.images,
-      // Normalize the empty-string "no brand" value (the edit form's "بدون
-      // برند" option submits "") — casting "" to ObjectId throws a CastError
-      // 500. Mirrors the POST normalization below.
-      brand: body.brand || null,
       tags: body.tags || [],
       category: body.category,
       supplier: body.supplier,
-      supplierPrice: prepared.hasVariants ? 0 : body.supplierPrice,
-      price: prepared.hasVariants ? prepared.price : body.price,
-      stock: prepared.hasVariants ? prepared.stock : body.stock,
+      // These are the Zod-validated/coerced values: numeric strings are real
+      // numbers before pricing/CAS. An omitted key stays undefined and is
+      // dropped by buildPriceCasUpdate -> the stored value is preserved.
+      supplierPrice: prepared.hasVariants ? 0 : apiResult.data.supplierPrice,
+      price: prepared.hasVariants ? prepared.price : apiResult.data.price,
+      stock: prepared.hasVariants ? prepared.stock : apiResult.data.stock,
       hasVariants: prepared.hasVariants,
       variants: prepared.variants,
-      isActive: body.isActive,
+      isActive: apiResult.data.isActive,
+      // Session 82 — the 14 perfume fields MUST reach the actual Mongo update.
+      // null (explicit clear) and [] (explicit empty) are preserved here; only
+      // omitted/"" keys are absent (see the pre-validation normalization).
+      ...normalizedUpdate,
     };
+    // Brand is three-state: omitted -> preserve (no write), null -> clear,
+    // "" -> clear (the form's «بدون برند» option submits ""). Only string/null
+    // pass Zod, so a cast error can no longer come from an empty value.
+    const normalizedBrand =
+      apiResult.data.brand === "" ? null : apiResult.data.brand;
+    if (normalizedBrand !== undefined) {
+      update.brand = normalizedBrand;
+    }
     // discount is undefined when the field was omitted (backward compat with
     // legacy API clients) → keep the stored value; null → cleared; object → set.
     if (discountResult.value !== undefined) {
