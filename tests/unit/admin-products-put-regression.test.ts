@@ -61,12 +61,20 @@ vi.mock("@/lib/product-price-cas", async (importActual) => {
     updateProductWithPriceStamp: vi.fn(
       async (options: {
         effectiveSlug: string;
+        readSnapshot: () => Promise<unknown | null>;
+        buildNextRevision: (snapshot: unknown) => unknown;
         write: (attempt: {
           candidate: string;
           token: number | null;
           stamp: Date | null;
         }) => Promise<unknown>;
       }) => {
+        // Model the real loop: read the pinned snapshot, let the route decide
+        // the next revision (this is where discount validation lives), then
+        // build the write. A `null` write result is a CAS miss → not_found.
+        const snapshot = await options.readSnapshot();
+        if (snapshot === null) return { status: "not_found" as const };
+        options.buildNextRevision(snapshot);
         const value = await options.write({
           // Mirror the real CAS loop: the written slug is the route's
           // effectiveSlug, so slug assertions exercise the actual logic.
@@ -74,6 +82,7 @@ vi.mock("@/lib/product-price-cas", async (importActual) => {
           token: null,
           stamp: null,
         });
+        if (value === null) return { status: "not_found" as const };
         return { status: "ok" as const, value };
       }
     ),
@@ -87,6 +96,7 @@ import { prepareVariantsForSave } from "@/lib/product-variants";
 import { prepareRichDescription } from "@/lib/product-description";
 import { parseProductDiscount } from "@/lib/product-pricing";
 import { assertNoDirectStockChange } from "@/lib/inventory-adjustments";
+import { createProductPriceSnapshotReader } from "@/lib/product-price-cas";
 
 const mockRequireRoleOrError = vi.mocked(requireRoleOrError);
 const mockDbConnect = vi.mocked(dbConnect);
@@ -209,8 +219,20 @@ function bodyWithout(...fields: string[]): Record<string, unknown> {
 }
 
 beforeEach(() => {
-  mockRequireRoleOrError.mockResolvedValue({ error: null });
+  mockRequireRoleOrError.mockResolvedValue({ token: null, error: null });
   mockDbConnect.mockResolvedValue(undefined);
+  // Default pinned snapshot: a simple product with a stored price and no
+  // discount. Discount-base tests override this per case.
+  (createProductPriceSnapshotReader as unknown as ReturnType<typeof vi.fn>)
+    .mockImplementation(() => async () => ({
+      token: 0,
+      revision: {
+        price: baseProduct.price,
+        hasVariants: false,
+        variants: [],
+        discount: null,
+      },
+    }));
   mockPrepareVariantsForSave.mockClear();
   mockPrepareVariantsForSave.mockResolvedValue({
     ok: true,
@@ -224,6 +246,7 @@ beforeEach(() => {
     description: "desc",
     descriptionRich: undefined,
   }));
+  mockParseProductDiscount.mockReset();
   mockParseProductDiscount.mockReturnValue({ ok: true, value: undefined });
   mockAssertNoDirectStockChange.mockResolvedValue({ ok: true });
 
@@ -794,5 +817,211 @@ describe("Product model schema — 14 perfume paths", () => {
     for (const field of ALL_FIELDS) {
       expect(empty[field], `${field} must have no implicit default`).toBeUndefined();
     }
+  });
+});
+/**
+ * Discount validation base price — the PUT contract must validate against the
+ * right base for every shape of request, WITHOUT assuming the body carries a
+ * price and WITHOUT weakening the price-stamp CAS.
+ *
+ * The regression file keeps the REAL product-price-cas module (only the
+ * snapshot reader + driver are stubbed), so these tests exercise the actual
+ * `$set` that reaches `findOneAndUpdate`.
+ */
+describe("PUT /api/admin/products — discount base price", () => {
+  const STORED_PRICE = 250000;
+
+  /** Stub the CAS reader with a persisted price/revision + a token. */
+  function withStoredPrice(price: number, discount: unknown = null) {
+    (createProductPriceSnapshotReader as unknown as ReturnType<typeof vi.fn>)
+      .mockImplementation(() => async () => ({
+        token: 7,
+        revision: {
+          price,
+          hasVariants: false,
+          variants: [],
+          discount,
+        },
+      }));
+  }
+
+  it("omitted price + valid discount validates against the PERSISTED price", async () => {
+    withStoredPrice(STORED_PRICE);
+    mockParseProductDiscount.mockReturnValue({
+      ok: true,
+      value: {
+        type: "fixed",
+        value: 50000,
+        startsAt: null,
+        endsAt: null,
+        isActive: true,
+      },
+    });
+
+    const res = await PUT(
+      createPutRequest({
+        ...bodyWithout("price"),
+        discount: { type: "fixed", value: 50000 },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    // The base passed to validation is the snapshot's persisted price — never
+    // `undefined`, never a body field that was omitted.
+    expect(mockParseProductDiscount).toHaveBeenCalledWith(
+      { type: "fixed", value: 50000 },
+      STORED_PRICE
+    );
+    // And the product's stored price is NOT overwritten by the omission.
+    expect(lastSet()).not.toHaveProperty("price");
+    expect(lastSet().discount).toEqual({
+      type: "fixed",
+      value: 50000,
+      startsAt: null,
+      endsAt: null,
+      isActive: true,
+    });
+  });
+
+  it("omitted price + INVALID discount returns 400 and never writes", async () => {
+    withStoredPrice(STORED_PRICE);
+    mockParseProductDiscount.mockReturnValue({
+      ok: false,
+      error: "مبلغ تخفیف باید کمتر از قیمت محصول باشد",
+    });
+
+    const res = await PUT(
+      createPutRequest({
+        ...bodyWithout("price"),
+        discount: { type: "fixed", value: 999999 },
+      })
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: "مبلغ تخفیف باید کمتر از قیمت محصول باشد",
+    });
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it("submitted price + discount validates against the SUBMITTED price", async () => {
+    withStoredPrice(STORED_PRICE);
+    mockParseProductDiscount.mockReturnValue({
+      ok: true,
+      value: {
+        type: "percent",
+        value: 10,
+        startsAt: null,
+        endsAt: null,
+        isActive: true,
+      },
+    });
+
+    const res = await PUT(
+      createPutRequest({
+        ...baseProduct,
+        price: 400000,
+        discount: { type: "percent", value: 10 },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    // The submitted (Zod-validated) price wins over the persisted one.
+    expect(mockParseProductDiscount).toHaveBeenCalledWith(
+      { type: "percent", value: 10 },
+      400000
+    );
+    expect(lastSet().price).toBe(400000);
+    expect(lastSet().discount).toEqual({
+      type: "percent",
+      value: 10,
+      startsAt: null,
+      endsAt: null,
+      isActive: true,
+    });
+  });
+
+  it("variant product validates against the prepared variant price", async () => {
+    withStoredPrice(STORED_PRICE);
+    mockPrepareVariantsForSave.mockResolvedValue({
+      ok: true,
+      hasVariants: true,
+      variants: [
+        {
+          sku: "SKU-1",
+          price: 900000,
+          isActive: true,
+          attributes: [] as Array<{ attributeId: string; value: string }>,
+          supplierPrice: 800000,
+          stock: 5,
+        },
+      ],
+      price: 900000,
+      stock: 5,
+    });
+    mockParseProductDiscount.mockReturnValue({
+      ok: true,
+      value: {
+        type: "percent",
+        value: 15,
+        startsAt: null,
+        endsAt: null,
+        isActive: true,
+      },
+    });
+
+    const res = await PUT(
+      createPutRequest({
+        ...baseProduct,
+        hasVariants: true,
+        variants: [{ sku: "SKU-1", price: 900000, isActive: true }],
+        discount: { type: "percent", value: 15 },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    // Variant products ALWAYS use the prepared effective price, even when the
+    // body also carries a `price` field.
+    expect(mockParseProductDiscount).toHaveBeenCalledWith(
+      { type: "percent", value: 15 },
+      900000
+    );
+  });
+
+  it("omitted discount preserves the stored discount and skips validation", async () => {
+    const storedDiscount = {
+      type: "percent" as const,
+      value: 20,
+      startsAt: null,
+      endsAt: null,
+      isActive: true,
+    };
+    withStoredPrice(STORED_PRICE, storedDiscount);
+
+    const res = await PUT(createPutRequest({ ...baseProduct }));
+
+    expect(res.status).toBe(200);
+    // No needless re-validation of a discount the client did not send.
+    expect(mockParseProductDiscount).not.toHaveBeenCalled();
+    expect(lastSet()).not.toHaveProperty("discount");
+  });
+
+  it("explicit null discount clears the stored discount", async () => {
+    withStoredPrice(STORED_PRICE, {
+      type: "percent",
+      value: 20,
+      startsAt: null,
+      endsAt: null,
+      isActive: true,
+    });
+    mockParseProductDiscount.mockReturnValue({ ok: true, value: null });
+
+    const res = await PUT(
+      createPutRequest({ ...baseProduct, discount: null })
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockParseProductDiscount).toHaveBeenCalledWith(null, 100000);
+    expect(lastSet().discount).toBeNull();
   });
 });

@@ -435,9 +435,11 @@ export async function PUT(req: NextRequest) {
     // and it can never reach the update payload.
     const apiResult = productApiUpdateSchema.safeParse(normalizedBody);
     if (!apiResult.success) {
-      const formError = (apiResult.error.formErrors && typeof apiResult.error.formErrors.raw === "function")
-        ? apiResult.error.formErrors.raw()[0]
-        : apiResult.error.issues?.[0]?.message || "Invalid data";
+      // Zod v3 issues are the single authoritative source of field messages —
+      // `formErrors` is a deprecated flattened view that exposes no `raw()`
+      // method. The first issue is the field-specific message the admin form
+      // surfaces; the generic fallback only applies to an issue-less error.
+      const formError = apiResult.error.issues[0]?.message || "Invalid data";
       return NextResponse.json(
         { error: formError },
         { status: 400 }
@@ -481,19 +483,6 @@ export async function PUT(req: NextRequest) {
     const rich = prepareRichDescription(body);
     if (!rich.ok) {
       return NextResponse.json({ error: rich.error }, { status: 400 });
-    }
-
-    // Product discount — same admin-only validation as POST. basePrice = min
-    // active variant price (variants) or the submitted price (simple).
-    const discountResult = parseProductDiscount(
-      body.discount,
-      prepared.hasVariants ? prepared.price : apiResult.data.price
-    );
-    if (!discountResult.ok) {
-      return NextResponse.json(
-        { error: discountResult.error },
-        { status: 400 }
-      );
     }
 
     // Session 82 Phase D — post-cutover enforcement: once accounting is
@@ -558,11 +547,10 @@ export async function PUT(req: NextRequest) {
     if (normalizedBrand !== undefined) {
       update.brand = normalizedBrand;
     }
-    // discount is undefined when the field was omitted (backward compat with
-    // legacy API clients) → keep the stored value; null → cleared; object → set.
-    if (discountResult.value !== undefined) {
-      update.discount = discountResult.value;
-    }
+    // discount is resolved INSIDE the CAS loop (see below): the applicable base
+    // price for a simple product whose price was omitted is the PERSISTED price
+    // from the same snapshot the write is pinned to, so validation and write can
+    // never disagree. Nothing is written here.
 
     // Session 93 — price stamp (trustworthy «آخرین تغییر تنظیمات قیمت و تخفیف»).
     // The write is a BOUNDED CAS loop: snapshot (token + pricing revision) →
@@ -572,27 +560,83 @@ export async function PUT(req: NextRequest) {
     // revision changes; every other edit persists with the stamp byte-for-byte
     // as stored. Full contract: src/lib/product-price-cas.ts.
     const scopeFilter: Record<string, unknown> = { _id: id };
+    // Discount validation — moved INSIDE the CAS attempt on purpose.
+    //
+    // The applicable base price is:
+    //   - variant product  → the prepared effective (min active) variant price;
+    //   - simple product with a submitted price → that validated price;
+    //   - simple product with the price OMITTED → the PERSISTED price read from
+    //     the SAME snapshot the write below is pinned to.
+    //
+    // Reading the persisted price from the CAS snapshot (not from a separate
+    // query, and never from an assumed body field) keeps validation and write
+    // atomic with respect to the `priceVersion` token: if the price changes
+    // between validate and write, the token no longer matches, the write misses,
+    // and the loop re-reads + re-validates against the new price. A discount is
+    // therefore never accepted against a stale base price.
+    let discountError: string | null = null;
+    // The discount value actually written on the CURRENT attempt. Set by
+    // buildNextRevision (which runs once per CAS attempt, before that attempt's
+    // write) so `$set` carries the value that was validated against the same
+    // snapshot the write is pinned to.
+    let nextDiscount: unknown = undefined;
     const outcome = await updateProductWithPriceStamp({
       effectiveSlug,
       autoSlug: body.autoSlug === true,
       readSnapshot: createProductPriceSnapshotReader(scopeFilter),
       stillExists: async () => (await Product.exists(scopeFilter)) !== null,
-      buildNextRevision: (snapshot) =>
-        toPricingRevision({
+      buildNextRevision: (snapshot) => {
+        const submittedPrice = prepared.hasVariants
+          ? prepared.price
+          : apiResult.data.price;
+        // An OMITTED discount preserves the stored config and is NOT
+        // re-validated: its historical base price may no longer apply, and the
+        // stored value was already validated when it was written.
+        if (body.discount === undefined) {
+          discountError = null;
+          nextDiscount = undefined; // absent from $set → stored value preserved
+          return toPricingRevision({
+            price: update.price,
+            hasVariants: update.hasVariants,
+            variants: update.variants,
+            discount: snapshot.revision.discount,
+          });
+        }
+        // The persisted price is the fallback ONLY for a simple product whose
+        // price was omitted from this request — and it comes from the snapshot
+        // this attempt is pinned to (`priceVersion`), never a separate read.
+        const validated = parseProductDiscount(
+          body.discount,
+          submittedPrice ?? snapshot.revision.price
+        );
+        if (!validated.ok) {
+          discountError = validated.error;
+          nextDiscount = undefined;
+          // Return the stored revision unchanged: this attempt must not look
+          // like a pricing change, and the write below is skipped entirely.
+          return snapshot.revision;
+        }
+        discountError = null;
+        // undefined → keep stored (never a price change); null → cleared;
+        // object → the validated submission.
+        nextDiscount = validated.value;
+        return toPricingRevision({
           price: update.price,
           hasVariants: update.hasVariants,
           variants: update.variants,
-          // An OMITTED discount keeps the stored config (never a price change);
-          // `null` clears it; an object is the validated submission.
-          discount: resolveNextDiscount(
-            snapshot.revision.discount,
-            discountResult.value
-          ),
-        }),
+          discount: resolveNextDiscount(snapshot.revision.discount, validated.value),
+        });
+      },
       write: ({ candidate, token, stamp }) => {
+        // A rejected discount must never reach Mongo. Returning `null` makes the
+        // loop treat this as a CAS miss; the route checks `discountError` first
+        // and answers 400 before any status mapping or write is committed.
+        if (discountError !== null) return Promise.resolve(null);
         const { filter, update: casUpdate } = buildPriceCasUpdate(
           scopeFilter,
-          { ...update, slug: candidate },
+          // `nextDiscount === undefined` → omitted from `$set` by
+          // buildPriceCasUpdate (withoutUndefined) → stored discount preserved.
+          { ...update, discount: nextDiscount, slug: candidate },
           token,
           stamp
         );
@@ -607,6 +651,17 @@ export async function PUT(req: NextRequest) {
           .lean();
       },
     });
+
+    // A rejected discount is a 400 and MUST win over the loop's status: the
+    // write was skipped, so `outcome` may be a CAS miss / not_found that only
+    // exists because of this rejection. Checking it first guarantees the client
+    // receives the real validation message and no data was written.
+    if (discountError !== null) {
+      return NextResponse.json(
+        { error: discountError },
+        { status: 400 }
+      );
+    }
 
     if (outcome.status === "slug_conflict") {
       return NextResponse.json(
