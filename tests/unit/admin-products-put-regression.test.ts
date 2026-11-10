@@ -737,7 +737,7 @@ describe("PUT /api/admin/products — legacy slug compatibility", () => {
 
 describe("Product model schema — 14 perfume paths", () => {
   it("defines all 14 paths with the correct types and no implicit defaults", async () => {
-    const mod = await vi.importActual<{ default: { schema: any } }>(
+    const mod = await vi.importActual<typeof import("@/models/Product")>(
       "@/models/Product"
     );
     const schema = mod.default.schema;
@@ -753,8 +753,15 @@ describe("Product model schema — 14 perfume paths", () => {
 
     for (const { field, values } of ENUM_FIELDS) {
       const path = schema.path(field);
+      // `enumValues` is a runtime-only mongoose property with no exported type
+      // declaration, so it is read through a narrow structural view rather than
+      // asserting `any`.
+      const enumPath = path as unknown as {
+        enumValues?: string[];
+        caster?: { enumValues?: string[] };
+      };
       const actual: string[] =
-        path.enumValues ?? path.caster?.enumValues ?? [];
+        enumPath.enumValues ?? enumPath.caster?.enumValues ?? [];
       expect(actual, `${field} enum values`).toEqual(
         expect.arrayContaining([...values])
       );
@@ -765,10 +772,13 @@ describe("Product model schema — 14 perfume paths", () => {
       expect(schema.path(field).instance, `${field} must be an array`).toBe(
         "Array"
       );
+      // Array paths keep their member enum on `caster`; same runtime-only view.
+      const arrayPath = schema.path(field) as unknown as {
+        enumValues?: string[];
+        caster?: { enumValues?: string[] };
+      };
       const actual: string[] =
-        schema.path(field).caster?.enumValues ??
-        schema.path(field).enumValues ??
-        [];
+        arrayPath.caster?.enumValues ?? arrayPath.enumValues ?? [];
       const expected = ENUM_FIELDS.find((e) => e.field === field);
       if (expected) {
         expect(actual).toEqual(expect.arrayContaining(expected.values));
@@ -781,7 +791,9 @@ describe("Product model schema — 14 perfume paths", () => {
   });
 
   it("accepts null for every field and rejects invalid enum values", async () => {
-    const mod = await vi.importActual<{ default: any }>("@/models/Product");
+    const mod = await vi.importActual<typeof import("@/models/Product")>(
+      "@/models/Product"
+    );
     const Model = mod.default;
 
     for (const field of ALL_FIELDS) {
