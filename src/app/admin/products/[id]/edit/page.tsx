@@ -41,8 +41,18 @@ export default function EditProductPage({
       // the plain-text projection). Absent on legacy products → editor empty.
       descriptionRich: product.descriptionRich,
       // Session 65 — populated relations may be null (deleted ref) or a raw
-      // id string at runtime; relationId normalizes all shapes safely. images/
-      // brand/tags are mapped so the full-replacement PUT does not wipe them.
+      // id string at runtime; relationId normalizes all shapes safely.
+      // The admin PUT (api/admin/products) is NOT a blind full replacement:
+      //  A) Variant config is mandatory — hasVariants + variants must both be
+      //     present (true needs a valid non-empty array, false needs []); any
+      //     missing or invalid combination is HTTP 400 before any write.
+      //  B) Legacy fields (brand, discount, price, supplierPrice, stock,
+      //     isActive, images) keep omission semantics: omitted means "not
+      //     written", so the form maps every one of them explicitly.
+      //  C) 14 perfume fields: omitted/"" preserves, null clears, valid value
+      //     updates, invalid is 400; [] is an explicit empty update (not null).
+      //  D) Normalized/regenerated: brand "" -> null; slug null/"" -> slugified
+      //     name; numeric strings -> numbers; isActive "true"/"false" -> bool.
       images: product.images || [],
       brand: relationId(product.brand),
       tags: (product.tags || []).map(relationId).filter(Boolean),

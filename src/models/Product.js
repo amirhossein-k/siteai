@@ -290,6 +290,76 @@ const ProductSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    // ===== Perfume/Cologne specific fields (optional, additive) =====
+    // Session 82 — storage for the 14-field PUT contract
+    // (src/types/index.ts). Deliberately NO defaults: an absent field must
+    // stay absent on legacy documents (no backfill, no implicit []), and
+    // `null` is preserved as an explicit BSON null by the API.
+    gender: {
+      type: String,
+      enum: ["men", "women", "unisex"],
+      default: undefined,
+    },
+    perfumeType: {
+      type: String,
+      enum: ["parfum", "edp", "edt", "edc", "cologne", "body_spray"],
+      default: undefined,
+    },
+    fragranceFamily: {
+      type: String,
+      enum: ["woody", "floral", "fresh", "oriental", "aromatic", "fougere", "chypre", "gourmand"],
+      default: undefined,
+    },
+    topNotes: {
+      type: [String],
+      default: undefined,
+    },
+    heartNotes: {
+      type: [String],
+      default: undefined,
+    },
+    baseNotes: {
+      type: [String],
+      default: undefined,
+    },
+    longevity: {
+      type: String,
+      enum: ["weak", "moderate", "long", "very_long"],
+      default: undefined,
+    },
+    sillage: {
+      type: String,
+      enum: ["intimate", "moderate", "strong", "enormous"],
+      default: undefined,
+    },
+    season: {
+      type: [String],
+      enum: ["spring", "summer", "autumn", "winter"],
+      default: undefined,
+    },
+    occasion: {
+      type: [String],
+      enum: ["daily", "evening", "formal", "party", "office", "romantic"],
+      default: undefined,
+    },
+    countryOfOrigin: {
+      type: String,
+      default: undefined,
+    },
+    releaseYear: {
+      type: Number,
+      default: undefined,
+    },
+    barcode: {
+      type: String,
+      default: undefined,
+    },
+    authenticityType: {
+      type: String,
+      enum: ["original", "tester", "decant", "sample"],
+      default: undefined,
+    },
+    // ===== End Perfume/Cologne fields =====
   },
   { timestamps: true }
 );
